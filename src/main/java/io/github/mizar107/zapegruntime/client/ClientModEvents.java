@@ -1,0 +1,21 @@
+package io.github.mizar107.zapegruntime.client;
+
+import io.github.mizar107.zapegruntime.ZapeGRuntime;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.EntityRenderersEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+
+@Mod.EventBusSubscriber(
+        modid = ZapeGRuntime.MOD_ID,
+        value = Dist.CLIENT,
+        bus = Mod.EventBusSubscriber.Bus.MOD)
+public final class ClientModEvents {
+
+    private ClientModEvents() {}
+
+    @SubscribeEvent
+    public static void onAddLayers(EntityRenderersEvent.AddLayers event) {
+        ApparitionRenderer.installModel(event.getEntityModels());
+    }
+}
