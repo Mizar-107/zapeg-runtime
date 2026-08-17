@@ -90,6 +90,13 @@ tasks.named('jar', Jar).configure {
     finalizedBy 'reobfJar'
 }
 
+// The server repository SHA-locks the owned release jar. Keep archive metadata
+// stable so two Java 17 builds of the same source produce the same artifact.
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
 publishing {
     publications {
         register('mavenJava', MavenPublication) {

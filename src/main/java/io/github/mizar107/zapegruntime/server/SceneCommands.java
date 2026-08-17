@@ -98,12 +98,18 @@ public final class SceneCommands {
         if (!source.hasPermission(2)) {
             return false;
         }
-        if (source.getEntity() instanceof ServerPlayer) {
-            return true;
+        if (source.getEntity() instanceof ServerPlayer player) {
+            // `execute as <op>` changes the effective entity but retains the
+            // command block/function as the underlying source. Only a command
+            // typed by this exact player is admitted.
+            return source.source == player;
         }
+        // MinecraftServer is also the raw source used by server-derived
+        // function stacks, so local console cannot be admitted without also
+        // admitting that redirect path. Host automation uses authenticated
+        // RCON instead.
         return source.getEntity() == null
-                && (source.source == source.getServer()
-                        || source.source instanceof RconConsoleSource);
+                && source.source instanceof RconConsoleSource;
     }
 
     private static int cancelAll(CommandContext<CommandSourceStack> context) {

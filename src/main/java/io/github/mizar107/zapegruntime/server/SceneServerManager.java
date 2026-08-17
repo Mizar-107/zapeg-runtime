@@ -50,9 +50,9 @@ public final class SceneServerManager {
         if (!target.isAlive() || target.isSpectator()) {
             return failure("target is not eligible", eventId);
         }
-        Optional<ScenePlacement.Placement> placement = ScenePlacement.find(target);
+        Optional<ScenePlacement.Placement> placement = ScenePlacement.find(target, profile);
         if (placement.isEmpty()) {
-            return failure("no safe loaded apparition position", eventId);
+            return failure("no valid loaded scene anchor", eventId);
         }
         if (!rehearsal && !SceneLedgerData.get(server).consume(eventId)) {
             return failure("event id is already consumed", eventId);

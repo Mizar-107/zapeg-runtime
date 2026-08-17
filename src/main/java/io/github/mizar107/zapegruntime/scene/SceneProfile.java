@@ -4,22 +4,42 @@ import java.util.Arrays;
 import java.util.Locale;
 
 public enum SceneProfile {
-    ECHO_01(0, "echo_01", 200, 4.0D);
+    ECHO_01(
+            0, "echo_01", 200, 4.0D, 175, true,
+            ScenePlacementMode.DISTANT_SAFE_GROUND),
+    THRESHOLD_01(
+            1, "threshold_01", 160, 6.0D, 110, true,
+            ScenePlacementMode.DISTANT_SAFE_GROUND),
+    MOTION_ECHO_01(
+            2, "motion_echo_01", 220, 5.0D, 225, true,
+            ScenePlacementMode.CLIENT_MOTION_HISTORY),
+    LIGHT_FAULT_01(
+            3, "light_fault_01", 140, 7.0D, 1_500, false,
+            ScenePlacementMode.LOCAL_CAMERA_FOCUS);
 
     private final int wireId;
     private final String serializedName;
     private final int defaultTtlTicks;
     private final double gazeAngleDegrees;
+    private final int gazeDwellMillis;
+    private final boolean rendersFigure;
+    private final ScenePlacementMode placementMode;
 
     SceneProfile(
             int wireId,
             String serializedName,
             int defaultTtlTicks,
-            double gazeAngleDegrees) {
+            double gazeAngleDegrees,
+            int gazeDwellMillis,
+            boolean rendersFigure,
+            ScenePlacementMode placementMode) {
         this.wireId = wireId;
         this.serializedName = serializedName;
         this.defaultTtlTicks = defaultTtlTicks;
         this.gazeAngleDegrees = gazeAngleDegrees;
+        this.gazeDwellMillis = gazeDwellMillis;
+        this.rendersFigure = rendersFigure;
+        this.placementMode = placementMode;
     }
 
     public int wireId() {
@@ -36,6 +56,22 @@ public enum SceneProfile {
 
     public double gazeAngleDegrees() {
         return gazeAngleDegrees;
+    }
+
+    public int gazeDwellMillis() {
+        return gazeDwellMillis;
+    }
+
+    public boolean rendersFigure() {
+        return rendersFigure;
+    }
+
+    public boolean usesMotionHistory() {
+        return placementMode == ScenePlacementMode.CLIENT_MOTION_HISTORY;
+    }
+
+    public ScenePlacementMode placementMode() {
+        return placementMode;
     }
 
     public static SceneProfile fromWireId(int wireId) {

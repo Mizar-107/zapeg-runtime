@@ -16,6 +16,7 @@ class ModResourceContractTest {
             assertNotNull(stream);
             String metadata = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
             assertTrue(metadata.contains("modId = \"zapeg_runtime\""));
+            assertTrue(metadata.contains("version = \"0.2.0\""));
             assertTrue(metadata.contains("displayTest = \"MATCH_VERSION\""));
             assertTrue(metadata.contains("side = \"BOTH\""));
             assertTrue(!metadata.toLowerCase().contains("heraldor"));

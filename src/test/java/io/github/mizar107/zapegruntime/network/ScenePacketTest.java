@@ -17,20 +17,25 @@ class ScenePacketTest {
 
     @Test
     void spawnPacketRoundTripsEveryField() {
-        SceneDescriptor descriptor = new SceneDescriptor(
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                ResourceLocation.fromNamespaceAndPath("minecraft", "the_nether"),
-                new Vec3(12.25D, 70.0D, -18.75D),
-                122.5F,
-                200,
-                -123456789L,
-                SceneProfile.ECHO_01,
-                false);
-        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
-        SceneSpawnS2C.encode(new SceneSpawnS2C(descriptor), buffer);
-        assertEquals(descriptor, SceneSpawnS2C.decode(buffer).descriptor());
-        buffer.release();
+        for (SceneProfile profile : SceneProfile.values()) {
+            SceneDescriptor descriptor = new SceneDescriptor(
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    ResourceLocation.fromNamespaceAndPath("minecraft", "the_nether"),
+                    new Vec3(12.25D, 70.0D, -18.75D),
+                    122.5F,
+                    profile.defaultTtlTicks(),
+                    -123456789L,
+                    profile,
+                    false);
+            FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+            try {
+                SceneSpawnS2C.encode(new SceneSpawnS2C(descriptor), buffer);
+                assertEquals(descriptor, SceneSpawnS2C.decode(buffer).descriptor());
+            } finally {
+                buffer.release();
+            }
+        }
     }
 
     @Test

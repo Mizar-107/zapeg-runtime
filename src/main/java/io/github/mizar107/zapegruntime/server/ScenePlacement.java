@@ -1,5 +1,7 @@
 package io.github.mizar107.zapegruntime.server;
 
+import io.github.mizar107.zapegruntime.scene.SceneProfile;
+import java.util.Objects;
 import java.util.Optional;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -17,12 +19,27 @@ public final class ScenePlacement {
 
     private static final double[] DISTANCES = {20.0D, 26.0D, 32.0D, 18.0D, 36.0D};
     private static final double[] ANGLES = {28.0D, -28.0D, 38.0D, -38.0D, 20.0D, -20.0D};
+    private static final double CAMERA_FOCUS_DISTANCE = 8.0D;
+    private static final double CAMERA_FOCUS_PADDING = 0.35D;
+    private static final double MIN_CAMERA_FOCUS_DISTANCE = 0.75D;
 
     private ScenePlacement() {}
 
     public record Placement(Vec3 anchor, float yawDegrees) {}
 
-    public static Optional<Placement> find(ServerPlayer player) {
+    public static Optional<Placement> find(
+            ServerPlayer player,
+            SceneProfile profile) {
+        Objects.requireNonNull(player, "player");
+        Objects.requireNonNull(profile, "profile");
+        return switch (profile.placementMode()) {
+            case DISTANT_SAFE_GROUND -> findDistantSafeGround(player);
+            case CLIENT_MOTION_HISTORY -> findClientMotionAnchor(player);
+            case LOCAL_CAMERA_FOCUS -> findLocalCameraFocus(player);
+        };
+    }
+
+    private static Optional<Placement> findDistantSafeGround(ServerPlayer player) {
         ServerLevel level = player.serverLevel();
         Vec3 look = player.getLookAngle();
         double baseAngle = Math.atan2(look.z, look.x);
@@ -71,6 +88,50 @@ public final class ScenePlacement {
             return Optional.of(new Placement(anchor, yaw));
         }
         return Optional.empty();
+    }
+
+    private static Optional<Placement> findClientMotionAnchor(ServerPlayer player) {
+        ServerLevel level = player.serverLevel();
+        Vec3 anchor = player.position();
+        BlockPos anchorPos = BlockPos.containing(anchor);
+        if (!level.hasChunkAt(anchorPos)
+                || !level.getWorldBorder().isWithinBounds(anchorPos)) {
+            return Optional.empty();
+        }
+        return Optional.of(new Placement(anchor, player.getYRot()));
+    }
+
+    private static Optional<Placement> findLocalCameraFocus(ServerPlayer player) {
+        ServerLevel level = player.serverLevel();
+        Vec3 look = player.getLookAngle();
+        if (look.lengthSqr() < 1.0E-12D) {
+            return Optional.empty();
+        }
+        look = look.normalize();
+        Vec3 eye = player.getEyePosition();
+        Vec3 farFocus = eye.add(look.scale(CAMERA_FOCUS_DISTANCE));
+        BlockHitResult hit = level.clip(new ClipContext(
+                eye,
+                farFocus,
+                ClipContext.Block.COLLIDER,
+                ClipContext.Fluid.NONE,
+                player));
+        double distance = CAMERA_FOCUS_DISTANCE;
+        if (hit.getType() != HitResult.Type.MISS) {
+            distance = eye.distanceTo(hit.getLocation()) - CAMERA_FOCUS_PADDING;
+        }
+        if (distance < MIN_CAMERA_FOCUS_DISTANCE) {
+            return Optional.empty();
+        }
+
+        Vec3 anchor = eye.add(look.scale(distance));
+        BlockPos anchorPos = BlockPos.containing(anchor);
+        if (!level.hasChunkAt(anchorPos)
+                || !level.getWorldBorder().isWithinBounds(anchorPos)
+                || !clearLine(level, eye, anchor, player)) {
+            return Optional.empty();
+        }
+        return Optional.of(new Placement(anchor, player.getYRot()));
     }
 
     private static boolean safeFeet(ServerLevel level, BlockPos feet) {
