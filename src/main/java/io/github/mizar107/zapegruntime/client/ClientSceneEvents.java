@@ -78,6 +78,43 @@ public final class ClientSceneEvents {
                     intensity,
                     seed,
                     age);
+            case PERIPHERAL_01 -> drawPeripheralEdge(
+                    graphics,
+                    width,
+                    height,
+                    intensity,
+                    seed);
+            case FOOTSTEPS_01 -> {
+                // Sound-only: the screen must stay clean.
+            }
+        }
+    }
+
+    /** A faint dark wedge hugging one screen edge, seeded per scene. */
+    private static void drawPeripheralEdge(
+            GuiGraphics graphics,
+            int width,
+            int height,
+            float intensity,
+            long seed) {
+        int alpha = Math.round(46.0F * intensity);
+        if (alpha <= 0) {
+            return;
+        }
+        boolean left = (seed & 1L) == 0L;
+        int wedge = Math.max(10, width / 14);
+        int strips = 6;
+        int stripWidth = Math.max(1, wedge / strips);
+        for (int strip = 0; strip < strips; strip++) {
+            int stripAlpha = alpha * (strips - strip) / strips;
+            int x0 = left
+                    ? strip * stripWidth
+                    : width - (strip + 1) * stripWidth;
+            graphics.fill(x0, 0, x0 + stripWidth, height, argb(stripAlpha, 1, 1, 3));
+        }
+        int foot = Math.round(18.0F * intensity);
+        if (foot > 0) {
+            graphics.fill(0, height - height / 8, width, height, argb(foot, 1, 1, 3));
         }
     }
 

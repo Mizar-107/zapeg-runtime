@@ -31,8 +31,11 @@ public final class SceneServerManager {
         }
     }
 
+    /** Hard bound for Director-requested TTL overrides (60 seconds). */
+    public static final int MAX_TTL_TICKS = SceneDescriptor.MAX_TTL_TICKS;
+
     public static DispatchResult rehearse(ServerPlayer target, SceneProfile profile) {
-        return dispatch(target, UUID.randomUUID(), profile, true);
+        return dispatch(target, UUID.randomUUID(), profile, true, 0);
     }
 
     public static DispatchResult dispatch(
@@ -40,6 +43,15 @@ public final class SceneServerManager {
             UUID eventId,
             SceneProfile profile,
             boolean rehearsal) {
+        return dispatch(target, eventId, profile, rehearsal, 0);
+    }
+
+    public static DispatchResult dispatch(
+            ServerPlayer target,
+            UUID eventId,
+            SceneProfile profile,
+            boolean rehearsal,
+            int ttlOverrideTicks) {
         MinecraftServer server = target.getServer();
         if (server == null) {
             return failure("server unavailable", eventId);
@@ -58,7 +70,9 @@ public final class SceneServerManager {
             return failure("event id is already consumed", eventId);
         }
 
-        int ttlTicks = profile.defaultTtlTicks();
+        int ttlTicks = ttlOverrideTicks > 0
+                ? Math.min(ttlOverrideTicks, MAX_TTL_TICKS)
+                : profile.defaultTtlTicks();
         SceneDescriptor descriptor = new SceneDescriptor(
                 eventId,
                 target.getUUID(),

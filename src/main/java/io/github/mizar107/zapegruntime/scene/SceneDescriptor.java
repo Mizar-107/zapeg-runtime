@@ -17,7 +17,10 @@ public record SceneDescriptor(
         boolean rehearsal) {
 
     public static final int MIN_TTL_TICKS = 20;
-    public static final int MAX_TTL_TICKS = 240;
+    // 60 seconds: the Director scales scene TTLs up with campaign phase, so
+    // the bound must head past the phase-scaled profile defaults while still
+    // keeping every scene strictly time-boxed.
+    public static final int MAX_TTL_TICKS = 1200;
     private static final double MAX_HORIZONTAL_COORDINATE = 30_000_000.0D;
     private static final double MAX_VERTICAL_COORDINATE = 2_048.0D;
 

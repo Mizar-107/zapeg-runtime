@@ -18,9 +18,18 @@ class SceneDescriptorTest {
     }
 
     @Test
+    void acceptsDirectorScaledTtlOverride() {
+        SceneDescriptor descriptor =
+                descriptor(SceneDescriptor.MAX_TTL_TICKS, 0.0F, Vec3.ZERO);
+        assertEquals(SceneDescriptor.MAX_TTL_TICKS, descriptor.ttlTicks());
+    }
+
+    @Test
     void rejectsUntrustedWireBounds() {
         assertThrows(IllegalArgumentException.class, () -> descriptor(19, 0.0F, Vec3.ZERO));
-        assertThrows(IllegalArgumentException.class, () -> descriptor(241, 0.0F, Vec3.ZERO));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> descriptor(SceneDescriptor.MAX_TTL_TICKS + 1, 0.0F, Vec3.ZERO));
         assertThrows(IllegalArgumentException.class, () -> descriptor(200, Float.NaN, Vec3.ZERO));
         assertThrows(
                 IllegalArgumentException.class,

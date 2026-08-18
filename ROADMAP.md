@@ -51,9 +51,28 @@ proof that the observer receives/renders nothing, and first/third-person plus
 Embeddium/Oculus/Entity-Culling checks. Resize, pause-screen, logout, death and
 dimension-change cleanup should be exercised during that rehearsal.
 
+## v0.2.1 — escalation slice
+
+Implemented as exact-match protocol `3` (the profile wire-ID set grew, so old
+clients must fail the handshake rather than mis-decode):
+
+- `peripheral_01`: a still silhouette that only reads at the edge of vision —
+  its alpha collapses as the camera look vector nears the anchor, and a direct
+  look resolves it within a blink-long 80 ms dwell. It never tracks the camera.
+- `footsteps_01`: sound-only. Eleven seeded vanilla steps circle closer from
+  the anchor's direction, stop just over three blocks away, and never arrive;
+  the screen stays clean and the scene always ends in silence (TIMEOUT).
+- Multi-beat choreography: every scene now plays an arrival beat, one faint
+  seeded mid-scene beat, and a resolve beat from the vanilla client-local
+  sound allowlist; volume is range-compensated so distant anchors arrive faint
+  instead of silent.
+- Phase-scaled intensity: `/zapegscene trigger` accepts an optional bounded
+  `ttl-ticks` override (1–1200) and the Director scales scene length by
+  campaign phase. The wire format is unchanged; the descriptor bound rose to
+  1200 ticks to match.
+
 Candidates for a later v0.2.x slice remain:
 
-- `peripheral_01`: advances only while outside direct gaze.
 - `sky_mark_01`: an impossible moon, distant eyes or a symbol rendered only in
   the selected client's sky.
 - `false_passage_01`: a render-only doorway or corridor collapses as the player
@@ -97,8 +116,8 @@ Heraldor Director now exposes a persistent, phase-gated OP/RCON bridge:
 /zapeg-lore director resume
 /zapeg-lore director phase start <presence|servants|manifestation>
 /zapeg-lore director phase advance
-/zapeg-lore director event rehearse apparition <echo|threshold|motion-echo|light-fault> <player>
-/zapeg-lore director event trigger apparition <echo|threshold|motion-echo|light-fault> <player>
+/zapeg-lore director event rehearse apparition <echo|threshold|motion-echo|light-fault|peripheral|footsteps> <player>
+/zapeg-lore director event trigger apparition <echo|threshold|motion-echo|light-fault|peripheral|footsteps> <player>
 /zapeg-lore director cancel
 ```
 

@@ -27,6 +27,11 @@ public final class ClientSceneManager {
 
     private static final int MOTION_HISTORY_CAPACITY = 32;
     private static final int MOTION_HISTORY_DELAY_TICKS = 12;
+    private static final int FOOTSTEP_MIN_INTERVAL_TICKS = 6;
+    private static final int FOOTSTEP_INTERVAL_SPREAD = 5;
+    private static final int FOOTSTEP_COUNT = 11;
+    private static final double FOOTSTEP_START_DISTANCE = 13.0D;
+    private static final double FOOTSTEP_END_DISTANCE = 3.25D;
     private static ActiveScene active;
 
     private ClientSceneManager() {}
@@ -46,6 +51,9 @@ public final class ClientSceneManager {
         private int ageTicks;
         private boolean visibleAcknowledged;
         private boolean lightPresentationPending;
+        private boolean midBeatPlayed;
+        private int footstepIndex;
+        private int nextFootstepTick;
         private long gazeStartedNanos;
         private float gazeProgress;
         private MotionSample delayedMotionSample;
@@ -142,9 +150,73 @@ public final class ClientSceneManager {
         if (current.descriptor.profile().usesMotionHistory()) {
             current.recordMotion(minecraft.player.position(), minecraft.player.getYRot());
         }
+        if (current.descriptor.profile() == SceneProfile.FOOTSTEPS_01) {
+            tickFootsteps(current, minecraft);
+        } else {
+            tickMidBeat(current);
+        }
         if (current.ageTicks >= current.descriptor.ttlTicks()) {
             finish(SceneAck.TIMEOUT);
         }
+    }
+
+    /**
+     * Sound-only scene: seeded steps circle from the anchor's direction toward
+     * the target, stop just over three blocks away, and never arrive. The rest
+     * of the TTL is silence; the scene ends as TIMEOUT with nothing to gaze at.
+     */
+    private static void tickFootsteps(ActiveScene current, Minecraft minecraft) {
+        if (current.footstepIndex >= FOOTSTEP_COUNT
+                || current.ageTicks < current.nextFootstepTick) {
+            return;
+        }
+        long seed = current.descriptor.visualSeed();
+        int interval = FOOTSTEP_MIN_INTERVAL_TICKS
+                + (int) Math.floorMod(seed >>> (current.footstepIndex * 3),
+                        FOOTSTEP_INTERVAL_SPREAD);
+        current.nextFootstepTick = current.ageTicks + interval;
+
+        Vec3 playerPosition = minecraft.player.position();
+        Vec3 toward = current.descriptor.anchor().subtract(playerPosition);
+        toward = new Vec3(toward.x, 0.0D, toward.z);
+        double length = toward.length();
+        Vec3 direction = length > 1.0E-4D ? toward.scale(1.0D / length) : new Vec3(1.0D, 0.0D, 1.0D);
+        Vec3 lateral = new Vec3(-direction.z, 0.0D, direction.x);
+        double wobble = (Math.floorMod(seed >>> 9, 5) * 0.18D - 0.36D)
+                * (1.0D - (double) current.footstepIndex / FOOTSTEP_COUNT);
+        double progress = (double) current.footstepIndex / (FOOTSTEP_COUNT - 1);
+        double distance = FOOTSTEP_START_DISTANCE
+                + (FOOTSTEP_END_DISTANCE - FOOTSTEP_START_DISTANCE) * progress;
+        Vec3 step = playerPosition
+                .add(direction.scale(distance))
+                .add(lateral.scale(wobble));
+
+        if (!current.visibleAcknowledged) {
+            current.visibleAcknowledged = true;
+            SceneNetwork.acknowledge(
+                    current.descriptor.eventId(),
+                    current.descriptor.targetId(),
+                    SceneAck.VISIBLE);
+        }
+        SceneSounds.playFootstep(current.descriptor, step, current.footstepIndex);
+        current.footstepIndex++;
+    }
+
+    /** One faint mid-scene beat so scenes read as arrive → linger → resolve. */
+    private static void tickMidBeat(ActiveScene current) {
+        if (current.midBeatPlayed) {
+            return;
+        }
+        double fraction = 0.55D
+                + ((current.descriptor.visualSeed() >>> 21) & 0x7L) / 7.0D * 0.15D;
+        if (current.ageTicks < (int) (current.descriptor.ttlTicks() * fraction)) {
+            return;
+        }
+        current.midBeatPlayed = true;
+        Vec3 position = current.delayedMotionSample != null
+                ? current.delayedMotionSample.anchor()
+                : current.descriptor.anchor();
+        SceneSounds.playMidBeat(current.descriptor, position);
     }
 
     /**
@@ -164,6 +236,11 @@ public final class ClientSceneManager {
         current.lightPresentationPending = false;
         if (lightFault && minecraft.options.hideGui) {
             resetGaze(current);
+            return null;
+        }
+        if (current.descriptor.profile() == SceneProfile.FOOTSTEPS_01) {
+            // Sound-only: nothing to render and no gaze to measure; tick()
+            // owns its lifecycle and its VISIBLE acknowledgement.
             return null;
         }
         if (current.descriptor.profile().rendersFigure() && !ApparitionRenderer.ready()) {
@@ -263,6 +340,9 @@ public final class ClientSceneManager {
         if (current == null) {
             return 0.0F;
         }
+        if (current.descriptor.profile() == SceneProfile.FOOTSTEPS_01) {
+            return 0.0F;
+        }
         if (current.descriptor.profile() == SceneProfile.LIGHT_FAULT_01) {
             return presentLightFault(current, partialTick);
         }
@@ -313,6 +393,8 @@ public final class ClientSceneManager {
             case THRESHOLD_01 -> 31.0D;
             case MOTION_ECHO_01 -> 23.0D;
             case LIGHT_FAULT_01 -> 47.0D;
+            case PERIPHERAL_01 -> 27.0D;
+            case FOOTSTEPS_01 -> 41.0D;
         };
         double pulse = SceneMath.easedPulse(current.ageTicks + partialTick, period);
         double scale = switch (current.descriptor.profile()) {
@@ -320,6 +402,8 @@ public final class ClientSceneManager {
             case THRESHOLD_01 -> current.visibleAcknowledged ? 0.38D : 0.06D;
             case MOTION_ECHO_01 -> current.visibleAcknowledged ? 0.32D : 0.07D;
             case LIGHT_FAULT_01 -> current.visibleAcknowledged ? 0.78D : 0.18D;
+            case PERIPHERAL_01 -> current.visibleAcknowledged ? 0.30D : 0.05D;
+            case FOOTSTEPS_01 -> 0.0D;
         };
         double envelope = SceneMath.lifeEnvelope(
                 current.ageTicks + partialTick,

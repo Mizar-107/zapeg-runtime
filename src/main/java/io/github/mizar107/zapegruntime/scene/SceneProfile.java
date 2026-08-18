@@ -15,7 +15,17 @@ public enum SceneProfile {
             ScenePlacementMode.CLIENT_MOTION_HISTORY),
     LIGHT_FAULT_01(
             3, "light_fault_01", 140, 7.0D, 1_500, false,
-            ScenePlacementMode.LOCAL_CAMERA_FOCUS);
+            ScenePlacementMode.LOCAL_CAMERA_FOCUS),
+    // A silhouette that only reads at the edge of vision: the narrow gaze cone
+    // and blink-length dwell make a direct look resolve it almost instantly.
+    PERIPHERAL_01(
+            4, "peripheral_01", 140, 9.0D, 80, true,
+            ScenePlacementMode.DISTANT_SAFE_GROUND),
+    // Sound-only: footsteps circle closer with no figure to look at, so the
+    // dwell must outlast the TTL and the scene always ends in silence (TIMEOUT).
+    FOOTSTEPS_01(
+            5, "footsteps_01", 160, 360.0D, 60_000, false,
+            ScenePlacementMode.DISTANT_SAFE_GROUND);
 
     private final int wireId;
     private final String serializedName;

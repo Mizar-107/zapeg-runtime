@@ -138,11 +138,75 @@ public final class ApparitionRenderer {
                     renderType,
                     age,
                     envelope);
-            case LIGHT_FAULT_01 -> {
-                // This profile is intentionally screen-space only.
+            case PERIPHERAL_01 -> renderPeripheral(
+                    snapshot,
+                    event,
+                    currentModel,
+                    buffers,
+                    renderType,
+                    age,
+                    envelope);
+            case LIGHT_FAULT_01, FOOTSTEPS_01 -> {
+                // Screen-space only / sound-only profiles render no figure.
             }
         }
         buffers.endBatch(renderType);
+    }
+
+    /**
+     * A silhouette that exists only at the edge of vision: its alpha collapses
+     * as the camera look vector nears the anchor, and the profile's blink-long
+     * gaze dwell then resolves it. It never tracks the camera — it does not
+     * know, or does not care, that it is being watched.
+     */
+    private static void renderPeripheral(
+            ClientSceneManager.RenderSnapshot snapshot,
+            RenderLevelStageEvent event,
+            HumanoidModel<LivingEntity> currentModel,
+            MultiBufferSource.BufferSource buffers,
+            RenderType renderType,
+            double age,
+            float envelope) {
+        Vec3 cameraPosition = event.getCamera().getPosition();
+        Vec3 look = new Vec3(event.getCamera().getLookVector());
+        Vec3 toAnchor = snapshot.anchor().add(0.0D, 1.35D, 0.0D).subtract(cameraPosition);
+        double length = toAnchor.length();
+        if (length < 1.0E-4D) {
+            return;
+        }
+        double cos = Mth.clamp(look.dot(toAnchor.scale(1.0D / length)), -1.0D, 1.0D);
+        double offAxisDegrees = Math.acos(cos) * Mth.RAD_TO_DEG;
+        double gazeCone = snapshot.descriptor().profile().gazeAngleDegrees();
+        float periphery = (float) SceneMath.smoothstep(
+                gazeCone + 1.0D,
+                gazeCone + 26.0D,
+                offAxisDegrees);
+        float alphaScale = envelope
+                * periphery
+                * (1.0F - snapshot.gazeProgress());
+        if (alphaScale <= 0.001F) {
+            return;
+        }
+
+        double phase = (snapshot.descriptor().visualSeed() & 0xFFFFL) * 0.00013D;
+        float sway = (float) Math.sin(age * 0.19D + phase);
+        currentModel.body.xRot = 0.09F + sway * 0.015F;
+        currentModel.head.xRot = 0.14F + (float) Math.sin(age * 0.11D + phase) * 0.02F;
+        currentModel.head.zRot = (float) Math.sin(age * 0.07D + phase) * 0.03F;
+        currentModel.rightArm.xRot = 0.06F;
+        currentModel.leftArm.xRot = 0.06F;
+
+        Vector3f cameraLeft = event.getCamera().getLeftVector();
+        renderPass(currentModel, snapshot, event, buffers, renderType,
+                0.0F, 0.0F, 0.0F,
+                0.80F, 1.10F, 0.80F,
+                0.012F, 0.014F, 0.020F, 0.62F * alphaScale);
+        renderPass(currentModel, snapshot, event, buffers, renderType,
+                cameraLeft.x() * 0.018F,
+                cameraLeft.y() * 0.018F,
+                cameraLeft.z() * 0.018F,
+                0.80F, 1.10F, 0.80F,
+                0.10F, 0.30F, 0.33F, 0.08F * alphaScale);
     }
 
     private static void renderEcho(

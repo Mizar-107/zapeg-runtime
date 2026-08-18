@@ -13,7 +13,10 @@ import net.minecraftforge.network.simple.SimpleChannel;
 
 public final class SceneNetwork {
 
-    public static final String PROTOCOL = "2";
+    // v3 extends the profile id set (peripheral_01, footsteps_01); an old
+    // client would fail closed decoding the unknown wire id, so the channel
+    // version must refuse the mismatch instead.
+    public static final String PROTOCOL = "3";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             ResourceLocation.fromNamespaceAndPath(ZapeGRuntime.MOD_ID, "scenes"),
             () -> PROTOCOL,

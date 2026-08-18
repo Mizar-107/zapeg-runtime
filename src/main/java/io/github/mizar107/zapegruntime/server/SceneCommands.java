@@ -1,5 +1,6 @@
 package io.github.mizar107.zapegruntime.server;
 
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
@@ -40,7 +41,14 @@ public final class SceneCommands {
                                                         java.util.Arrays.stream(SceneProfile.values())
                                                                 .map(SceneProfile::serializedName),
                                                         builder))
-                                                .executes(SceneCommands::trigger)))))
+                                                .executes(context -> trigger(context, 0))
+                                                .then(Commands.argument("ttl_ticks",
+                                                                IntegerArgumentType.integer(1,
+                                                                        SceneServerManager.MAX_TTL_TICKS))
+                                                        .executes(context -> trigger(
+                                                                context,
+                                                                IntegerArgumentType.getInteger(
+                                                                        context, "ttl_ticks"))))))))
                 .then(Commands.literal("cancel-all")
                         .executes(SceneCommands::cancelAll))
                 .then(Commands.literal("status")
@@ -65,7 +73,9 @@ public final class SceneCommands {
         return reply(context.getSource(), result);
     }
 
-    private static int trigger(CommandContext<CommandSourceStack> context)
+    private static int trigger(
+            CommandContext<CommandSourceStack> context,
+            int ttlOverrideTicks)
             throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         CommandSourceStack source = context.getSource();
         ServerPlayer target = EntityArgument.getPlayer(context, "target");
@@ -80,7 +90,8 @@ public final class SceneCommands {
                 target,
                 eventId,
                 profile,
-                false);
+                false,
+                ttlOverrideTicks);
         audit(source, "trigger", target, result);
         return reply(source, result);
     }

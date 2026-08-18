@@ -19,6 +19,8 @@ class ApparitionRendererPolicyTest {
         assertFalse(ApparitionRenderer.usesOwnSilhouette(SceneProfile.THRESHOLD_01));
         assertTrue(ApparitionRenderer.usesOwnSilhouette(SceneProfile.MOTION_ECHO_01));
         assertFalse(ApparitionRenderer.usesOwnSilhouette(SceneProfile.LIGHT_FAULT_01));
+        assertFalse(ApparitionRenderer.usesOwnSilhouette(SceneProfile.PERIPHERAL_01));
+        assertFalse(ApparitionRenderer.usesOwnSilhouette(SceneProfile.FOOTSTEPS_01));
     }
 
     @Test
