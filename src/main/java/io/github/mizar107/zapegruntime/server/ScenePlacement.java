@@ -17,8 +17,17 @@ import net.minecraft.world.phys.Vec3;
 
 public final class ScenePlacement {
 
-    private static final double[] DISTANCES = {20.0D, 26.0D, 32.0D, 18.0D, 36.0D};
-    private static final double[] ANGLES = {28.0D, -28.0D, 38.0D, -38.0D, 20.0D, -20.0D};
+    /**
+     * {angleDegreesOffLook, distance} pairs. Includes side and behind
+     * candidates so a sighting can wait where the target has not looked yet;
+     * the client still gates every frame on frustum and block line of sight.
+     */
+    private static final double[][] CANDIDATE_PLAN = {
+        {28.0D, 20.0D}, {-28.0D, 26.0D}, {38.0D, 32.0D}, {-38.0D, 18.0D},
+        {20.0D, 36.0D}, {-20.0D, 24.0D}, {65.0D, 30.0D}, {-65.0D, 34.0D},
+        {90.0D, 22.0D}, {-90.0D, 28.0D}, {150.0D, 20.0D}, {-150.0D, 26.0D},
+        {180.0D, 24.0D}
+    };
     private static final double CAMERA_FOCUS_DISTANCE = 8.0D;
     private static final double CAMERA_FOCUS_PADDING = 0.35D;
     private static final double MIN_CAMERA_FOCUS_DISTANCE = 0.75D;
@@ -39,16 +48,35 @@ public final class ScenePlacement {
         };
     }
 
+    static double[][] candidatePlan() {
+        double[][] copy = new double[CANDIDATE_PLAN.length][];
+        for (int index = 0; index < CANDIDATE_PLAN.length; index++) {
+            copy[index] = CANDIDATE_PLAN[index].clone();
+        }
+        return copy;
+    }
+
     private static Optional<Placement> findDistantSafeGround(ServerPlayer player) {
+        // Prefer an anchor with a clear block line of sight so the figure can
+        // be noticed at once. Indoors or in dense terrain that requirement
+        // fails for every candidate, so fall back to any safe anchor rather
+        // than refusing the scene outright.
+        Optional<Placement> clear = scanDistantSafeGround(player, true);
+        return clear.isPresent() ? clear : scanDistantSafeGround(player, false);
+    }
+
+    private static Optional<Placement> scanDistantSafeGround(
+            ServerPlayer player,
+            boolean requireClearLine) {
         ServerLevel level = player.serverLevel();
         Vec3 look = player.getLookAngle();
         double baseAngle = Math.atan2(look.z, look.x);
-        int offset = player.getRandom().nextInt(ANGLES.length);
+        int offset = player.getRandom().nextInt(CANDIDATE_PLAN.length);
 
-        for (int index = 0; index < ANGLES.length; index++) {
-            double angleDegrees = ANGLES[(index + offset) % ANGLES.length];
-            double angle = baseAngle + Math.toRadians(angleDegrees);
-            double distance = DISTANCES[(index + offset) % DISTANCES.length];
+        for (int index = 0; index < CANDIDATE_PLAN.length; index++) {
+            double[] candidate = CANDIDATE_PLAN[(index + offset) % CANDIDATE_PLAN.length];
+            double angle = baseAngle + Math.toRadians(candidate[0]);
+            double distance = candidate[1];
             double x = player.getX() + Math.cos(angle) * distance;
             double z = player.getZ() + Math.sin(angle) * distance;
             BlockPos sample = BlockPos.containing(x, player.getY(), z);
@@ -78,7 +106,7 @@ public final class ScenePlacement {
                 continue;
             }
             Vec3 chest = anchor.add(0.0D, 1.35D, 0.0D);
-            if (!clearLine(level, player.getEyePosition(), chest, player)) {
+            if (requireClearLine && !clearLine(level, player.getEyePosition(), chest, player)) {
                 continue;
             }
 

@@ -29,9 +29,10 @@ than arbitrary shaders or asset paths:
 
 - `threshold_01`: renders an asymmetric, threshold-like partial body and
   withdraws when exposed; environment-aware cover sampling is not claimed.
-- `motion_echo_01`: renders a distorted copy at the selected player's past
-  position and heading, about 0.6 seconds late, from a fixed-size transient
-  local history; it bypasses distant safe-ground placement.
+- `motion_echo_01`: renders a distorted copy wearing the selected player's own
+  skin at their past position and heading, about 0.6 seconds late, from a
+  fixed-size transient local history; it bypasses distant safe-ground
+  placement.
 - `light_fault_01`: cool dimming, displaced light bands and a restrained black
   halo using a bounded overlay and short loaded camera-focus anchor, with no
   blocks or world state changed. Hidden or absent GUI frames neither acknowledge

@@ -200,7 +200,9 @@ public final class ClientSceneEvents {
             float intensity,
             long seed,
             double age) {
-        int washAlpha = Math.max(4, Math.min(30, Math.round(30.0F * intensity)));
+        float flicker = 0.85F
+                + 0.15F * (float) Math.sin(age * 3.1D + Math.floorMod(seed, 59L));
+        int washAlpha = Math.max(4, Math.min(30, Math.round(30.0F * intensity * flicker)));
         graphics.fill(0, 0, width, height, argb(washAlpha, 1, 5, 8));
 
         int step = Math.max(1, Math.min(width, height) / 90);
@@ -235,6 +237,16 @@ public final class ClientSceneEvents {
                 Math.min(width, bandX + Math.max(1, width / 180)),
                 height,
                 argb(Math.max(2, washAlpha / 2), 2, 38, 43));
+
+        int counterBandX = Math.floorMod(
+                (int) Math.floor(-age * 0.13D + Math.floorMod(seed, 67L)),
+                Math.max(1, width));
+        graphics.fill(
+                counterBandX,
+                0,
+                Math.min(width, counterBandX + Math.max(1, width / 240)),
+                height,
+                argb(Math.max(2, washAlpha / 3), 3, 30, 36));
     }
 
     private static int argb(int alpha, int red, int green, int blue) {

@@ -19,9 +19,10 @@ Profiles are deliberately distinct and bounded:
 - `echo_01`: elongated black figure, red/cyan separation and HUD-edge faults;
 - `threshold_01`: an asymmetric, threshold-like partial figure that withdraws
   under gaze; it does not claim environment-aware cover placement;
-- `motion_echo_01`: a distorted copy built from about 0.6 seconds of bounded
-  local player-position history; dispatch does not require a distant ground
-  anchor because that history owns the rendered position;
+- `motion_echo_01`: a distorted copy wearing the target's own skin, built from
+  about 0.6 seconds of bounded local player-position history; dispatch does not
+  require a distant ground anchor because that history owns the rendered
+  position;
 - `light_fault_01`: spatially gated cool darkness, light bands and a restrained
   halo keyed to a short loaded camera-focus anchor, with no figure or world
   mutation. It acknowledges visibility and advances gaze only from a presented,
@@ -36,7 +37,11 @@ player and client history is discarded when the scene ends.
 
 Apparition models render only their manually posed base body parts. Player-skin
 outer layers, ears and cloak are disabled so baked overlay transforms cannot
-detach from the silhouette.
+detach from the silhouette. The black-figure profiles bake the classic humanoid
+model layer that matches their texture; `motion_echo_01` bakes the base wide or
+slim player body to match the target's own model. Scene audio is a small
+allowlist of vanilla sound events played client-locally on the target's client
+only — no custom, remote or server-broadcast audio.
 
 The public mod name and IDs stay generic. Campaign names, prose, timing and
 Discord behavior remain server-side in the Heraldor Director.

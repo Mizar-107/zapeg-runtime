@@ -221,6 +221,7 @@ public final class ClientSceneManager {
                     descriptor.eventId(),
                     descriptor.targetId(),
                     SceneAck.VISIBLE);
+            SceneSounds.playArrival(descriptor, anchor);
         }
 
         Vec3 cameraLook = new Vec3(camera.getLookVector());
@@ -285,6 +286,7 @@ public final class ClientSceneManager {
                     current.descriptor.eventId(),
                     current.descriptor.targetId(),
                     SceneAck.VISIBLE);
+            SceneSounds.playArrival(current.descriptor, current.descriptor.anchor());
         }
 
         Camera camera = minecraft.gameRenderer.getMainCamera();
@@ -319,7 +321,12 @@ public final class ClientSceneManager {
             case MOTION_ECHO_01 -> current.visibleAcknowledged ? 0.32D : 0.07D;
             case LIGHT_FAULT_01 -> current.visibleAcknowledged ? 0.78D : 0.18D;
         };
-        return (float) (scale * (0.45D + pulse * 0.55D));
+        double envelope = SceneMath.lifeEnvelope(
+                current.ageTicks + partialTick,
+                current.descriptor.ttlTicks(),
+                9.0D,
+                6.0D);
+        return (float) (scale * (0.45D + pulse * 0.55D) * envelope);
     }
 
     public static SceneProfile activeProfile() {
@@ -374,6 +381,12 @@ public final class ClientSceneManager {
         ActiveScene current = active;
         if (current == null) {
             return;
+        }
+        if (acknowledgement == SceneAck.GAZE) {
+            Vec3 position = current.delayedMotionSample != null
+                    ? current.delayedMotionSample.anchor()
+                    : current.descriptor.anchor();
+            SceneSounds.playResolved(current.descriptor, position);
         }
         current.clearMotion();
         active = null;
