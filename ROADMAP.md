@@ -134,7 +134,7 @@ mis-decode):
   around the anchor; depth testing stays on so foreground terrain occludes
   it honestly.
 
-## v0.3 — manifestation and combat
+## v0.4 — manifestation and combat
 
 Anything that damages, collides or can be attacked becomes server-authoritative:
 
