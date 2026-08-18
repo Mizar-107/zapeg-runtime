@@ -25,6 +25,7 @@ public record SceneSpawnS2C(SceneDescriptor descriptor) {
         buffer.writeLong(scene.visualSeed());
         buffer.writeByte(scene.profile().wireId());
         buffer.writeBoolean(scene.rehearsal());
+        buffer.writeVarInt(scene.stage());
     }
 
     public static SceneSpawnS2C decode(FriendlyByteBuf buffer) {
@@ -37,7 +38,8 @@ public record SceneSpawnS2C(SceneDescriptor descriptor) {
                 buffer.readVarInt(),
                 buffer.readLong(),
                 SceneProfile.fromWireId(buffer.readUnsignedByte()),
-                buffer.readBoolean());
+                buffer.readBoolean(),
+                buffer.readVarInt());
         return new SceneSpawnS2C(descriptor);
     }
 

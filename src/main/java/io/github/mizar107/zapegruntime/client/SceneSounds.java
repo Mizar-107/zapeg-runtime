@@ -36,6 +36,9 @@ final class SceneSounds {
             case FOOTSTEPS_01 -> {
                 // The first footstep is itself the arrival beat.
             }
+            case COLOSSUS_01 -> {
+                // The first ground-shaking footfall is the arrival beat.
+            }
         }
     }
 
@@ -61,6 +64,10 @@ final class SceneSounds {
             case FOOTSTEPS_01 -> {
                 // Footsteps carry their own rhythm; no extra beat.
             }
+            case COLOSSUS_01 -> {
+                // The roar is scheduled by the colossus tick, not the generic
+                // mid-beat, so it only sounds at the nearer stages.
+            }
         }
     }
 
@@ -80,6 +87,10 @@ final class SceneSounds {
             }
             case FOOTSTEPS_01 -> {
                 // Ends in silence (TIMEOUT): the steps simply stop.
+            }
+            case COLOSSUS_01 -> {
+                // Never gaze-resolved: it recedes into the fog, or at the
+                // finale it is simply gone. Nothing answers.
             }
         }
     }
@@ -101,6 +112,52 @@ final class SceneSounds {
     /** A soft, wrong-sounding step while the near-miss figure crosses behind. */
     static void playNearMissStep(SceneDescriptor descriptor, Vec3 position) {
         play(descriptor, position, SoundEvents.SOUL_SOIL_STEP, 0.42F, 0.55F);
+    }
+
+    /**
+     * One colossus footfall: a deep boom felt through the ground. Played at
+     * the target itself — no airborne sound carries three hundred blocks, but
+     * the ground does. Pitch-seeded per scene like every scene sound.
+     */
+    static void playColossusStep(SceneDescriptor descriptor, int stage, int stepIndex) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+        float pitch = 0.34F + stage * 0.02F + (stepIndex % 2) * 0.015F;
+        float volume = 0.70F + stage * 0.05F;
+        play(descriptor, minecraft.player.position(), SoundEvents.RAVAGER_STEP, volume, pitch);
+    }
+
+    /** A distant roar once the figure has fully arrived (nearer stages only). */
+    static void playColossusRoar(SceneDescriptor descriptor, int stage) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+        play(descriptor,
+                minecraft.player.position(),
+                SoundEvents.WARDEN_ROAR,
+                0.80F,
+                0.42F - stage * 0.01F);
+    }
+
+    /** The finale's held watch: a slow heartbeat while it stands there. */
+    static void playColossusHeartbeat(SceneDescriptor descriptor) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+        play(descriptor, minecraft.player.position(), SoundEvents.WARDEN_HEARTBEAT, 0.65F, 0.45F);
+    }
+
+    /** The vanish: one last deep rumble under the exact tick it is gone. */
+    static void playColossusVanish(SceneDescriptor descriptor) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return;
+        }
+        play(descriptor, minecraft.player.position(), SoundEvents.RAVAGER_STEP, 0.85F, 0.26F);
     }
 
     /**

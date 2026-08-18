@@ -5,6 +5,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
+import io.github.mizar107.zapegruntime.scene.ColossusChoreography;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
 import java.util.UUID;
 import net.minecraft.commands.CommandSourceStack;
@@ -26,13 +27,17 @@ public final class SceneCommands {
                 .requires(SceneCommands::operatorOrDirector)
                 .then(Commands.literal("rehearse")
                         .then(Commands.argument("target", EntityArgument.player())
-                                .executes(context -> rehearse(context, SceneProfile.ECHO_01))
+                                .executes(context -> rehearse(context, SceneProfile.ECHO_01, 0))
                                 .then(Commands.argument("profile", StringArgumentType.word())
                                         .suggests((context, builder) -> SharedSuggestionProvider.suggest(
                                                 java.util.Arrays.stream(SceneProfile.values())
                                                         .map(SceneProfile::serializedName),
                                                 builder))
-                                        .executes(SceneCommands::rehearseWithProfile))))
+                                        .executes(SceneCommands::rehearseWithProfile)
+                                        .then(Commands.argument("stage",
+                                                        IntegerArgumentType.integer(0,
+                                                                ColossusChoreography.MAX_STAGE))
+                                                .executes(SceneCommands::rehearseWithStage)))))
                 .then(Commands.literal("trigger")
                         .then(Commands.argument("target", EntityArgument.player())
                                 .then(Commands.argument("event_id", UuidArgument.uuid())
@@ -41,7 +46,35 @@ public final class SceneCommands {
                                                         java.util.Arrays.stream(SceneProfile.values())
                                                                 .map(SceneProfile::serializedName),
                                                         builder))
-                                                .executes(context -> trigger(context, 0, null, null))
+                                                .executes(context -> trigger(context, 0, null, null, 0))
+                                                .then(Commands.literal("stage")
+                                                        .then(Commands.argument("stage",
+                                                                        IntegerArgumentType.integer(0,
+                                                                                ColossusChoreography
+                                                                                        .MAX_STAGE))
+                                                                .executes(context -> trigger(
+                                                                        context,
+                                                                        0,
+                                                                        null,
+                                                                        null,
+                                                                        IntegerArgumentType.getInteger(
+                                                                                context, "stage")))
+                                                                .then(Commands.argument("ttl_ticks",
+                                                                                IntegerArgumentType.integer(1,
+                                                                                        SceneServerManager
+                                                                                                .MAX_TTL_TICKS))
+                                                                        .executes(context -> trigger(
+                                                                                context,
+                                                                                IntegerArgumentType
+                                                                                        .getInteger(
+                                                                                                context,
+                                                                                                "ttl_ticks"),
+                                                                                null,
+                                                                                null,
+                                                                                IntegerArgumentType
+                                                                                        .getInteger(
+                                                                                                context,
+                                                                                                "stage"))))))
                                                 .then(Commands.argument("ttl_ticks",
                                                                 IntegerArgumentType.integer(1,
                                                                         SceneServerManager.MAX_TTL_TICKS))
@@ -50,7 +83,8 @@ public final class SceneCommands {
                                                                 IntegerArgumentType.getInteger(
                                                                         context, "ttl_ticks"),
                                                                 null,
-                                                                null))
+                                                                null,
+                                                                0))
                                                         .then(Commands.argument("hint_x",
                                                                         IntegerArgumentType.integer(
                                                                                 -30_000_000,
@@ -66,7 +100,8 @@ public final class SceneCommands {
                                                                                 (double) IntegerArgumentType
                                                                                         .getInteger(context, "hint_x"),
                                                                                 (double) IntegerArgumentType
-                                                                                        .getInteger(context, "hint_z"))))))))))
+                                                                                        .getInteger(context, "hint_z"),
+                                                                                0)))))))))
                 .then(Commands.literal("cancel-all")
                         .executes(SceneCommands::cancelAll))
                 .then(Commands.literal("status")
@@ -78,15 +113,27 @@ public final class SceneCommands {
         SceneProfile profile = parseProfile(
                 context.getSource(),
                 StringArgumentType.getString(context, "profile"));
-        return profile == null ? 0 : rehearse(context, profile);
+        return profile == null ? 0 : rehearse(context, profile, 0);
+    }
+
+    private static int rehearseWithStage(CommandContext<CommandSourceStack> context)
+            throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        SceneProfile profile = parseProfile(
+                context.getSource(),
+                StringArgumentType.getString(context, "profile"));
+        return profile == null
+                ? 0
+                : rehearse(context, profile, IntegerArgumentType.getInteger(context, "stage"));
     }
 
     private static int rehearse(
             CommandContext<CommandSourceStack> context,
-            SceneProfile profile)
+            SceneProfile profile,
+            int stage)
             throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer target = EntityArgument.getPlayer(context, "target");
-        SceneServerManager.DispatchResult result = SceneServerManager.rehearse(target, profile);
+        SceneServerManager.DispatchResult result =
+                SceneServerManager.rehearse(target, profile, stage);
         audit(context.getSource(), "rehearse", target, result);
         return reply(context.getSource(), result);
     }
@@ -95,7 +142,8 @@ public final class SceneCommands {
             CommandContext<CommandSourceStack> context,
             int ttlOverrideTicks,
             Double hintX,
-            Double hintZ)
+            Double hintZ,
+            int stage)
             throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         CommandSourceStack source = context.getSource();
         ServerPlayer target = EntityArgument.getPlayer(context, "target");
@@ -113,7 +161,8 @@ public final class SceneCommands {
                 false,
                 ttlOverrideTicks,
                 hintX,
-                hintZ);
+                hintZ,
+                stage);
         audit(source, "trigger", target, result);
         return reply(source, result);
     }

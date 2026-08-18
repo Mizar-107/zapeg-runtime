@@ -13,11 +13,10 @@ import net.minecraftforge.network.simple.SimpleChannel;
 
 public final class SceneNetwork {
 
-    // v4 extends the profile id set again (sky_mark_01, false_passage_01,
-    // chroma_break_01, near_miss_01, whisper_steps_01); an old client would
-    // fail closed decoding the unknown wire id, so the channel version must
-    // refuse the mismatch instead.
-    public static final String PROTOCOL = "4";
+    // v5 adds the bounded escalation stage to the spawn descriptor (used by
+    // colossus_01, wire id 11); a v4 client would misread the longer payload,
+    // so the channel version must refuse the mismatch instead.
+    public static final String PROTOCOL = "5";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             ResourceLocation.fromNamespaceAndPath(ZapeGRuntime.MOD_ID, "scenes"),
             () -> PROTOCOL,

@@ -45,6 +45,8 @@ public final class ClientSceneEvents {
             SkyMarkRenderer.render(snapshot, event);
         } else if (profile == SceneProfile.FALSE_PASSAGE_01) {
             FalsePassageRenderer.render(snapshot, event);
+        } else if (profile == SceneProfile.COLOSSUS_01) {
+            ColossusRenderer.render(snapshot, event);
         } else {
             ApparitionRenderer.render(snapshot, event);
         }
@@ -147,8 +149,9 @@ public final class ClientSceneEvents {
             case SKY_MARK_01 -> drawSkyMarkWeight(graphics, width, height, intensity);
             case FALSE_PASSAGE_01 -> drawPassageSeams(graphics, width, height, intensity, seed, age);
             case CHROMA_BREAK_01 -> drawChromaBreak(graphics, width, height, intensity, seed, age);
-            case NEAR_MISS_01, WHISPER_STEPS_01, FOOTSTEPS_01 -> {
-                // Sound-only / crossing scenes: the screen must stay clean.
+            case NEAR_MISS_01, WHISPER_STEPS_01, FOOTSTEPS_01, COLOSSUS_01 -> {
+                // Sound-only / crossing / colossus scenes: the screen must
+                // stay clean; the ground shake carries the colossus.
             }
         }
     }

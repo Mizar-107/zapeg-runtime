@@ -14,7 +14,8 @@ public record SceneDescriptor(
         int ttlTicks,
         long visualSeed,
         SceneProfile profile,
-        boolean rehearsal) {
+        boolean rehearsal,
+        int stage) {
 
     public static final int MIN_TTL_TICKS = 20;
     // 60 seconds: the Director scales scene TTLs up with campaign phase, so
@@ -42,6 +43,17 @@ public record SceneDescriptor(
                 || !finiteBounded(anchor.z, MAX_HORIZONTAL_COORDINATE)
                 || !finiteBounded(anchor.y, MAX_VERTICAL_COORDINATE)) {
             throw new IllegalArgumentException("Scene anchor is outside safe bounds");
+        }
+        // The escalation stage is a bounded scene argument: only the colossus
+        // reads it, and every other profile must carry the zero default so a
+        // forged stage can never smuggle meaning into an unrelated scene.
+        if (stage < 0 || stage > ColossusChoreography.MAX_STAGE) {
+            throw new IllegalArgumentException(
+                    "Scene stage must be between 0 and " + ColossusChoreography.MAX_STAGE);
+        }
+        if (stage != 0 && profile != SceneProfile.COLOSSUS_01) {
+            throw new IllegalArgumentException(
+                    "Scene stage is only meaningful for colossus_01");
         }
     }
 

@@ -53,7 +53,15 @@ public enum SceneProfile {
     // seconds delayed from where they used to be. Never gaze-resolved.
     WHISPER_STEPS_01(
             10, "whisper_steps_01", 180, 360.0D, 60_000, false,
-            ScenePlacementMode.CLIENT_MOTION_HISTORY, 0, 1, 0);
+            ScenePlacementMode.CLIENT_MOTION_HISTORY, 0, 1, 0),
+    // The far colossus: a ~100-block silhouette on the horizon, escalated one
+    // stage per live Director trigger (the wire stage selects the distance).
+    // Render-only — no entity, hitbox or loot — and never gaze-resolved: it
+    // watches, the ground answers its footfalls, and the finale is simply
+    // gone. The unease tier selects the heavy footfall-shake camera path.
+    COLOSSUS_01(
+            11, "colossus_01", 320, 360.0D, 60_000, false,
+            ScenePlacementMode.HORIZON, 40, 3, 0);
 
     /**
      * Length of the single final beat that closes an encore, in ticks. The

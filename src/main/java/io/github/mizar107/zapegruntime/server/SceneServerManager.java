@@ -4,6 +4,7 @@ import io.github.mizar107.zapegruntime.ZapeGRuntime;
 import io.github.mizar107.zapegruntime.network.SceneAckC2S;
 import io.github.mizar107.zapegruntime.network.SceneNetwork;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
+import io.github.mizar107.zapegruntime.scene.ColossusChoreography;
 import io.github.mizar107.zapegruntime.scene.SceneAck;
 import io.github.mizar107.zapegruntime.scene.SceneDescriptor;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
@@ -35,7 +36,12 @@ public final class SceneServerManager {
     public static final int MAX_TTL_TICKS = SceneDescriptor.MAX_TTL_TICKS;
 
     public static DispatchResult rehearse(ServerPlayer target, SceneProfile profile) {
-        return dispatch(target, UUID.randomUUID(), profile, true, 0);
+        return rehearse(target, profile, 0);
+    }
+
+    public static DispatchResult rehearse(
+            ServerPlayer target, SceneProfile profile, int stage) {
+        return dispatch(target, UUID.randomUUID(), profile, true, 0, null, null, stage);
     }
 
     public static DispatchResult dispatch(
@@ -55,12 +61,6 @@ public final class SceneServerManager {
         return dispatch(target, eventId, profile, rehearsal, ttlOverrideTicks, null, null);
     }
 
-    /**
-     * @param ttlOverrideTicks Director-computed TTL; non-positive falls back
-     *     to the profile default, and every value is clamped to the wire bound
-     * @param hintX optional Director stalking-memory anchor bias, ignored when
-     *     the hint is missing, non-finite or unreasonably far from the target
-     */
     public static DispatchResult dispatch(
             ServerPlayer target,
             UUID eventId,
@@ -69,9 +69,33 @@ public final class SceneServerManager {
             int ttlOverrideTicks,
             Double hintX,
             Double hintZ) {
+        return dispatch(target, eventId, profile, rehearsal, ttlOverrideTicks, hintX, hintZ, 0);
+    }
+
+    /**
+     * @param ttlOverrideTicks Director-computed TTL; non-positive falls back
+     *     to the profile default, and every value is clamped to the wire bound
+     * @param hintX optional Director stalking-memory anchor bias, ignored when
+     *     the hint is missing, non-finite or unreasonably far from the target
+     * @param stage bounded escalation stage; only colossus_01 may carry a
+     *     non-zero stage, anything else fails closed
+     */
+    public static DispatchResult dispatch(
+            ServerPlayer target,
+            UUID eventId,
+            SceneProfile profile,
+            boolean rehearsal,
+            int ttlOverrideTicks,
+            Double hintX,
+            Double hintZ,
+            int stage) {
         MinecraftServer server = target.getServer();
         if (server == null) {
             return failure("server unavailable", eventId);
+        }
+        int boundedStage = ColossusChoreography.clampStage(stage);
+        if (boundedStage != 0 && profile != SceneProfile.COLOSSUS_01) {
+            return failure("stage is only meaningful for colossus_01", eventId);
         }
         if (active != null) {
             return failure("another scene is active", eventId);
@@ -80,7 +104,7 @@ public final class SceneServerManager {
             return failure("target is not eligible", eventId);
         }
         Optional<ScenePlacement.Placement> placement =
-                ScenePlacement.find(target, profile, hintX, hintZ);
+                ScenePlacement.find(target, profile, hintX, hintZ, boundedStage);
         if (placement.isEmpty()) {
             return failure("no valid loaded scene anchor", eventId);
         }
@@ -100,7 +124,8 @@ public final class SceneServerManager {
                 ttlTicks,
                 target.getRandom().nextLong(),
                 profile,
-                rehearsal);
+                rehearsal,
+                boundedStage);
         // The slot stays occupied for the body TTL plus the full encore, so a
         // false all-clear can never overlap a second scene even if the
         // client's held terminal acknowledgement never arrives.

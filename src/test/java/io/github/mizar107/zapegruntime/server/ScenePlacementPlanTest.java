@@ -63,6 +63,27 @@ class ScenePlacementPlanTest {
     }
 
     @Test
+    void horizonPlacementSitsAtTheStageDistanceFacingTheTarget() {
+        for (double azimuth = 0.0D; azimuth < 360.0D; azimuth += 27.0D) {
+            ScenePlacement.Placement placement =
+                    ScenePlacement.horizonPlacement(100.0D, 64.0D, -40.0D, azimuth, 220.0D);
+            double dx = placement.anchor().x - 100.0D;
+            double dz = placement.anchor().z - (-40.0D);
+            assertEquals(220.0D, Math.hypot(dx, dz), 1.0E-6D);
+            // Feet pinned to the target's own height: the fog hides the
+            // implied ground line, and no chunk is ever touched.
+            assertEquals(64.0D, placement.anchor().y);
+            // The figure faces back toward the target: with look =
+            // (-sin yaw, cos yaw), the facing vector must point at the player.
+            double yawRadians = Math.toRadians(placement.yawDegrees());
+            double facingX = -Math.sin(yawRadians);
+            double facingZ = Math.cos(yawRadians);
+            double dot = facingX * (-dx / 220.0D) + facingZ * (-dz / 220.0D);
+            assertTrue(dot > 0.9999D, "horizon figure must face the target");
+        }
+    }
+
+    @Test
     void hintOrderIsAPermutationForAnyLookDirection() {
         for (double baseAngle = -Math.PI; baseAngle < Math.PI; baseAngle += 0.37D) {
             int[] order = ScenePlacement.hintOrder(baseAngle, 10.0D, -5.0D, 12.0D, 3.0D);

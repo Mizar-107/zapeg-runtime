@@ -18,6 +18,7 @@ class ScenePacketTest {
     @Test
     void spawnPacketRoundTripsEveryField() {
         for (SceneProfile profile : SceneProfile.values()) {
+            int stage = profile == SceneProfile.COLOSSUS_01 ? 3 : 0;
             SceneDescriptor descriptor = new SceneDescriptor(
                     UUID.randomUUID(),
                     UUID.randomUUID(),
@@ -27,7 +28,8 @@ class ScenePacketTest {
                     profile.defaultTtlTicks(),
                     -123456789L,
                     profile,
-                    false);
+                    false,
+                    stage);
             FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
             try {
                 SceneSpawnS2C.encode(new SceneSpawnS2C(descriptor), buffer);

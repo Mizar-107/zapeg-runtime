@@ -32,8 +32,8 @@ class SceneProtocolTest {
     }
 
     @Test
-    void versionFourProfileIdsRemainExplicitAndBounded() {
-        assertEquals("4", SceneNetwork.PROTOCOL);
+    void versionFiveProfileIdsRemainExplicitAndBounded() {
+        assertEquals("5", SceneNetwork.PROTOCOL);
         assertEquals(0, SceneProfile.ECHO_01.wireId());
         assertEquals(1, SceneProfile.THRESHOLD_01.wireId());
         assertEquals(2, SceneProfile.MOTION_ECHO_01.wireId());
@@ -45,6 +45,7 @@ class SceneProtocolTest {
         assertEquals(8, SceneProfile.CHROMA_BREAK_01.wireId());
         assertEquals(9, SceneProfile.NEAR_MISS_01.wireId());
         assertEquals(10, SceneProfile.WHISPER_STEPS_01.wireId());
+        assertEquals(11, SceneProfile.COLOSSUS_01.wireId());
 
         assertEquals(
                 ScenePlacementMode.DISTANT_SAFE_GROUND,
@@ -79,6 +80,9 @@ class SceneProtocolTest {
         assertEquals(
                 ScenePlacementMode.CLIENT_MOTION_HISTORY,
                 SceneProfile.WHISPER_STEPS_01.placementMode());
+        assertEquals(
+                ScenePlacementMode.HORIZON,
+                SceneProfile.COLOSSUS_01.placementMode());
 
         assertTrue(SceneProfile.ECHO_01.rendersFigure());
         assertTrue(SceneProfile.THRESHOLD_01.rendersFigure());
@@ -91,6 +95,8 @@ class SceneProtocolTest {
         assertFalse(SceneProfile.CHROMA_BREAK_01.rendersFigure());
         assertTrue(SceneProfile.NEAR_MISS_01.rendersFigure());
         assertFalse(SceneProfile.WHISPER_STEPS_01.rendersFigure());
+        // The colossus has its own silhouette renderer, not the humanoid path.
+        assertFalse(SceneProfile.COLOSSUS_01.rendersFigure());
         assertTrue(SceneProfile.MOTION_ECHO_01.usesMotionHistory());
         assertFalse(SceneProfile.ECHO_01.usesMotionHistory());
         assertFalse(SceneProfile.FOOTSTEPS_01.usesMotionHistory());
@@ -171,6 +177,28 @@ class SceneProtocolTest {
                         >= SceneProfile.FALSE_PASSAGE_01.defaultTtlTicks());
         // The false all-clear: the folded doorway gets one last beat later.
         assertTrue(SceneProfile.FALSE_PASSAGE_01.encoreDelayTicks() >= 100);
+    }
+
+    @Test
+    void colossusIsNeverGazeResolvedAndHasNoEncore() {
+        // The colossus is witnessed, never studied: no look direction counts
+        // as gazing, the dwell outlasts the TTL, and the scene ends as
+        // TIMEOUT (or a cleanup cancel) with no false all-clear after it.
+        assertTrue(SceneProfile.COLOSSUS_01.gazeAngleDegrees() >= 360.0D);
+        assertTrue(
+                SceneProfile.COLOSSUS_01.gazeDwellMillis() / 50
+                        >= SceneProfile.COLOSSUS_01.defaultTtlTicks());
+        assertEquals(0, SceneProfile.COLOSSUS_01.encoreDelayTicks());
+        // The heavy camera path is selected by the strongest unease tier.
+        assertEquals(CameraUnease.MAX_LEVEL, SceneProfile.COLOSSUS_01.uneaseLevel());
+        // The body must outlast the full finale timeline: last footfall, the
+        // held watch, and the vanish, with room to settle afterwards.
+        int finaleVanish = ColossusChoreography.vanishTick(ColossusChoreography.MAX_STAGE);
+        assertTrue(finaleVanish > 0);
+        assertTrue(
+                SceneProfile.COLOSSUS_01.defaultTtlTicks()
+                                - SceneProfile.COLOSSUS_01.preludeTicks()
+                        > finaleVanish);
     }
 
     @Test

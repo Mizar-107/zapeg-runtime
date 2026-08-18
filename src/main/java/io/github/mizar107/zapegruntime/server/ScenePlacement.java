@@ -1,5 +1,6 @@
 package io.github.mizar107.zapegruntime.server;
 
+import io.github.mizar107.zapegruntime.scene.ColossusChoreography;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
 import java.util.Objects;
 import java.util.Optional;
@@ -44,7 +45,7 @@ public final class ScenePlacement {
     public static Optional<Placement> find(
             ServerPlayer player,
             SceneProfile profile) {
-        return find(player, profile, null, null);
+        return find(player, profile, null, null, 0);
     }
 
     public static Optional<Placement> find(
@@ -52,6 +53,15 @@ public final class ScenePlacement {
             SceneProfile profile,
             Double hintX,
             Double hintZ) {
+        return find(player, profile, hintX, hintZ, 0);
+    }
+
+    public static Optional<Placement> find(
+            ServerPlayer player,
+            SceneProfile profile,
+            Double hintX,
+            Double hintZ,
+            int stage) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(profile, "profile");
         Vec3 hint = sanitizeHint(player, hintX, hintZ);
@@ -60,7 +70,40 @@ public final class ScenePlacement {
             case CLIENT_MOTION_HISTORY -> findClientMotionAnchor(player);
             case LOCAL_CAMERA_FOCUS -> findLocalCameraFocus(player);
             case PLAYER_RELATIVE -> findClientMotionAnchor(player);
+            case HORIZON -> findHorizon(player, stage);
         };
+    }
+
+    /**
+     * The colossus stands far beyond loaded chunks, so there is no ground to
+     * scan: a seeded azimuth at the stage's distance, feet pinned to the
+     * target's own height. Fog swallows the implied ground line.
+     */
+    private static Optional<Placement> findHorizon(ServerPlayer player, int stage) {
+        double azimuth = player.getRandom().nextDouble() * 360.0D;
+        return Optional.of(horizonPlacement(
+                player.getX(),
+                player.getY(),
+                player.getZ(),
+                azimuth,
+                ColossusChoreography.stageDistance(stage)));
+    }
+
+    /** Pure so the horizon anchor contract is unit-testable without a level. */
+    static Placement horizonPlacement(
+            double playerX,
+            double playerY,
+            double playerZ,
+            double azimuthDegrees,
+            double distance) {
+        double radians = Math.toRadians(azimuthDegrees);
+        double x = playerX + Math.cos(radians) * distance;
+        double z = playerZ + Math.sin(radians) * distance;
+        // Face the target: same yaw convention as findDistantSafeGround.
+        float yaw = (float) (Math.atan2(playerZ - z, playerX - x)
+                        * 180.0D / Math.PI)
+                - 90.0F;
+        return new Placement(new Vec3(x, playerY, z), yaw);
     }
 
     private static Vec3 sanitizeHint(ServerPlayer player, Double hintX, Double hintZ) {

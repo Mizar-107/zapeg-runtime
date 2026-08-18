@@ -3,6 +3,7 @@ package io.github.mizar107.zapegruntime.client;
 import io.github.mizar107.zapegruntime.network.SceneNetwork;
 import io.github.mizar107.zapegruntime.scene.CameraUnease;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
+import io.github.mizar107.zapegruntime.scene.ColossusChoreography;
 import io.github.mizar107.zapegruntime.scene.MotionHistory;
 import io.github.mizar107.zapegruntime.scene.PresentedGazeTracker;
 import io.github.mizar107.zapegruntime.scene.SceneAck;
@@ -97,6 +98,10 @@ public final class ClientSceneManager {
         private int nextWhisperTick;
         private int nearStepTick;
         private int collapseTicks;
+        private int colossusStepIndex;
+        private int lastColossusStepTick = -1;
+        private int nextColossusHeartbeatTick;
+        private boolean colossusVanishRumbled;
         private long gazeStartedNanos;
         private float gazeProgress;
         private MotionSample delayedMotionSample;
@@ -215,6 +220,7 @@ public final class ClientSceneManager {
                     case FOOTSTEPS_01 -> tickFootsteps(current, minecraft);
                     case WHISPER_STEPS_01 -> tickWhisperSteps(current, minecraft);
                     case NEAR_MISS_01 -> tickNearMiss(current, minecraft);
+                    case COLOSSUS_01 -> tickColossus(current, minecraft);
                     case FALSE_PASSAGE_01 -> {
                         tickFalsePassage(current, minecraft);
                         tickMidBeat(current);
@@ -290,6 +296,49 @@ public final class ClientSceneManager {
         // first step is the VISIBLE acknowledgement.
         markVisible(current);
         SceneSounds.playNearMissStep(current.descriptor, figure);
+    }
+
+    /**
+     * The colossus: slow footfalls that shake the ground, one distant roar at
+     * the nearer stages, and at the finale a held watch with a heartbeat —
+     * then it is simply gone. The figure itself is render-only; this method
+     * owns only the sound and the shake-pulse timing.
+     */
+    private static void tickColossus(ActiveScene current, Minecraft minecraft) {
+        SceneDescriptor descriptor = current.descriptor;
+        int stage = descriptor.stage();
+        int bodyAge = current.ageTicks - descriptor.profile().preludeTicks();
+        int steps = ColossusChoreography.stepsForStage(stage);
+        if (current.colossusStepIndex < steps
+                && bodyAge >= ColossusChoreography.stepTick(current.colossusStepIndex)) {
+            markVisible(current);
+            current.lastColossusStepTick = current.ageTicks;
+            SceneSounds.playColossusStep(descriptor, stage, current.colossusStepIndex);
+            current.colossusStepIndex++;
+        }
+        // One distant roar once the figure has fully arrived (near stages).
+        if (!current.midBeatPlayed
+                && stage >= 2
+                && bodyAge >= (int) (bodyTicks(current) * 0.55D)) {
+            current.midBeatPlayed = true;
+            SceneSounds.playColossusRoar(descriptor, stage);
+        }
+        int vanishTick = ColossusChoreography.vanishTick(stage);
+        if (vanishTick >= 0) {
+            int lastStepTick = ColossusChoreography.stepTick(steps - 1);
+            if (bodyAge >= lastStepTick + 12
+                    && bodyAge < vanishTick
+                    && current.ageTicks >= current.nextColossusHeartbeatTick) {
+                current.nextColossusHeartbeatTick = current.ageTicks + 26;
+                SceneSounds.playColossusHeartbeat(descriptor);
+            }
+            if (!current.colossusVanishRumbled && bodyAge >= vanishTick) {
+                // One last rumble under the exact tick the figure is gone.
+                current.colossusVanishRumbled = true;
+                current.lastColossusStepTick = current.ageTicks;
+                SceneSounds.playColossusVanish(descriptor);
+            }
+        }
     }
 
     /** The doorway folds only once the target commits to approaching it. */
@@ -451,6 +500,9 @@ public final class ClientSceneManager {
         }
         if (current.descriptor.profile() == SceneProfile.NEAR_MISS_01) {
             return observeNearMiss(current, event, minecraft);
+        }
+        if (current.descriptor.profile() == SceneProfile.COLOSSUS_01) {
+            return observeColossus(current, event);
         }
         if (current.descriptor.profile().rendersFigure() && !ApparitionRenderer.ready()) {
             return null;
@@ -636,6 +688,61 @@ public final class ClientSceneManager {
     }
 
     /**
+     * The colossus stands far beyond loaded chunks, so the usual block ray is
+     * meaningless: depth testing lets real terrain occlude the silhouette,
+     * and out past the loaded world there is nothing to occlude it — it is
+     * the horizon. The frustum test spans the whole figure, not just the
+     * anchor, because a 100-block body is visible long before its feet are.
+     * Never gaze-resolved: it is witnessed, never studied.
+     */
+    private static RenderSnapshot observeColossus(
+            ActiveScene current, RenderLevelStageEvent event) {
+        SceneDescriptor descriptor = current.descriptor;
+        int stage = descriptor.stage();
+        double bodyAge = current.ageTicks
+                + event.getPartialTick()
+                - descriptor.profile().preludeTicks();
+        int vanishTick = ColossusChoreography.vanishTick(stage);
+        if (vanishTick >= 0 && bodyAge >= vanishTick) {
+            return null;
+        }
+        Vec3 anchor = colossusAnchor(descriptor, bodyAge);
+        double halfWidth = 24.0D;
+        AABB bounds = new AABB(
+                anchor.x - halfWidth,
+                anchor.y - 4.0D,
+                anchor.z - halfWidth,
+                anchor.x + halfWidth,
+                anchor.y + ColossusChoreography.HEIGHT_BLOCKS + 8.0D,
+                anchor.z + halfWidth);
+        if (!event.getFrustum().isVisible(bounds)) {
+            return null;
+        }
+        if (!current.visibleAcknowledged) {
+            markVisible(current);
+            SceneSounds.playArrival(descriptor, anchor);
+        }
+        return new RenderSnapshot(descriptor, anchor, descriptor.yawDegrees(), 0.0F, 0.0F);
+    }
+
+    /**
+     * The wire anchor plus the bounded approach the elapsed footfalls have
+     * walked, along the facing the server placed (toward the target).
+     */
+    private static Vec3 colossusAnchor(SceneDescriptor descriptor, double bodyAge) {
+        int elapsed = ColossusChoreography.elapsedSteps(descriptor.stage(), bodyAge);
+        double advance = ColossusChoreography.advanceBlocks(descriptor.stage(), elapsed);
+        if (advance <= 0.0D) {
+            return descriptor.anchor();
+        }
+        double yawRadians = Math.toRadians(descriptor.yawDegrees());
+        return descriptor.anchor().add(
+                -Math.sin(yawRadians) * advance,
+                0.0D,
+                Math.cos(yawRadians) * advance);
+    }
+
+    /**
      * The near-miss figure crosses just behind the target's current heading.
      * While the target looks forward it never enters the view; a fast glance
      * dwell resolves it the moment it is actually looked at.
@@ -723,9 +830,11 @@ public final class ClientSceneManager {
         }
         if (current.descriptor.profile() == SceneProfile.FOOTSTEPS_01
                 || current.descriptor.profile() == SceneProfile.WHISPER_STEPS_01
-                || current.descriptor.profile() == SceneProfile.NEAR_MISS_01) {
-            // Sound-only and crossing scenes keep a clean screen; their
-            // unease is audio and silhouette, never an overlay.
+                || current.descriptor.profile() == SceneProfile.NEAR_MISS_01
+                || current.descriptor.profile() == SceneProfile.COLOSSUS_01) {
+            // Sound-only, crossing and colossus scenes keep a clean screen;
+            // their unease is audio, silhouette and the ground itself, never
+            // an overlay.
             return 0.0F;
         }
         if (current.descriptor.profile() == SceneProfile.LIGHT_FAULT_01) {
@@ -784,6 +893,7 @@ public final class ClientSceneManager {
             case CHROMA_BREAK_01 -> 45.0D;
             case NEAR_MISS_01 -> 41.0D;
             case WHISPER_STEPS_01 -> 41.0D;
+            case COLOSSUS_01 -> 53.0D;
         };
         double pulse = SceneMath.easedPulse(bodyAge(current, partialTick), period);
         double scale = switch (current.descriptor.profile()) {
@@ -798,6 +908,7 @@ public final class ClientSceneManager {
             case CHROMA_BREAK_01 -> 0.85D;
             case NEAR_MISS_01 -> 0.0D;
             case WHISPER_STEPS_01 -> 0.0D;
+            case COLOSSUS_01 -> 0.0D;
         };
         double envelope = SceneMath.lifeEnvelope(
                 bodyAge(current, partialTick),
@@ -865,6 +976,26 @@ public final class ClientSceneManager {
         ActiveScene current = active;
         if (current == null) {
             return new float[3];
+        }
+        if (current.descriptor.profile() == SceneProfile.COLOSSUS_01) {
+            // The heavy path: ground sway plus one deep pulse per footfall,
+            // hard-capped by CameraUnease and decaying to zero with the scene
+            // envelope, so it never fights the player's control for long.
+            float heavyIntensity = switch (current.phase()) {
+                case PRELUDE -> (float) (0.30D * preludeDim(current, partialTick));
+                case BODY -> (float) SceneMath.lifeEnvelope(
+                        bodyAge(current, partialTick), bodyTicks(current), 12.0D, 10.0D);
+                case ENCORE -> (float) (0.50D * encoreBeatEnvelope(current, partialTick));
+            };
+            int sinceStep = current.lastColossusStepTick >= 0
+                    ? current.ageTicks - current.lastColossusStepTick
+                    : -1;
+            return CameraUnease.colossusPerturbation(
+                    current.descriptor.stage(),
+                    bodyAge(current, partialTick),
+                    current.descriptor.visualSeed(),
+                    heavyIntensity,
+                    sinceStep);
         }
         int level = current.descriptor.profile().uneaseLevel();
         float intensity = switch (current.phase()) {
