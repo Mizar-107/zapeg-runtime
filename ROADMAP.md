@@ -71,19 +71,42 @@ clients must fail the handshake rather than mis-decode):
   campaign phase. The wire format is unchanged; the descriptor bound rose to
   1200 ticks to match.
 
-Candidates for a later v0.2.x slice remain:
+## v0.3 — horror slice
 
-- `sky_mark_01`: an impossible moon, distant eyes or a symbol rendered only in
-  the selected client's sky.
-- `false_passage_01`: a render-only doorway or corridor collapses as the player
-  approaches.
-- `chroma_break_01`: bounded half-resolution RGB split and scanline
-  displacement.
+Implemented as exact-match protocol `4` (the profile wire-ID set grew again, so
+old clients must fail the handshake rather than mis-decode):
+
+- `sky_mark_01`: an impossible pale moon or a pair of distant eyes rendered
+  only in the selected client's sky at a seeded bearing, clamped inside the
+  far plane. It breathes slowly, never tracks the camera, and resolves by
+  gaze.
+- `false_passage_01`: a render-only doorway with a recessed breathing interior
+  on distant safe ground. It tears and collapses as the target approaches;
+  approach resolves it, gaze never does. It is the first profile with an
+  encore: one final beat about thirty seconds after the apparent end.
+- `chroma_break_01`: a screen-space corrupted-recording fault — bounded
+  RGB-split fringe and slow scanline displacement as a GUI overlay.
+  Photosensitivity-safe by construction: capped intensity, slow sine pulse, no
+  rapid full-screen flashing.
+- `near_miss_01`: a figure crosses just behind the target using the local
+  motion history, never entering the crosshair; it resolves on its own.
+- `whisper_steps_01`: sound-only. The target's own earlier footsteps replay
+  from behind at roughly a ten-second delay; the screen stays clean and the
+  scene always ends in silence.
+- Scene phasing: every scene opens with a client-local ambience-dip prelude
+  (cave-sound swell plus a capped fog/brightness dip through the fog viewport
+  event, designed to yield to shader packs), and allowlisted profiles may
+  close with a single bounded encore beat.
+- Camera-unease layer: sub-degree yaw/pitch jitter, rare brief shake pulses
+  and a slow micro-roll while a scene is active, all hard-capped and decaying
+  to zero at scene end. Unease, never motion sickness.
+- Anchor hints: ground-anchored profiles accept an optional coarse hint so the
+  Director can place scenes near places the target actually visits.
 
 Per-target concurrency with a small global cap, authored multi-scene sequences,
 intensity/photosensitivity-safe client settings and optional post-processing
-also remain v0.2.x work. Sequences will carry only profile IDs, bounded
-durations and seeds.
+remain v0.3.x work. Sequences will carry only profile IDs, bounded durations
+and seeds.
 
 ## v0.3 — manifestation and combat
 
@@ -116,8 +139,8 @@ Heraldor Director now exposes a persistent, phase-gated OP/RCON bridge:
 /zapeg-lore director resume
 /zapeg-lore director phase start <presence|servants|manifestation>
 /zapeg-lore director phase advance
-/zapeg-lore director event rehearse apparition <echo|threshold|motion-echo|light-fault|peripheral|footsteps> <player>
-/zapeg-lore director event trigger apparition <echo|threshold|motion-echo|light-fault|peripheral|footsteps> <player>
+/zapeg-lore director event rehearse apparition <echo|threshold|motion-echo|light-fault|peripheral|footsteps|sky-mark|false-passage|chroma-break|near-miss|whisper-steps> <player>
+/zapeg-lore director event trigger apparition <echo|threshold|motion-echo|light-fault|peripheral|footsteps|sky-mark|false-passage|chroma-break|near-miss|whisper-steps> <player>
 /zapeg-lore director cancel
 ```
 
