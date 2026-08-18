@@ -6,15 +6,16 @@ faults without registering or saving a Minecraft entity.
 
 ## v0.3 boundaries
 
-- exact-match protocol `4`; mixed v0.2/v0.3 clients fail the handshake (v4
-  extends the profile wire-ID set with `sky_mark_01`, `false_passage_01`,
-  `chroma_break_01`, `near_miss_01` and `whisper_steps_01`);
-- eleven allowlisted profiles, with stable wire ID `0` retained for `echo_01`;
+- exact-match protocol `5`; mixed v0.2/v0.3 clients fail the handshake (v5
+  adds a bounded escalation stage to the spawn descriptor, used by
+  `colossus_01`; a v4 client would misread the longer payload);
+- twelve allowlisted profiles, with stable wire ID `0` retained for `echo_01`;
 - OP-triggered rehearsal and live scene commands, with an optional coarse
   anchor hint the Director uses to place scenes near remembered places;
 - client-camera visibility and gaze-based disappearance;
 - a bounded camera-unease layer (sub-degree jitter, brief shake pulses, slow
-  unnatural roll) with strict intensity caps that never fights player control;
+  unnatural roll) with strict intensity caps that never fights player control,
+  plus a dedicated heavy footfall-shake mode reserved for the colossus;
 - scene phasing: a client-local ambience-dip prelude before the body and, for
   allowlisted profiles, a single bounded encore beat after the apparent end;
 - hard expiry and cleanup on logout, death, dimension change and restart;
@@ -60,7 +61,17 @@ Profiles are deliberately distinct and bounded:
 - `whisper_steps_01`: sound-only. The target hears their own earlier footsteps
   replayed from behind, drawn from the local motion trace at roughly a
   ten-second delay, with a walking gait pitch. The screen stays clean and the
-  scene always ends in silence (TIMEOUT), never by gaze.
+  scene always ends in silence (TIMEOUT), never by gaze;
+- `colossus_01`: a roughly hundred-block humanoid silhouette standing far
+  beyond loaded chunks, rendered only on the target's client — no entity,
+  hitbox or loot, and never gaze-resolved. The wire stage (0–4) picks the
+  distance: a horizon smudge at 280 blocks, then 210, 150, 100, and finally a
+  towering 70-block near-presence that stops, watches for a held beat, and is
+  simply gone. Each footfall lands as a deep pitched-down boom at the target's
+  position synced with a heavy camera pulse; the figure rocks and breathes in
+  the fog, which is mixed manually because the position-color pipeline ignores
+  shader fog. The anchor is a seeded horizon bearing pinned to the target's
+  feet — nothing collides, so no ground scan runs at those distances.
 
 Figure presentation, direct-gaze progress and the light fault's spatial
 activation use the real target camera, frustum and block line of sight. The
@@ -75,7 +86,11 @@ through the fog viewport event with conservative caps so it yields to shader
 packs rather than fighting them. The camera-unease layer adds at most a
 fraction of a degree of yaw/pitch jitter, rare brief shake pulses and a slow
 micro-roll while a scene is active; all magnitudes are hard-capped and decay
-to zero the moment the scene ends or the client cleans up.
+to zero the moment the scene ends or the client cleans up. The colossus uses a
+separate heavy mode on the same layer: deep, slow footfall pulses (capped at
+2.5 degrees of yaw, less on pitch and roll, decaying within about a second)
+over a faint ground sway — the ground answering each step, never a fight for
+control.
 
 Apparition models render only their manually posed base body parts. Player-skin
 outer layers, ears and cloak are disabled so baked overlay transforms cannot
@@ -96,25 +111,30 @@ Permission-level-2 in-game operators and authenticated RCON may use:
 
 ```text
 /zapegscene status
-/zapegscene rehearse <online-player> [profile]
+/zapegscene rehearse <online-player> [profile] [stage]
 /zapegscene trigger <online-player> <event-uuid> <profile> [ttl-ticks] [hint-x hint-z]
+/zapegscene trigger <online-player> <event-uuid> colossus_01 stage <0-4> [ttl-ticks]
 /zapegscene cancel-all
 ```
 
 `profile` is one of `echo_01`, `threshold_01`, `motion_echo_01`,
 `light_fault_01`, `peripheral_01`, `footsteps_01`, `sky_mark_01`,
-`false_passage_01`, `chroma_break_01`, `near_miss_01`, or `whisper_steps_01`.
-Arbitrary shader names, asset paths and URLs are rejected.
+`false_passage_01`, `chroma_break_01`, `near_miss_01`, `whisper_steps_01`, or
+`colossus_01`. Arbitrary shader names, asset paths and URLs are rejected.
 
-`rehearse` is a manual, non-consuming scene at the profile's default length.
-`trigger` accepts a stable UUID for Director idempotency plus an optional
-`ttl-ticks` override (1–1200) so the Director can scale scene length with
-campaign phase; the server clamps it to the same bound the wire descriptor
-enforces. Ground-anchored profiles also accept an optional coarse `hint-x
-hint-z` pair; placement then prefers safe ground near the hint while still
-keeping its distance from the target. The current slice still allows one
-global scene and logs every operator dispatch. Command blocks and functions
-cannot invoke the command tree.
+`rehearse` is a manual, non-consuming scene at the profile's default length;
+for `colossus_01` it accepts an optional stage (0–4) so any approach step can
+be previewed without touching the Director's escalation state. `trigger`
+accepts a stable UUID for Director idempotency plus an optional `ttl-ticks`
+override (1–1200) so the Director can scale scene length with campaign phase;
+the server clamps it to the same bound the wire descriptor enforces. For
+`colossus_01` the stage travels as an explicit bounded argument after a
+`stage` literal; it is rejected for every other profile. Ground-anchored
+profiles also accept an optional coarse `hint-x hint-z` pair; placement then
+prefers safe ground near the hint while still keeping its distance from the
+target. The current slice still allows one global scene and logs every
+operator dispatch. Command blocks and functions cannot invoke the command
+tree.
 
 See [ROADMAP.md](ROADMAP.md) for the reality-distortion and later combat plan.
 
@@ -124,4 +144,4 @@ See [ROADMAP.md](ROADMAP.md) for the reality-distortion and later combat plan.
 .\gradlew.bat test build
 ```
 
-The release jar is `build/libs/zapeg-runtime-forge-1.20.1-0.2.0.jar`.
+The release jar is `build/libs/zapeg-runtime-forge-1.20.1-0.3.0.jar`.

@@ -108,6 +108,32 @@ intensity/photosensitivity-safe client settings and optional post-processing
 remain v0.3.x work. Sequences will carry only profile IDs, bounded durations
 and seeds.
 
+## v0.3.0 — colossus slice
+
+Implemented as exact-match protocol `5` (the spawn descriptor gained a bounded
+escalation stage, so old clients must fail the handshake rather than
+mis-decode):
+
+- `colossus_01`: a roughly hundred-block render-only silhouette on a seeded
+  horizon bearing, far beyond loaded chunks. No entity, hitbox, AI, collision
+  or loot — it can never be fought or farmed, and it never resolves by gaze.
+- Director-tracked escalation: the wire stage (0–4) selects the distance —
+  280, 210, 150, 100, then a 70-block finale that stops, holds a watching
+  beat with a faint heartbeat, and is simply gone. Each delivered live
+  trigger advances the stored stage once; rehearsals read it but never move
+  it, and the scheduler can never pick the profile on its own.
+- A dedicated heavy footfall-shake mode on the camera-unease layer: deep
+  pulses synced to each step (2.5-degree yaw cap, less on pitch/roll, decay
+  within about a second) over a faint ground sway. Steps land as pitched-down
+  vanilla booms played at the target's own position — pressure through the
+  ground, not airborne sound, so distance never makes them silent.
+- Deliberate fog handling: the silhouette is drawn with the position-color
+  pipeline (which ignores shader fog) and mixes toward the live fog color
+  with a stage-scaled strength, so it reads as a dark shape breathing in the
+  fog rather than being erased by it. Frustum culling uses an expanded box
+  around the anchor; depth testing stays on so foreground terrain occludes
+  it honestly.
+
 ## v0.3 — manifestation and combat
 
 Anything that damages, collides or can be attacked becomes server-authoritative:
@@ -139,8 +165,9 @@ Heraldor Director now exposes a persistent, phase-gated OP/RCON bridge:
 /zapeg-lore director resume
 /zapeg-lore director phase start <presence|servants|manifestation>
 /zapeg-lore director phase advance
-/zapeg-lore director event rehearse apparition <echo|threshold|motion-echo|light-fault|peripheral|footsteps|sky-mark|false-passage|chroma-break|near-miss|whisper-steps> <player>
-/zapeg-lore director event trigger apparition <echo|threshold|motion-echo|light-fault|peripheral|footsteps|sky-mark|false-passage|chroma-break|near-miss|whisper-steps> <player>
+/zapeg-lore director event rehearse apparition <echo|threshold|motion-echo|light-fault|peripheral|footsteps|sky-mark|false-passage|chroma-break|near-miss|whisper-steps|colossus> <player>
+/zapeg-lore director event trigger apparition <echo|threshold|motion-echo|light-fault|peripheral|footsteps|sky-mark|false-passage|chroma-break|near-miss|whisper-steps|colossus> <player>
+/zapeg-lore director colossus reset <player>
 /zapeg-lore director cancel
 ```
 
