@@ -46,4 +46,42 @@ public final class SceneMath {
         double fadeOut = smoothstep(0.0D, Math.max(1.0D, fadeOutTicks), ttlTicks - ageTicks);
         return Math.min(fadeIn, fadeOut);
     }
+
+    /**
+     * Unit vector toward the impossible sky mark: a seeded azimuth at a
+     * seeded elevation of 24°–41°, so it always sits above the horizon but
+     * never at the zenith. Returned as a plain double[3] to stay testable.
+     */
+    public static double[] skyMarkDirection(long seed) {
+        double azimuth = Math.toRadians(Math.floorMod(seed, 360L));
+        double elevation = Math.toRadians(24.0D + Math.floorMod(seed >>> 8, 18L));
+        double horizontal = Math.cos(elevation);
+        return new double[] {
+            horizontal * Math.cos(azimuth),
+            Math.sin(elevation),
+            horizontal * Math.sin(azimuth)
+        };
+    }
+
+    /**
+     * Offset from the target's position for the near-miss crossing figure at
+     * crossing progress t (0..1): always behind the target's heading, sliding
+     * perpendicular from one side to the other. Plain double[3] for tests.
+     */
+    public static double[] nearMissOffset(long seed, float playerYawDegrees, double progress) {
+        double t = smoothstep(0.0D, 1.0D, Math.min(1.0D, Math.max(0.0D, progress)));
+        double yaw = Math.toRadians(playerYawDegrees);
+        double lookX = -Math.sin(yaw);
+        double lookZ = Math.cos(yaw);
+        double side = (seed & 1L) == 0L ? 1.0D : -1.0D;
+        double perpX = -lookZ;
+        double perpZ = lookX;
+        double behind = 3.0D;
+        double span = 2.8D * (1.0D - 2.0D * t) * side;
+        return new double[] {
+            -lookX * behind + perpX * span,
+            0.0D,
+            -lookZ * behind + perpZ * span
+        };
+    }
 }

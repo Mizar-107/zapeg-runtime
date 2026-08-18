@@ -52,6 +52,23 @@ public final class SceneServerManager {
             SceneProfile profile,
             boolean rehearsal,
             int ttlOverrideTicks) {
+        return dispatch(target, eventId, profile, rehearsal, ttlOverrideTicks, null, null);
+    }
+
+    /**
+     * @param ttlOverrideTicks Director-computed TTL; non-positive falls back
+     *     to the profile default, and every value is clamped to the wire bound
+     * @param hintX optional Director stalking-memory anchor bias, ignored when
+     *     the hint is missing, non-finite or unreasonably far from the target
+     */
+    public static DispatchResult dispatch(
+            ServerPlayer target,
+            UUID eventId,
+            SceneProfile profile,
+            boolean rehearsal,
+            int ttlOverrideTicks,
+            Double hintX,
+            Double hintZ) {
         MinecraftServer server = target.getServer();
         if (server == null) {
             return failure("server unavailable", eventId);
@@ -62,7 +79,8 @@ public final class SceneServerManager {
         if (!target.isAlive() || target.isSpectator()) {
             return failure("target is not eligible", eventId);
         }
-        Optional<ScenePlacement.Placement> placement = ScenePlacement.find(target, profile);
+        Optional<ScenePlacement.Placement> placement =
+                ScenePlacement.find(target, profile, hintX, hintZ);
         if (placement.isEmpty()) {
             return failure("no valid loaded scene anchor", eventId);
         }
@@ -83,7 +101,13 @@ public final class SceneServerManager {
                 target.getRandom().nextLong(),
                 profile,
                 rehearsal);
-        active = new ActiveScene(descriptor, server.getTickCount() + ttlTicks + 20, null);
+        // The slot stays occupied for the body TTL plus the full encore, so a
+        // false all-clear can never overlap a second scene even if the
+        // client's held terminal acknowledgement never arrives.
+        active = new ActiveScene(
+                descriptor,
+                server.getTickCount() + profile.occupancyTicks(ttlTicks),
+                null);
         SceneNetwork.spawnFor(target, descriptor);
         ZapeGRuntime.LOGGER.info(
                 "Dispatched scene {} profile={} target={} rehearsal={}",

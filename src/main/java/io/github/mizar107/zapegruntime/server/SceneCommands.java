@@ -41,14 +41,32 @@ public final class SceneCommands {
                                                         java.util.Arrays.stream(SceneProfile.values())
                                                                 .map(SceneProfile::serializedName),
                                                         builder))
-                                                .executes(context -> trigger(context, 0))
+                                                .executes(context -> trigger(context, 0, null, null))
                                                 .then(Commands.argument("ttl_ticks",
                                                                 IntegerArgumentType.integer(1,
                                                                         SceneServerManager.MAX_TTL_TICKS))
                                                         .executes(context -> trigger(
                                                                 context,
                                                                 IntegerArgumentType.getInteger(
-                                                                        context, "ttl_ticks"))))))))
+                                                                        context, "ttl_ticks"),
+                                                                null,
+                                                                null))
+                                                        .then(Commands.argument("hint_x",
+                                                                        IntegerArgumentType.integer(
+                                                                                -30_000_000,
+                                                                                30_000_000))
+                                                                .then(Commands.argument("hint_z",
+                                                                                IntegerArgumentType.integer(
+                                                                                        -30_000_000,
+                                                                                        30_000_000))
+                                                                        .executes(context -> trigger(
+                                                                                context,
+                                                                                IntegerArgumentType.getInteger(
+                                                                                        context, "ttl_ticks"),
+                                                                                (double) IntegerArgumentType
+                                                                                        .getInteger(context, "hint_x"),
+                                                                                (double) IntegerArgumentType
+                                                                                        .getInteger(context, "hint_z"))))))))))
                 .then(Commands.literal("cancel-all")
                         .executes(SceneCommands::cancelAll))
                 .then(Commands.literal("status")
@@ -75,7 +93,9 @@ public final class SceneCommands {
 
     private static int trigger(
             CommandContext<CommandSourceStack> context,
-            int ttlOverrideTicks)
+            int ttlOverrideTicks,
+            Double hintX,
+            Double hintZ)
             throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         CommandSourceStack source = context.getSource();
         ServerPlayer target = EntityArgument.getPlayer(context, "target");
@@ -91,7 +111,9 @@ public final class SceneCommands {
                 eventId,
                 profile,
                 false,
-                ttlOverrideTicks);
+                ttlOverrideTicks,
+                hintX,
+                hintZ);
         audit(source, "trigger", target, result);
         return reply(source, result);
     }

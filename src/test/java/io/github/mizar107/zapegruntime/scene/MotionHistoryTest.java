@@ -30,6 +30,24 @@ class MotionHistoryTest {
     }
 
     @Test
+    void sampleBackWalksTheTraceNewestToOldest() {
+        MotionHistory history = new MotionHistory(8, 1);
+        for (int index = 0; index < 6; index++) {
+            history.record(new Vec3(index, 64.0D, 0.0D), index * 10.0F);
+        }
+        // sampleBack(0) is the newest record; larger indices walk into the
+        // past, which is what the whisper replay uses to approach the present.
+        assertEquals(
+                new MotionHistory.Sample(new Vec3(5.0D, 64.0D, 0.0D), 50.0F),
+                history.sampleBack(0).orElseThrow());
+        assertEquals(
+                new MotionHistory.Sample(new Vec3(0.0D, 64.0D, 0.0D), 0.0F),
+                history.sampleBack(5).orElseThrow());
+        assertTrue(history.sampleBack(6).isEmpty());
+        assertTrue(history.sampleBack(-1).isEmpty());
+    }
+
+    @Test
     void clearDropsAllRecordedTransforms() {
         MotionHistory history = new MotionHistory(4, 1);
         history.record(Vec3.ZERO, 0.0F);

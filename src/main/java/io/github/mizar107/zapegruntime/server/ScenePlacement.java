@@ -31,6 +31,11 @@ public final class ScenePlacement {
     private static final double CAMERA_FOCUS_DISTANCE = 8.0D;
     private static final double CAMERA_FOCUS_PADDING = 0.35D;
     private static final double MIN_CAMERA_FOCUS_DISTANCE = 0.75D;
+    /**
+     * A Director anchor hint is only honoured within this horizontal range of
+     * the target; anything farther is treated as stale or bogus and ignored.
+     */
+    private static final double MAX_HINT_DISTANCE = 128.0D;
 
     private ScenePlacement() {}
 
@@ -39,13 +44,80 @@ public final class ScenePlacement {
     public static Optional<Placement> find(
             ServerPlayer player,
             SceneProfile profile) {
+        return find(player, profile, null, null);
+    }
+
+    public static Optional<Placement> find(
+            ServerPlayer player,
+            SceneProfile profile,
+            Double hintX,
+            Double hintZ) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(profile, "profile");
+        Vec3 hint = sanitizeHint(player, hintX, hintZ);
         return switch (profile.placementMode()) {
-            case DISTANT_SAFE_GROUND -> findDistantSafeGround(player);
+            case DISTANT_SAFE_GROUND -> findDistantSafeGround(player, hint);
             case CLIENT_MOTION_HISTORY -> findClientMotionAnchor(player);
             case LOCAL_CAMERA_FOCUS -> findLocalCameraFocus(player);
+            case PLAYER_RELATIVE -> findClientMotionAnchor(player);
         };
+    }
+
+    private static Vec3 sanitizeHint(ServerPlayer player, Double hintX, Double hintZ) {
+        if (hintX == null || hintZ == null
+                || !Double.isFinite(hintX) || !Double.isFinite(hintZ)) {
+            return null;
+        }
+        double dx = hintX - player.getX();
+        double dz = hintZ - player.getZ();
+        if (dx * dx + dz * dz > MAX_HINT_DISTANCE * MAX_HINT_DISTANCE) {
+            return null;
+        }
+        return new Vec3(hintX, 0.0D, hintZ);
+    }
+
+    /**
+     * Candidate indices ordered by anchor proximity to the hint. Pure math so
+     * the stalking-memory bias is unit-testable without a level.
+     */
+    static int[] hintOrder(
+            double baseAngleRadians,
+            double playerX,
+            double playerZ,
+            double hintX,
+            double hintZ) {
+        Integer[] order = new Integer[CANDIDATE_PLAN.length];
+        for (int index = 0; index < order.length; index++) {
+            order[index] = index;
+        }
+        java.util.Arrays.sort(order, (left, right) -> {
+            double leftDistance = hintDistanceSquared(
+                    baseAngleRadians, playerX, playerZ, hintX, hintZ, left);
+            double rightDistance = hintDistanceSquared(
+                    baseAngleRadians, playerX, playerZ, hintX, hintZ, right);
+            return Double.compare(leftDistance, rightDistance);
+        });
+        int[] result = new int[order.length];
+        for (int index = 0; index < order.length; index++) {
+            result[index] = order[index];
+        }
+        return result;
+    }
+
+    private static double hintDistanceSquared(
+            double baseAngleRadians,
+            double playerX,
+            double playerZ,
+            double hintX,
+            double hintZ,
+            int candidateIndex) {
+        double[] candidate = CANDIDATE_PLAN[candidateIndex];
+        double angle = baseAngleRadians + Math.toRadians(candidate[0]);
+        double anchorX = playerX + Math.cos(angle) * candidate[1];
+        double anchorZ = playerZ + Math.sin(angle) * candidate[1];
+        double dx = anchorX - hintX;
+        double dz = anchorZ - hintZ;
+        return dx * dx + dz * dz;
     }
 
     static double[][] candidatePlan() {
@@ -56,25 +128,34 @@ public final class ScenePlacement {
         return copy;
     }
 
-    private static Optional<Placement> findDistantSafeGround(ServerPlayer player) {
+    private static Optional<Placement> findDistantSafeGround(ServerPlayer player, Vec3 hint) {
         // Prefer an anchor with a clear block line of sight so the figure can
         // be noticed at once. Indoors or in dense terrain that requirement
         // fails for every candidate, so fall back to any safe anchor rather
         // than refusing the scene outright.
-        Optional<Placement> clear = scanDistantSafeGround(player, true);
-        return clear.isPresent() ? clear : scanDistantSafeGround(player, false);
+        Optional<Placement> clear = scanDistantSafeGround(player, true, hint);
+        return clear.isPresent() ? clear : scanDistantSafeGround(player, false, hint);
     }
 
     private static Optional<Placement> scanDistantSafeGround(
             ServerPlayer player,
-            boolean requireClearLine) {
+            boolean requireClearLine,
+            Vec3 hint) {
         ServerLevel level = player.serverLevel();
         Vec3 look = player.getLookAngle();
         double baseAngle = Math.atan2(look.z, look.x);
         int offset = player.getRandom().nextInt(CANDIDATE_PLAN.length);
+        // A stalking-memory hint replaces the random rotation with a
+        // deterministic closest-first ordering toward the remembered place.
+        int[] order = hint == null
+                ? null
+                : hintOrder(baseAngle, player.getX(), player.getZ(), hint.x, hint.z);
 
         for (int index = 0; index < CANDIDATE_PLAN.length; index++) {
-            double[] candidate = CANDIDATE_PLAN[(index + offset) % CANDIDATE_PLAN.length];
+            int candidateIndex = order != null
+                    ? order[index]
+                    : (index + offset) % CANDIDATE_PLAN.length;
+            double[] candidate = CANDIDATE_PLAN[candidateIndex];
             double angle = baseAngle + Math.toRadians(candidate[0]);
             double distance = candidate[1];
             double x = player.getX() + Math.cos(angle) * distance;

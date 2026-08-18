@@ -48,10 +48,15 @@ public final class MotionHistory {
     }
 
     public Optional<Sample> delayedSample() {
-        if (size <= delaySamples) {
+        return sampleBack(delaySamples);
+    }
+
+    /** The sample recorded {@code samplesBack} records ago, when it exists. */
+    public Optional<Sample> sampleBack(int samplesBack) {
+        if (samplesBack < 0 || samplesBack >= size) {
             return Optional.empty();
         }
-        int index = Math.floorMod(writeIndex - 1 - delaySamples, x.length);
+        int index = Math.floorMod(writeIndex - 1 - samplesBack, x.length);
         return Optional.of(new Sample(
                 new Vec3(x[index], y[index], z[index]),
                 yaw[index]));

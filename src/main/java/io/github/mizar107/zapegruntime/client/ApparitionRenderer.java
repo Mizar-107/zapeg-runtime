@@ -106,10 +106,10 @@ public final class ApparitionRenderer {
         HumanoidModel<LivingEntity> currentModel = visual.model();
         resetPose(currentModel);
 
-        double age = ClientSceneManager.ageWithPartial(event.getPartialTick());
+        double age = ClientSceneManager.bodyAgeWithPartial(event.getPartialTick());
         float envelope = (float) SceneMath.lifeEnvelope(
                 age,
-                snapshot.descriptor().ttlTicks(),
+                ClientSceneManager.bodyTtlTicks(),
                 9.0D,
                 6.0D);
         if (envelope <= 0.001F) {
@@ -146,8 +146,18 @@ public final class ApparitionRenderer {
                     renderType,
                     age,
                     envelope);
-            case LIGHT_FAULT_01, FOOTSTEPS_01 -> {
-                // Screen-space only / sound-only profiles render no figure.
+            case NEAR_MISS_01 -> renderNearMiss(
+                    snapshot,
+                    event,
+                    currentModel,
+                    buffers,
+                    renderType,
+                    age,
+                    envelope);
+            case LIGHT_FAULT_01, FOOTSTEPS_01, SKY_MARK_01, FALSE_PASSAGE_01,
+                    CHROMA_BREAK_01, WHISPER_STEPS_01 -> {
+                // Screen-space / sky / doorway / sound-only profiles render
+                // no humanoid figure.
             }
         }
         buffers.endBatch(renderType);
@@ -355,6 +365,50 @@ public final class ApparitionRenderer {
                 cameraLeft.z() * 0.025F,
                 0.82F, 1.08F * breathe, 0.82F,
                 0.12F, 0.34F, 0.38F, 0.10F * fade);
+    }
+
+    /**
+     * The near-miss: a walking silhouette crossing just behind the target.
+     * It fades in and out with the crossing progress itself, so it is never
+     * fully solid — a walker glimpsed mid-stride, gone before it is studied.
+     */
+    private static void renderNearMiss(
+            ClientSceneManager.RenderSnapshot snapshot,
+            RenderLevelStageEvent event,
+            HumanoidModel<LivingEntity> currentModel,
+            MultiBufferSource.BufferSource buffers,
+            RenderType renderType,
+            double age,
+            float envelope) {
+        float progress = snapshot.effectProgress();
+        float crossingFade = (float) Math.min(
+                SceneMath.smoothstep(0.0D, 0.18D, progress),
+                1.0D - SceneMath.smoothstep(0.78D, 1.0D, progress));
+        float alphaScale = envelope * crossingFade * (1.0F - snapshot.gazeProgress() * 0.9F);
+        if (alphaScale <= 0.001F) {
+            return;
+        }
+
+        // A brisk, ordinary walk — the wrongness is that it is here at all.
+        float stride = (float) Math.sin(age * 0.62D) * 0.85F;
+        currentModel.rightArm.xRot = stride * 0.9F;
+        currentModel.leftArm.xRot = -stride * 0.9F;
+        currentModel.rightLeg.xRot = -stride;
+        currentModel.leftLeg.xRot = stride;
+        currentModel.body.xRot = 0.05F;
+        currentModel.head.xRot = 0.04F;
+
+        Vector3f cameraLeft = event.getCamera().getLeftVector();
+        renderPass(currentModel, snapshot, event, buffers, renderType,
+                0.0F, 0.0F, 0.0F,
+                0.82F, 1.10F, 0.82F,
+                0.014F, 0.016F, 0.021F, 0.78F * alphaScale);
+        renderPass(currentModel, snapshot, event, buffers, renderType,
+                cameraLeft.x() * 0.02F,
+                cameraLeft.y() * 0.02F,
+                cameraLeft.z() * 0.02F,
+                0.82F, 1.10F, 0.82F,
+                0.10F, 0.28F, 0.31F, 0.09F * alphaScale);
     }
 
     private static void renderPass(

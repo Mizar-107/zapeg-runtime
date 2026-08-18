@@ -4,10 +4,13 @@ import io.github.mizar107.zapegruntime.ZapeGRuntime;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.FogRenderer;
+import net.minecraft.world.level.material.FogType;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.client.event.RenderGuiEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.client.event.ViewportEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.level.LevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -34,9 +37,54 @@ public final class ClientSceneEvents {
             return;
         }
         ClientSceneManager.RenderSnapshot snapshot = ClientSceneManager.observe(event);
-        if (snapshot != null) {
+        if (snapshot == null) {
+            return;
+        }
+        SceneProfile profile = snapshot.descriptor().profile();
+        if (profile == SceneProfile.SKY_MARK_01) {
+            SkyMarkRenderer.render(snapshot, event);
+        } else if (profile == SceneProfile.FALSE_PASSAGE_01) {
+            FalsePassageRenderer.render(snapshot, event);
+        } else {
             ApparitionRenderer.render(snapshot, event);
         }
+    }
+
+    /**
+     * Bounded camera unease: positional jitter, a brief reveal jolt and an
+     * unnatural roll drift, all hard-capped by CameraUnease so the player
+     * never loses control for more than a moment.
+     */
+    @SubscribeEvent
+    public static void onComputeCameraAngles(ViewportEvent.ComputeCameraAngles event) {
+        float[] offset = ClientSceneManager.cameraPerturbation((float) event.getPartialTick());
+        if (offset[0] == 0.0F && offset[1] == 0.0F && offset[2] == 0.0F) {
+            return;
+        }
+        event.setYaw(event.getYaw() + offset[0]);
+        event.setPitch(event.getPitch() + offset[1]);
+        event.setRoll(event.getRoll() + offset[2]);
+    }
+
+    /**
+     * The ambience dip's fog component: at most a few percent of pull-in on
+     * vanilla terrain fog. Shader packs that own their fog simply override
+     * this; the magnitude is deliberately too small to fight them.
+     */
+    @SubscribeEvent
+    public static void onRenderFog(ViewportEvent.RenderFog event) {
+        // FogType.NONE is clear air in 1.20.1: never touch lava, water or
+        // powder-snow fog, only the ordinary terrain atmosphere.
+        if (event.getType() != FogType.NONE
+                || event.getMode() != FogRenderer.FogMode.FOG_TERRAIN) {
+            return;
+        }
+        float dip = ClientSceneManager.fogDip((float) event.getPartialTick());
+        if (dip <= 0.0F) {
+            return;
+        }
+        event.scaleFarPlaneDistance(1.0F - 0.06F * dip);
+        event.scaleNearPlaneDistance(1.0F - 0.04F * dip);
     }
 
     @SubscribeEvent
@@ -53,7 +101,19 @@ public final class ClientSceneEvents {
         int width = event.getWindow().getGuiScaledWidth();
         int height = event.getWindow().getGuiScaledHeight();
         long seed = ClientSceneManager.visualSeed();
-        double age = ClientSceneManager.ageWithPartial(event.getPartialTick());
+        double age = ClientSceneManager.bodyAgeWithPartial(event.getPartialTick());
+        ClientSceneManager.ScenePhase phase = ClientSceneManager.scenePhase();
+        if (phase == ClientSceneManager.ScenePhase.PRELUDE) {
+            drawPreludeDim(graphics, width, height, intensity);
+            return;
+        }
+        if (phase == ClientSceneManager.ScenePhase.ENCORE) {
+            // Sound-only profiles keep the screen clean even for the encore.
+            if (profile != SceneProfile.FOOTSTEPS_01) {
+                drawEncoreFlash(graphics, width, height, intensity, seed);
+            }
+            return;
+        }
         switch (profile) {
             case ECHO_01 -> drawEdgeFaults(graphics, width, height, intensity, seed, age);
             case THRESHOLD_01 -> drawThresholdSlit(
@@ -84,9 +144,105 @@ public final class ClientSceneEvents {
                     height,
                     intensity,
                     seed);
-            case FOOTSTEPS_01 -> {
-                // Sound-only: the screen must stay clean.
+            case SKY_MARK_01 -> drawSkyMarkWeight(graphics, width, height, intensity);
+            case FALSE_PASSAGE_01 -> drawPassageSeams(graphics, width, height, intensity, seed, age);
+            case CHROMA_BREAK_01 -> drawChromaBreak(graphics, width, height, intensity, seed, age);
+            case NEAR_MISS_01, WHISPER_STEPS_01, FOOTSTEPS_01 -> {
+                // Sound-only / crossing scenes: the screen must stay clean.
             }
+        }
+    }
+
+    /**
+     * The sky mark's screen component: the top of the screen gains a faint
+     * cold weight, as if the sky itself is slightly too heavy. No flashing.
+     */
+    private static void drawSkyMarkWeight(
+            GuiGraphics graphics,
+            int width,
+            int height,
+            float intensity) {
+        int strips = 5;
+        int band = Math.max(2, height / 10);
+        for (int strip = 0; strip < strips; strip++) {
+            int alpha = Math.round(26.0F * intensity * (strips - strip) / strips);
+            if (alpha <= 0) {
+                continue;
+            }
+            int y0 = strip * band / strips * 2;
+            graphics.fill(0, y0, width, y0 + Math.max(1, band / strips), argb(alpha, 2, 6, 10));
+        }
+    }
+
+    /**
+     * Two thin vertical seams standing on the screen while the false passage
+     * waits — the faintest suggestion of a frame that should not be there.
+     */
+    private static void drawPassageSeams(
+            GuiGraphics graphics,
+            int width,
+            int height,
+            float intensity,
+            long seed,
+            double age) {
+        float pulse = 0.75F
+                + 0.25F * (float) Math.sin(age * 0.13D + Math.floorMod(seed, 61L));
+        int alpha = Math.max(2, Math.min(20, Math.round(20.0F * intensity * pulse)));
+        int left = width / 4 + Math.floorMod(seed, Math.max(1, width / 12));
+        int right = width * 3 / 4 - Math.floorMod(seed >>> 9, Math.max(1, width / 12));
+        graphics.fill(left, height / 5, left + 1, height * 4 / 5, argb(alpha, 3, 10, 12));
+        graphics.fill(right, height / 5, right + 1, height * 4 / 5, argb(alpha, 3, 10, 12));
+    }
+
+    /**
+     * The corrupted-recording tear: a handful of horizontal bands whose top
+     * and bottom edges split into offset red/cyan fringe pairs, over a faint
+     * grey tracking wash. Strictly bounded: the pulse is a ~0.44 Hz sine,
+     * band alphas stay in the teens, and no band ever covers the whole
+     * screen at once — unease, never a strobe.
+     */
+    private static void drawChromaBreak(
+            GuiGraphics graphics,
+            int width,
+            int height,
+            float intensity,
+            long seed,
+            double age) {
+        int wash = Math.max(2, Math.min(10, Math.round(12.0F * intensity)));
+        graphics.fill(0, 0, width, height, argb(wash, 8, 9, 11));
+
+        int bands = 5;
+        int scroll = (int) Math.floor(age * 1.7D);
+        for (int band = 0; band < bands; band++) {
+            int bandSeed = Math.floorMod((int) (seed >>> (band * 9)), 997);
+            int y = Math.floorMod(
+                    bandSeed + scroll * (1 + band % 2) + band * 137,
+                    Math.max(1, height));
+            int bandHeight = 3 + Math.floorMod(bandSeed >>> 3, 8);
+            int bandAlpha = Math.max(3, Math.min(16, Math.round(16.0F * intensity)));
+            // The band itself darkens slightly, as if the signal dropped.
+            graphics.fill(
+                    0,
+                    y,
+                    width,
+                    Math.min(height, y + bandHeight),
+                    argb(bandAlpha, 4, 5, 7));
+            // The split: a red fringe slipped a few pixels left of a cyan
+            // fringe at the band's torn edges.
+            int shift = 1 + Math.floorMod(bandSeed >>> 6, 3);
+            int fringeAlpha = Math.max(2, bandAlpha - 2);
+            graphics.fill(
+                    0,
+                    Math.max(0, y - 1),
+                    Math.max(0, width - shift),
+                    y,
+                    argb(fringeAlpha, 110, 0, 10));
+            graphics.fill(
+                    Math.min(width, shift),
+                    Math.min(height, y + bandHeight),
+                    width,
+                    Math.min(height, y + bandHeight + 1),
+                    argb(fringeAlpha, 0, 80, 92));
         }
     }
 
@@ -284,6 +440,53 @@ public final class ClientSceneEvents {
                 Math.min(width, counterBandX + Math.max(1, width / 240)),
                 height,
                 argb(Math.max(2, washAlpha / 3), 3, 30, 36));
+    }
+
+    /**
+     * The ambience dip: the whole screen cools and darkens a few percent while
+     * the prelude swell builds. Deliberately far below any flash threshold.
+     */
+    private static void drawPreludeDim(
+            GuiGraphics graphics,
+            int width,
+            int height,
+            float intensity) {
+        int wash = Math.max(2, Math.min(12, Math.round(86.0F * intensity)));
+        graphics.fill(0, 0, width, height, argb(wash, 1, 3, 6));
+        int edge = Math.max(2, Math.min(20, Math.round(140.0F * intensity)));
+        int band = Math.max(2, height / 12);
+        graphics.fill(0, 0, width, band, argb(edge, 0, 1, 3));
+        graphics.fill(0, height - band, width, height, argb(edge, 0, 1, 3));
+    }
+
+    /**
+     * The encore's single final beat on screen: one slow cold vignette pulse
+     * and one thin fault line. Bounded to a 30-tick sine envelope, so there
+     * is no strobing and no full-screen luminance change.
+     */
+    private static void drawEncoreFlash(
+            GuiGraphics graphics,
+            int width,
+            int height,
+            float intensity,
+            long seed) {
+        int edgeAlpha = Math.max(3, Math.min(26, Math.round(52.0F * intensity)));
+        int step = Math.max(2, Math.min(width, height) / 60);
+        for (int layer = 0; layer < 4; layer++) {
+            int inset = layer * step;
+            int alpha = Math.max(2, edgeAlpha - layer * Math.max(1, edgeAlpha / 5));
+            int color = argb(alpha, 0, 2, 4);
+            graphics.fill(inset, inset, Math.max(inset, width - inset), inset + step, color);
+            graphics.fill(
+                    inset,
+                    Math.max(inset, height - inset - step),
+                    Math.max(inset, width - inset),
+                    Math.max(inset + step, height - inset),
+                    color);
+        }
+        int lineY = Math.floorMod((int) (seed >>> 5), Math.max(1, height));
+        int lineAlpha = Math.max(2, Math.min(18, Math.round(36.0F * intensity)));
+        graphics.fill(0, lineY, width, Math.min(height, lineY + 1), argb(lineAlpha, 3, 40, 44));
     }
 
     private static int argb(int alpha, int red, int green, int blue) {
