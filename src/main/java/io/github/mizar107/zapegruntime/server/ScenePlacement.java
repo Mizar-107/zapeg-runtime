@@ -29,6 +29,18 @@ public final class ScenePlacement {
         {90.0D, 22.0D}, {-90.0D, 28.0D}, {150.0D, 20.0D}, {-150.0D, 26.0D},
         {180.0D, 24.0D}
     };
+    /**
+     * echo_01 must read as a figure in the target's own space: close enough
+     * that a humanoid is actually visible, and inside the forced-gaze pull
+     * so the look can finish on it. Distances stay in the local 7–12 block
+     * band; angles stay inside {@code GazePull.MAX_PULL_DEGREES}.
+     */
+    private static final double[][] ECHO_CANDIDATE_PLAN = {
+        {18.0D, 8.0D}, {-18.0D, 10.0D}, {26.0D, 12.0D}, {-26.0D, 9.0D},
+        {12.0D, 11.0D}, {-12.0D, 7.5D}, {32.0D, 8.5D}, {-32.0D, 10.5D}
+    };
+    /** Prefer the target's floor, then a short column, never the world roof. */
+    private static final int LOCAL_Y_RANGE = 8;
     private static final double CAMERA_FOCUS_DISTANCE = 8.0D;
     private static final double CAMERA_FOCUS_PADDING = 0.35D;
     private static final double MIN_CAMERA_FOCUS_DISTANCE = 0.75D;
@@ -66,7 +78,7 @@ public final class ScenePlacement {
         Objects.requireNonNull(profile, "profile");
         Vec3 hint = sanitizeHint(player, hintX, hintZ);
         return switch (profile.placementMode()) {
-            case DISTANT_SAFE_GROUND -> findDistantSafeGround(player, hint);
+            case DISTANT_SAFE_GROUND -> findDistantSafeGround(player, profile, hint);
             case CLIENT_MOTION_HISTORY -> findClientMotionAnchor(player);
             case LOCAL_CAMERA_FOCUS -> findLocalCameraFocus(player);
             case PLAYER_RELATIVE -> findClientMotionAnchor(player);
@@ -129,15 +141,26 @@ public final class ScenePlacement {
             double playerZ,
             double hintX,
             double hintZ) {
-        Integer[] order = new Integer[CANDIDATE_PLAN.length];
+        return hintOrder(
+                baseAngleRadians, playerX, playerZ, hintX, hintZ, CANDIDATE_PLAN);
+    }
+
+    static int[] hintOrder(
+            double baseAngleRadians,
+            double playerX,
+            double playerZ,
+            double hintX,
+            double hintZ,
+            double[][] plan) {
+        Integer[] order = new Integer[plan.length];
         for (int index = 0; index < order.length; index++) {
             order[index] = index;
         }
         java.util.Arrays.sort(order, (left, right) -> {
             double leftDistance = hintDistanceSquared(
-                    baseAngleRadians, playerX, playerZ, hintX, hintZ, left);
+                    baseAngleRadians, playerX, playerZ, hintX, hintZ, left, plan);
             double rightDistance = hintDistanceSquared(
-                    baseAngleRadians, playerX, playerZ, hintX, hintZ, right);
+                    baseAngleRadians, playerX, playerZ, hintX, hintZ, right, plan);
             return Double.compare(leftDistance, rightDistance);
         });
         int[] result = new int[order.length];
@@ -153,8 +176,9 @@ public final class ScenePlacement {
             double playerZ,
             double hintX,
             double hintZ,
-            int candidateIndex) {
-        double[] candidate = CANDIDATE_PLAN[candidateIndex];
+            int candidateIndex,
+            double[][] plan) {
+        double[] candidate = plan[candidateIndex];
         double angle = baseAngleRadians + Math.toRadians(candidate[0]);
         double anchorX = playerX + Math.cos(angle) * candidate[1];
         double anchorZ = playerZ + Math.sin(angle) * candidate[1];
@@ -164,41 +188,78 @@ public final class ScenePlacement {
     }
 
     static double[][] candidatePlan() {
-        double[][] copy = new double[CANDIDATE_PLAN.length][];
-        for (int index = 0; index < CANDIDATE_PLAN.length; index++) {
-            copy[index] = CANDIDATE_PLAN[index].clone();
+        return copyPlan(CANDIDATE_PLAN);
+    }
+
+    static double[][] echoCandidatePlan() {
+        return copyPlan(ECHO_CANDIDATE_PLAN);
+    }
+
+    private static double[][] copyPlan(double[][] plan) {
+        double[][] copy = new double[plan.length][];
+        for (int index = 0; index < plan.length; index++) {
+            copy[index] = plan[index].clone();
         }
         return copy;
     }
 
-    private static Optional<Placement> findDistantSafeGround(ServerPlayer player, Vec3 hint) {
+    /**
+     * Y values to try for a same-area feet search: the target's floor first,
+     * then one block down/up, then further, so a roof heightmap never wins
+     * over the room the player is actually standing in.
+     */
+    static int[] localYSearchOrder(int originY, int range) {
+        int[] order = new int[1 + range * 2];
+        order[0] = originY;
+        int write = 1;
+        for (int delta = 1; delta <= range; delta++) {
+            order[write++] = originY - delta;
+            order[write++] = originY + delta;
+        }
+        return order;
+    }
+
+    private static Optional<Placement> findDistantSafeGround(
+            ServerPlayer player, SceneProfile profile, Vec3 hint) {
         // Prefer an anchor with a clear block line of sight so the figure can
         // be noticed at once. Indoors or in dense terrain that requirement
         // fails for every candidate, so fall back to any safe anchor rather
         // than refusing the scene outright.
-        Optional<Placement> clear = scanDistantSafeGround(player, true, hint);
-        return clear.isPresent() ? clear : scanDistantSafeGround(player, false, hint);
+        double[][] plan = planFor(profile);
+        boolean localColumn = profile == SceneProfile.ECHO_01;
+        Optional<Placement> clear = scanDistantSafeGround(
+                player, true, hint, plan, localColumn);
+        return clear.isPresent()
+                ? clear
+                : scanDistantSafeGround(player, false, hint, plan, localColumn);
+    }
+
+    private static double[][] planFor(SceneProfile profile) {
+        return profile == SceneProfile.ECHO_01 ? ECHO_CANDIDATE_PLAN : CANDIDATE_PLAN;
     }
 
     private static Optional<Placement> scanDistantSafeGround(
             ServerPlayer player,
             boolean requireClearLine,
-            Vec3 hint) {
+            Vec3 hint,
+            double[][] plan,
+            boolean localColumn) {
         ServerLevel level = player.serverLevel();
         Vec3 look = player.getLookAngle();
         double baseAngle = Math.atan2(look.z, look.x);
-        int offset = player.getRandom().nextInt(CANDIDATE_PLAN.length);
+        int offset = player.getRandom().nextInt(plan.length);
         // A stalking-memory hint replaces the random rotation with a
         // deterministic closest-first ordering toward the remembered place.
         int[] order = hint == null
                 ? null
-                : hintOrder(baseAngle, player.getX(), player.getZ(), hint.x, hint.z);
+                : hintOrder(
+                        baseAngle, player.getX(), player.getZ(), hint.x, hint.z, plan);
 
-        for (int index = 0; index < CANDIDATE_PLAN.length; index++) {
+        for (int index = 0; index < plan.length; index++) {
             int candidateIndex = order != null
                     ? order[index]
-                    : (index + offset) % CANDIDATE_PLAN.length;
-            double[] candidate = CANDIDATE_PLAN[candidateIndex];
+                    : (index + offset) % plan.length;
+            double[] candidate = plan[candidateIndex];
             double angle = baseAngle + Math.toRadians(candidate[0]);
             double distance = candidate[1];
             double x = player.getX() + Math.cos(angle) * distance;
@@ -208,10 +269,14 @@ public final class ScenePlacement {
                 continue;
             }
 
-            BlockPos feet = level.getHeightmapPos(
-                    Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
-                    sample);
-            if (!safeFeet(level, feet) || !level.getWorldBorder().isWithinBounds(feet)) {
+            BlockPos feet = localColumn
+                    ? localColumnFeet(level, x, z, player.getY())
+                    : level.getHeightmapPos(
+                            Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                            sample);
+            if (feet == null
+                    || !safeFeet(level, feet)
+                    || !level.getWorldBorder().isWithinBounds(feet)) {
                 continue;
             }
             if (Math.abs(feet.getY() - player.getY()) > 12.0D) {
@@ -240,6 +305,22 @@ public final class ScenePlacement {
             return Optional.of(new Placement(anchor, yaw));
         }
         return Optional.empty();
+    }
+
+    private static BlockPos localColumnFeet(
+            ServerLevel level, double x, double z, double playerY) {
+        int originY = Mth.floor(playerY);
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        for (int y : localYSearchOrder(originY, LOCAL_Y_RANGE)) {
+            cursor.set(Mth.floor(x), y, Mth.floor(z));
+            if (!level.hasChunkAt(cursor)) {
+                continue;
+            }
+            if (safeFeet(level, cursor)) {
+                return cursor.immutable();
+            }
+        }
+        return null;
     }
 
     private static Optional<Placement> findClientMotionAnchor(ServerPlayer player) {

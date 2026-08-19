@@ -4,6 +4,9 @@ import java.util.Arrays;
 import java.util.Locale;
 
 public enum SceneProfile {
+    // Local-area silhouette: placement still uses the distant-ground safety
+    // checks, but echo's own candidate ring sits 7–12 blocks off the target
+    // on their floor so the figure is actually visible.
     ECHO_01(
             0, "echo_01", 200, 4.0D, 175, true,
             ScenePlacementMode.DISTANT_SAFE_GROUND, 40, 2, 600),

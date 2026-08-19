@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.mizar107.zapegruntime.scene.GazePull;
 import org.junit.jupiter.api.Test;
 
 class ScenePlacementPlanTest {
@@ -81,6 +82,64 @@ class ScenePlacementPlanTest {
             double dot = facingX * (-dx / 220.0D) + facingZ * (-dz / 220.0D);
             assertTrue(dot > 0.9999D, "horizon figure must face the target");
         }
+    }
+
+    @Test
+    void echoPlanStaysInTheTargetsLocalVisibleRange() {
+        double[][] plan = ScenePlacement.echoCandidatePlan();
+        assertTrue(plan.length >= 4);
+        assertTrue(plan.length <= 16);
+        for (double[] candidate : plan) {
+            assertEquals(2, candidate.length);
+            double angle = candidate[0];
+            double distance = candidate[1];
+            assertTrue(Double.isFinite(angle));
+            assertTrue(Math.abs(angle) <= GazePull.MAX_PULL_DEGREES);
+            assertTrue(distance >= 6.0D && distance <= 14.0D);
+        }
+    }
+
+    @Test
+    void echoPlanIsCloserThanTheDistantSightingRing() {
+        double echoMax = 0.0D;
+        for (double[] candidate : ScenePlacement.echoCandidatePlan()) {
+            echoMax = Math.max(echoMax, candidate[1]);
+        }
+        double distantMin = Double.POSITIVE_INFINITY;
+        for (double[] candidate : ScenePlacement.candidatePlan()) {
+            distantMin = Math.min(distantMin, candidate[1]);
+        }
+        assertTrue(echoMax < distantMin, "echo must spawn inside the distant ring");
+    }
+
+    @Test
+    void echoPlanIsADefensiveCopy() {
+        double[][] first = ScenePlacement.echoCandidatePlan();
+        first[0][1] = 999.0D;
+        assertTrue(ScenePlacement.echoCandidatePlan()[0][1] != 999.0D);
+    }
+
+    @Test
+    void localYSearchPrefersThePlayersFloor() {
+        int[] order = ScenePlacement.localYSearchOrder(64, 3);
+        assertEquals(7, order.length);
+        assertEquals(64, order[0]);
+        assertEquals(63, order[1]);
+        assertEquals(65, order[2]);
+        assertEquals(61, order[5]);
+        assertEquals(67, order[6]);
+    }
+
+    @Test
+    void echoHintOrderUsesTheLocalPlan() {
+        double[][] plan = ScenePlacement.echoCandidatePlan();
+        // Player at origin looking along +X; hint sits at the nearest echo
+        // candidate along that look (12°, 11 blocks).
+        int[] order = ScenePlacement.hintOrder(0.0D, 0.0D, 0.0D, 11.0D, 0.0D, plan);
+        assertEquals(plan.length, order.length);
+        double firstX = Math.cos(Math.toRadians(plan[order[0]][0])) * plan[order[0]][1];
+        double firstZ = Math.sin(Math.toRadians(plan[order[0]][0])) * plan[order[0]][1];
+        assertTrue(Math.hypot(firstX - 11.0D, firstZ) < 4.0D);
     }
 
     @Test
