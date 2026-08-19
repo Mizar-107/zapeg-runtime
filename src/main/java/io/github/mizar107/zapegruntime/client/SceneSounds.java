@@ -39,6 +39,7 @@ final class SceneSounds {
             case COLOSSUS_01 -> {
                 // The first ground-shaking footfall is the arrival beat.
             }
+            case VISITATION_01 -> play(descriptor, position, SoundEvents.WARDEN_HEARTBEAT, 0.45F, 0.50F);
         }
     }
 
@@ -68,6 +69,9 @@ final class SceneSounds {
                 // The roar is scheduled by the colossus tick, not the generic
                 // mid-beat, so it only sounds at the nearer stages.
             }
+            case VISITATION_01 -> {
+                // The window wrongness carries the scene; no in-game beat.
+            }
         }
     }
 
@@ -91,6 +95,9 @@ final class SceneSounds {
             case COLOSSUS_01 -> {
                 // Never gaze-resolved: it recedes into the fog, or at the
                 // finale it is simply gone. Nothing answers.
+            }
+            case VISITATION_01 -> {
+                // The blink is simply over; nothing answers.
             }
         }
     }

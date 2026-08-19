@@ -59,7 +59,8 @@ public final class ClientSceneEvents {
      */
     @SubscribeEvent
     public static void onComputeCameraAngles(ViewportEvent.ComputeCameraAngles event) {
-        float[] offset = ClientSceneManager.cameraPerturbation((float) event.getPartialTick());
+        float[] offset = ClientSceneManager.cameraPerturbation(
+                (float) event.getPartialTick(), event.getYaw(), event.getPitch());
         if (offset[0] == 0.0F && offset[1] == 0.0F && offset[2] == 0.0F) {
             return;
         }
@@ -149,9 +150,10 @@ public final class ClientSceneEvents {
             case SKY_MARK_01 -> drawSkyMarkWeight(graphics, width, height, intensity);
             case FALSE_PASSAGE_01 -> drawPassageSeams(graphics, width, height, intensity, seed, age);
             case CHROMA_BREAK_01 -> drawChromaBreak(graphics, width, height, intensity, seed, age);
-            case NEAR_MISS_01, WHISPER_STEPS_01, FOOTSTEPS_01, COLOSSUS_01 -> {
-                // Sound-only / crossing / colossus scenes: the screen must
-                // stay clean; the ground shake carries the colossus.
+            case NEAR_MISS_01, WHISPER_STEPS_01, FOOTSTEPS_01, COLOSSUS_01, VISITATION_01 -> {
+                // Sound-only / crossing / colossus / visitation scenes: the
+                // screen must stay clean; the ground shake carries the
+                // colossus, and the visitation lives outside the window.
             }
         }
     }

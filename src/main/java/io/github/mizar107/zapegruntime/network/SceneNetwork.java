@@ -16,7 +16,10 @@ public final class SceneNetwork {
     // v5 adds the bounded escalation stage to the spawn descriptor (used by
     // colossus_01, wire id 11); a v4 client would misread the longer payload,
     // so the channel version must refuse the mismatch instead.
-    public static final String PROTOCOL = "5";
+    // v6 adds visitation_01 (wire id 12); the descriptor layout is unchanged,
+    // but a v5 client would fail closed on the unknown id mid-session, so the
+    // handshake refuses the mismatch up front instead.
+    public static final String PROTOCOL = "6";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             ResourceLocation.fromNamespaceAndPath(ZapeGRuntime.MOD_ID, "scenes"),
             () -> PROTOCOL,

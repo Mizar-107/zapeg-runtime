@@ -148,17 +148,18 @@ class ColossusChoreographyTest {
 
     @Test
     void eyesSitOnTheFaceSlightlyTooFarApart() {
-        // The head box spans x -7.5..7.5, y 82..96, face at z -7.5.
-        double halfHead = 7.5D;
+        double halfHead = ColossusChoreography.HEAD_HALF_WIDTH;
         double outerEdge = ColossusChoreography.EYE_HALF_SPACING
                 + ColossusChoreography.EYE_WIDTH * 0.5D;
         assertTrue(outerEdge < halfHead, "eyes must stay on the face");
         double spacingRatio = ColossusChoreography.EYE_HALF_SPACING / halfHead;
         assertTrue(spacingRatio > 0.35D, "the wrongness: eyes wider than any face");
         assertTrue(spacingRatio < 0.60D, "but still plausibly a face");
-        assertTrue(ColossusChoreography.EYE_CENTER_Y > 82.0D
-                && ColossusChoreography.EYE_CENTER_Y < 96.0D);
+        assertTrue(ColossusChoreography.EYE_CENTER_Y > ColossusChoreography.HEAD_MIN_Y
+                && ColossusChoreography.EYE_CENTER_Y < ColossusChoreography.HEAD_MAX_Y);
         assertTrue(ColossusChoreography.EYE_FACE_Z < 0.0D, "the face is the -z side");
+        assertEquals(-ColossusChoreography.HEAD_HALF_WIDTH, ColossusChoreography.EYE_FACE_Z,
+                "the eyes sit exactly on the head's front face");
         // Large enough to read at the horizon stage: at 280 blocks a block
         // is already only a few pixels, so sub-block eyes would vanish.
         assertTrue(ColossusChoreography.EYE_WIDTH >= 2.0D);

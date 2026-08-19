@@ -1,9 +1,11 @@
 package io.github.mizar107.zapegruntime.client;
 
+import io.github.mizar107.zapegruntime.client.os.OsScareDriver;
 import io.github.mizar107.zapegruntime.network.SceneNetwork;
 import io.github.mizar107.zapegruntime.scene.CameraUnease;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
 import io.github.mizar107.zapegruntime.scene.ColossusChoreography;
+import io.github.mizar107.zapegruntime.scene.GazePull;
 import io.github.mizar107.zapegruntime.scene.MotionHistory;
 import io.github.mizar107.zapegruntime.scene.PresentedGazeTracker;
 import io.github.mizar107.zapegruntime.scene.SceneAck;
@@ -60,6 +62,14 @@ public final class ClientSceneManager {
     private static ActiveScene active;
     private static MotionHistory ambientTrace;
     private static int ambientTraceCountdown;
+    // Forced-gaze state: the held render-layer offset, its frame clock, and
+    // whether the grip was applied last frame (so its first frame never
+    // inherits a stale, huge dt). Offsets decay smoothly to zero after the
+    // scene ends — the release never snaps and never leaves residue.
+    private static float pullYawOffset;
+    private static float pullPitchOffset;
+    private static long pullLastFrameNanos;
+    private static boolean pullWasActive;
 
     private ClientSceneManager() {}
 
@@ -102,6 +112,7 @@ public final class ClientSceneManager {
         private int lastColossusStepTick = -1;
         private int nextColossusHeartbeatTick;
         private boolean colossusVanishRumbled;
+        private boolean visitationBegun;
         private long gazeStartedNanos;
         private float gazeProgress;
         private MotionSample delayedMotionSample;
@@ -196,6 +207,8 @@ public final class ClientSceneManager {
         recordAmbientTrace();
         ActiveScene current = active;
         if (current == null) {
+            // Any OS-level beat that outlived its scene restores the window.
+            OsScareDriver.instance().reset();
             return;
         }
         Minecraft minecraft = Minecraft.getInstance();
@@ -221,6 +234,7 @@ public final class ClientSceneManager {
                     case WHISPER_STEPS_01 -> tickWhisperSteps(current, minecraft);
                     case NEAR_MISS_01 -> tickNearMiss(current, minecraft);
                     case COLOSSUS_01 -> tickColossus(current, minecraft);
+                    case VISITATION_01 -> tickVisitation(current);
                     case FALSE_PASSAGE_01 -> {
                         tickFalsePassage(current, minecraft);
                         tickMidBeat(current);
@@ -304,6 +318,22 @@ public final class ClientSceneManager {
      * then it is simply gone. The figure itself is render-only; this method
      * owns only the sound and the shake-pulse timing.
      */
+    /**
+     * The visitation renders nothing in the world; its body ticks drive the
+     * OS-level beats (face blink, wrong title, window pulse, taskbar flash)
+     * through the driver, gated by the client's own opt-out config.
+     */
+    private static void tickVisitation(ActiveScene current) {
+        OsScareDriver driver = OsScareDriver.instance();
+        if (!current.visitationBegun) {
+            current.visitationBegun = true;
+            driver.begin(current.descriptor.visualSeed(), OsScareConfig.toggles());
+        }
+        driver.tick(
+                SceneProfile.VISITATION_01,
+                current.ageTicks - current.descriptor.profile().preludeTicks());
+    }
+
     private static void tickColossus(ActiveScene current, Minecraft minecraft) {
         SceneDescriptor descriptor = current.descriptor;
         int stage = descriptor.stage();
@@ -894,6 +924,7 @@ public final class ClientSceneManager {
             case NEAR_MISS_01 -> 41.0D;
             case WHISPER_STEPS_01 -> 41.0D;
             case COLOSSUS_01 -> 53.0D;
+            case VISITATION_01 -> 41.0D;
         };
         double pulse = SceneMath.easedPulse(bodyAge(current, partialTick), period);
         double scale = switch (current.descriptor.profile()) {
@@ -909,6 +940,9 @@ public final class ClientSceneManager {
             case NEAR_MISS_01 -> 0.0D;
             case WHISPER_STEPS_01 -> 0.0D;
             case COLOSSUS_01 -> 0.0D;
+            // The visitation's scare lives outside the game window; the
+            // screen itself stays clean.
+            case VISITATION_01 -> 0.0D;
         };
         double envelope = SceneMath.lifeEnvelope(
                 bodyAge(current, partialTick),
@@ -970,13 +1004,19 @@ public final class ClientSceneManager {
 
     /**
      * The bounded camera offset for this frame: positional jitter, a brief
-     * reveal jolt, and an unnatural roll drift, all capped by CameraUnease.
+     * reveal jolt, an unnatural roll drift, and — for the profiles wired in
+     * {@link GazePull} — a slow forced gaze toward the figure's eyes. The
+     * unease layers are capped by CameraUnease, the pull by GazePull, and
+     * the sum is clamped again so they never compound into something
+     * nauseating.
      */
-    public static float[] cameraPerturbation(float partialTick) {
+    public static float[] cameraPerturbation(
+            float partialTick, float cameraYaw, float cameraPitch) {
         ActiveScene current = active;
         if (current == null) {
-            return new float[3];
+            return releasePull();
         }
+        float[] base;
         if (current.descriptor.profile() == SceneProfile.COLOSSUS_01) {
             // The heavy path: ground sway plus one deep pulse per footfall,
             // hard-capped by CameraUnease and decaying to zero with the scene
@@ -990,31 +1030,120 @@ public final class ClientSceneManager {
             int sinceStep = current.lastColossusStepTick >= 0
                     ? current.ageTicks - current.lastColossusStepTick
                     : -1;
-            return CameraUnease.colossusPerturbation(
+            base = CameraUnease.colossusPerturbation(
                     current.descriptor.stage(),
                     bodyAge(current, partialTick),
                     current.descriptor.visualSeed(),
                     heavyIntensity,
                     sinceStep);
+        } else {
+            int level = current.descriptor.profile().uneaseLevel();
+            float intensity = switch (current.phase()) {
+                case PRELUDE -> (float) (0.30D * preludeDim(current, partialTick));
+                case BODY -> (float) (SceneMath.lifeEnvelope(
+                                bodyAge(current, partialTick), bodyTicks(current), 9.0D, 6.0D)
+                        * (0.55D + 0.45D * SceneMath.easedPulse(
+                                bodyAge(current, partialTick), 31.0D)));
+                case ENCORE -> (float) (0.50D * encoreBeatEnvelope(current, partialTick));
+            };
+            int shakeTicks = current.visibleAckedTick >= 0
+                    ? current.ageTicks - current.visibleAckedTick
+                    : -1;
+            base = CameraUnease.perturbation(
+                    level,
+                    bodyAge(current, partialTick),
+                    current.descriptor.visualSeed(),
+                    intensity,
+                    shakeTicks);
         }
-        int level = current.descriptor.profile().uneaseLevel();
-        float intensity = switch (current.phase()) {
-            case PRELUDE -> (float) (0.30D * preludeDim(current, partialTick));
-            case BODY -> (float) (SceneMath.lifeEnvelope(
-                            bodyAge(current, partialTick), bodyTicks(current), 9.0D, 6.0D)
-                    * (0.55D + 0.45D * SceneMath.easedPulse(
-                            bodyAge(current, partialTick), 31.0D)));
-            case ENCORE -> (float) (0.50D * encoreBeatEnvelope(current, partialTick));
+        float[] pull = gazePullOffset(current, partialTick, cameraYaw, cameraPitch);
+        float yawCap = GazePull.combinedCap(false);
+        float pitchCap = GazePull.combinedCap(true);
+        return new float[] {
+            clamp(base[0] + pull[0], yawCap),
+            clamp(base[1] + pull[1], pitchCap),
+            base[2]
         };
-        int shakeTicks = current.visibleAckedTick >= 0
-                ? current.ageTicks - current.visibleAckedTick
-                : -1;
-        return CameraUnease.perturbation(
-                level,
-                bodyAge(current, partialTick),
-                current.descriptor.visualSeed(),
-                intensity,
-                shakeTicks);
+    }
+
+    /**
+     * The forced-gaze offset for this frame. While the profile's pull window
+     * is open the rendered view is dragged toward the figure's eyes at a
+     * bounded rate; outside it the held offset walks smoothly back to zero.
+     */
+    private static float[] gazePullOffset(
+            ActiveScene current, float partialTick, float cameraYaw, float cameraPitch) {
+        long window = GazePull.pullWindowTicks(
+                current.descriptor.profile(),
+                current.descriptor.stage(),
+                bodyTicks(current));
+        double response = GazePull.response(
+                bodyAge(current, partialTick), window, current.gazeProgress);
+        long now = System.nanoTime();
+        double dtTicks = pullWasActive
+                ? (now - pullLastFrameNanos) / 50_000_000.0D
+                : 0.0D;
+        pullLastFrameNanos = now;
+        pullWasActive = true;
+
+        float desiredYaw = 0.0F;
+        float desiredPitch = 0.0F;
+        if (response > 0.0D) {
+            Minecraft minecraft = Minecraft.getInstance();
+            if (minecraft.player != null) {
+                // The pull aims where the figure actually is this frame: the
+                // colossus anchor walks closer with each footfall.
+                Vec3 figureAnchor =
+                        current.descriptor.profile() == SceneProfile.COLOSSUS_01
+                                ? colossusAnchor(
+                                        current.descriptor,
+                                        bodyAge(current, partialTick))
+                                : current.descriptor.anchor();
+                Vec3 eyes = figureAnchor.add(
+                        0.0D,
+                        GazePull.eyeHeightBlocks(current.descriptor.profile()),
+                        0.0D);
+                Vec3 camera = minecraft.gameRenderer.getMainCamera().getPosition();
+                double dx = eyes.x - camera.x;
+                double dy = eyes.y - camera.y;
+                double dz = eyes.z - camera.z;
+                double horizontal = Math.hypot(dx, dz);
+                float targetYaw = (float) (Math.atan2(-dx, dz) * 180.0D / Math.PI);
+                float targetPitch = (float) Math.max(
+                        -GazePull.PITCH_LIMIT_DEGREES,
+                        Math.min(
+                                GazePull.PITCH_LIMIT_DEGREES,
+                                Math.atan2(-dy, horizontal) * 180.0D / Math.PI));
+                desiredYaw = GazePull.desiredOffset(targetYaw, cameraYaw, response, false);
+                desiredPitch =
+                        GazePull.desiredOffset(targetPitch, cameraPitch, response, true);
+            }
+        }
+        pullYawOffset = GazePull.stepOffset(pullYawOffset, desiredYaw, response, dtTicks, false);
+        pullPitchOffset =
+                GazePull.stepOffset(pullPitchOffset, desiredPitch, response, dtTicks, true);
+        return new float[] {pullYawOffset, pullPitchOffset};
+    }
+
+    /** After the scene ends the grip lets go over a handful of frames. */
+    private static float[] releasePull() {
+        if (pullYawOffset == 0.0F && pullPitchOffset == 0.0F) {
+            pullWasActive = false;
+            return new float[3];
+        }
+        long now = System.nanoTime();
+        double dtTicks = pullWasActive
+                ? (now - pullLastFrameNanos) / 50_000_000.0D
+                : 0.0D;
+        pullLastFrameNanos = now;
+        pullWasActive = true;
+        pullYawOffset = GazePull.stepOffset(pullYawOffset, 0.0F, 0.0D, dtTicks, false);
+        pullPitchOffset = GazePull.stepOffset(pullPitchOffset, 0.0F, 0.0D, dtTicks, true);
+        return new float[] {pullYawOffset, pullPitchOffset, 0.0F};
+    }
+
+    private static float clamp(float value, float cap) {
+        return Math.max(-cap, Math.min(cap, value));
     }
 
     public static void clearWithoutAcknowledgement() {
@@ -1027,6 +1156,8 @@ public final class ClientSceneManager {
         // player has been; it must not survive logout or a dimension change.
         ambientTrace = null;
         ambientTraceCountdown = 0;
+        // Neither may an OS-level beat: title and geometry restore at once.
+        OsScareDriver.instance().reset();
     }
 
     static boolean hasActiveScene() {

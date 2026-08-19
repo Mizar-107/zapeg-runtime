@@ -37,11 +37,15 @@ public final class ColossusChoreography {
     // The finale stops early: two footfalls, then the watch, then nothing.
     private static final int[] STAGE_STEPS = {4, 4, 4, 4, 2};
 
-    // Eye layout on the head's front face (the head box spans x -7.5..7.5,
-    // y 82..96, z -7.5..7.5; the face is the -z side). The spacing is
-    // deliberately a little too wide for the head — readable at 280 blocks,
-    // and wrong in a way nobody can name.
-    public static final double EYE_FACE_Z = -7.5D;
+    // Head box of the slimmed silhouette: spans x -6.5..6.5, y 82..96,
+    // z -6.5..6.5; the face is the -z side.
+    public static final double HEAD_HALF_WIDTH = 6.5D;
+    public static final double HEAD_MIN_Y = 82.0D;
+    public static final double HEAD_MAX_Y = 96.0D;
+    // Eye layout on the head's front face. The spacing is deliberately a
+    // little too wide for the head — readable at 280 blocks, and wrong in a
+    // way nobody can name.
+    public static final double EYE_FACE_Z = -6.5D;
     public static final double EYE_CENTER_Y = 89.0D;
     public static final double EYE_HALF_SPACING = 3.6D;
     public static final double EYE_WIDTH = 2.8D;

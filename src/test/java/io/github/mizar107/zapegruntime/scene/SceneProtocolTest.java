@@ -32,8 +32,8 @@ class SceneProtocolTest {
     }
 
     @Test
-    void versionFiveProfileIdsRemainExplicitAndBounded() {
-        assertEquals("5", SceneNetwork.PROTOCOL);
+    void versionSixProfileIdsRemainExplicitAndBounded() {
+        assertEquals("6", SceneNetwork.PROTOCOL);
         assertEquals(0, SceneProfile.ECHO_01.wireId());
         assertEquals(1, SceneProfile.THRESHOLD_01.wireId());
         assertEquals(2, SceneProfile.MOTION_ECHO_01.wireId());
@@ -46,6 +46,7 @@ class SceneProtocolTest {
         assertEquals(9, SceneProfile.NEAR_MISS_01.wireId());
         assertEquals(10, SceneProfile.WHISPER_STEPS_01.wireId());
         assertEquals(11, SceneProfile.COLOSSUS_01.wireId());
+        assertEquals(12, SceneProfile.VISITATION_01.wireId());
 
         assertEquals(
                 ScenePlacementMode.DISTANT_SAFE_GROUND,

@@ -113,13 +113,15 @@ public final class ColossusRenderer {
         float green = (float) rgb[1];
         float blue = (float) rgb[2];
         // A simple huge humanoid reads better at distance than fine detail:
-        // two legs, a torso, hanging arms, a head — 96 blocks in all.
-        box(buffer, matrix, -10.5F, 0.0F, -5.5F, 9.0F, 46.0F, 11.0F, red, green, blue, alpha);
-        box(buffer, matrix, 1.5F, 0.0F, -5.5F, 9.0F, 46.0F, 11.0F, red, green, blue, alpha);
-        box(buffer, matrix, -14.0F, 46.0F, -6.5F, 28.0F, 36.0F, 13.0F, red, green, blue, alpha);
-        box(buffer, matrix, -22.0F, 44.0F, -4.5F, 8.0F, 36.0F, 9.0F, red, green, blue, alpha);
-        box(buffer, matrix, 14.0F, 44.0F, -4.5F, 8.0F, 36.0F, 9.0F, red, green, blue, alpha);
-        box(buffer, matrix, -7.5F, 82.0F, -7.5F, 15.0F, 14.0F, 15.0F, red, green, blue, alpha);
+        // two legs, a torso, hanging arms, a head — 96 blocks in all, and
+        // deliberately thin like the reference art: a towering narrow shape,
+        // not a broad one.
+        box(buffer, matrix, -8.5F, 0.0F, -4.5F, 7.0F, 46.0F, 9.0F, red, green, blue, alpha);
+        box(buffer, matrix, 1.5F, 0.0F, -4.5F, 7.0F, 46.0F, 9.0F, red, green, blue, alpha);
+        box(buffer, matrix, -10.0F, 46.0F, -5.5F, 20.0F, 36.0F, 11.0F, red, green, blue, alpha);
+        box(buffer, matrix, -15.0F, 44.0F, -3.5F, 5.0F, 36.0F, 7.0F, red, green, blue, alpha);
+        box(buffer, matrix, 10.0F, 44.0F, -3.5F, 5.0F, 36.0F, 7.0F, red, green, blue, alpha);
+        box(buffer, matrix, -6.5F, 82.0F, -6.5F, 13.0F, 14.0F, 13.0F, red, green, blue, alpha);
 
         tesselator.end();
 

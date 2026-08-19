@@ -55,6 +55,12 @@ tasks.withType(JavaExec).configureEach {
     }
 }
 
+// Sources are UTF-8 (the glitched-title glyph pool); never compile with the
+// platform default encoding.
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
 tasks.named('test', Test).configure {
     useJUnitPlatform()
 }
