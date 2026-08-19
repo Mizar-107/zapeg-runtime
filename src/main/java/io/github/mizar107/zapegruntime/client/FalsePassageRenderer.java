@@ -8,6 +8,7 @@ import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.math.Axis;
 import io.github.mizar107.zapegruntime.scene.SceneMath;
+import io.github.mizar107.zapegruntime.scene.ScenePalette;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
@@ -99,6 +100,20 @@ public final class FalsePassageRenderer {
         // A cold seam of "light from nowhere" at the corridor's far edge.
         quad(buffer, matrix, -deepW * 0.5F, deepH - 0.03F, -0.85F, deepW, 0.03F,
                 0.35F * strength * draught, 0.10F, 0.30F, 0.33F);
+
+        // The reveal: only once the target has committed and the passage
+        // starts to fold, two ember eyes are suddenly just... inside, a
+        // little too high and too far apart for the doorway. They fold with
+        // it. Steady glow, never a flash.
+        float watch = (float) (SceneMath.smoothstep(0.04D, 0.22D, collapse)
+                * (1.0D - SceneMath.smoothstep(0.50D, 0.80D, collapse)));
+        if (watch > 0.001F) {
+            float eyeAlpha = 0.60F * strength * watch;
+            quad(buffer, matrix, -0.24F, 1.42F, -0.84F, 0.10F, 0.05F, eyeAlpha,
+                    ScenePalette.EYE_RED, ScenePalette.EYE_GREEN, ScenePalette.EYE_BLUE);
+            quad(buffer, matrix, 0.14F, 1.42F, -0.84F, 0.10F, 0.05F, eyeAlpha,
+                    ScenePalette.EYE_RED, ScenePalette.EYE_GREEN, ScenePalette.EYE_BLUE);
+        }
 
         tesselator.end();
         RenderSystem.enableCull();

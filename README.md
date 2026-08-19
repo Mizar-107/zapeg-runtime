@@ -29,35 +29,39 @@ Profiles are deliberately distinct and bounded:
 - `motion_echo_01`: a distorted copy wearing the target's own skin, built from
   about 0.6 seconds of bounded local player-position history; dispatch does not
   require a distant ground anchor because that history owns the rendered
-  position;
+  position. The newest copy keeps the target's face but its eyes glow the
+  signature ember orange — the tell that the copy is wrong;
 - `light_fault_01`: spatially gated cool darkness, light bands and a restrained
   halo keyed to a short loaded camera-focus anchor, with no figure or world
   mutation. It acknowledges visibility and advances gaze only from a presented,
   non-hidden GUI frame, and requires 1.5 seconds of presented gaze to resolve;
 - `peripheral_01`: a still silhouette whose alpha collapses as the camera look
-  vector nears it — it only reads at the edge of vision, and a direct look
-  resolves it within a blink-long 80 ms dwell. It never tracks the camera;
+  vector nears it — it only reads at the edge of vision, glowing eyes
+  included, and a direct look resolves it within a blink-long 80 ms dwell. It
+  never tracks the camera;
 - `footsteps_01`: sound-only. Eleven seeded vanilla steps circle from the
   anchor's direction toward the target, stop just over three blocks away, and
   never arrive; the screen stays clean and the scene always ends in silence
   (TIMEOUT), never by gaze;
-- `sky_mark_01`: an impossible pale mark — a swollen moon, or two distant eyes
-  — that only the target's client renders, fixed at a seeded sky bearing and
-  clamped inside the far plane so it is always visible when looked at. It
-  breathes slowly, never moves across the sky, and resolves by gaze;
+- `sky_mark_01`: an impossible pale mark — a swollen moon, or two distant
+  ember-orange eyes — that only the target's client renders, fixed at a seeded
+  sky bearing and clamped inside the far plane so it is always visible when
+  looked at. It breathes slowly, never moves across the sky, and resolves by
+  gaze;
 - `false_passage_01`: a render-only doorway with a recessed, breathing
   interior placed on distant safe ground. As the target approaches within the
   collapse distance the passage tears and folds in on itself over a bounded
-  collapse window; approach resolves it, gaze never does. After the apparent
-  end it may sound one final encore beat about thirty seconds later;
+  collapse window — and only then, mid-fold, two ember eyes are briefly
+  visible deep inside it. Approach resolves it, gaze never does. After the
+  apparent end it may sound one final encore beat about thirty seconds later;
 - `chroma_break_01`: a screen-space "corrupted recording" fault — a bounded
   RGB-split fringe and slow scanline displacement drawn as a GUI overlay. It
   is photosensitivity-safe by construction: intensity is capped, the pulse is
   a slow sine, and there is no rapid full-screen flashing;
 - `near_miss_01`: a figure that crosses just behind the target using the local
   motion history, walking from one side to the other over a bounded crossing
-  window. It is placed so it never enters the crosshair; a direct look is
-  impossible by construction and the scene resolves on its own;
+  window, eyes glowing. It is placed so it never enters the crosshair; a
+  direct look is impossible by construction and the scene resolves on its own;
 - `whisper_steps_01`: sound-only. The target hears their own earlier footsteps
   replayed from behind, drawn from the local motion trace at roughly a
   ten-second delay, with a walking gait pitch. The screen stays clean and the
@@ -65,13 +69,16 @@ Profiles are deliberately distinct and bounded:
 - `colossus_01`: a roughly hundred-block humanoid silhouette standing far
   beyond loaded chunks, rendered only on the target's client — no entity,
   hitbox or loot, and never gaze-resolved. The wire stage (0–4) picks the
-  distance: a horizon smudge at 280 blocks, then 210, 150, 100, and finally a
-  towering 70-block near-presence that stops, watches for a held beat, and is
-  simply gone. Each footfall lands as a deep pitched-down boom at the target's
-  position synced with a heavy camera pulse; the figure rocks and breathes in
-  the fog, which is mixed manually because the position-color pipeline ignores
-  shader fog. The anchor is a seeded horizon bearing pinned to the target's
-  feet — nothing collides, so no ground scan runs at those distances.
+  distance: a horizon smudge at 280 blocks, then 220, 160, 110, and finally a
+  towering 70-block near-presence that stops, watches for a held beat while
+  its eyes slowly narrow, and is simply gone. Two ember-orange eyes sit
+  slightly too far apart on its face, additive and unfogged, so they read at
+  every distance and are the last thing visible as it fades. Each footfall
+  lands as a deep pitched-down boom at the target's position synced with a
+  heavy camera pulse; the figure rocks and breathes in the fog, which is
+  mixed manually because the position-color pipeline ignores shader fog. The
+  anchor is a seeded horizon bearing pinned to the target's feet — nothing
+  collides, so no ground scan runs at those distances.
 
 Figure presentation, direct-gaze progress and the light fault's spatial
 activation use the real target camera, frustum and block line of sight. The
@@ -96,7 +103,16 @@ Apparition models render only their manually posed base body parts. Player-skin
 outer layers, ears and cloak are disabled so baked overlay transforms cannot
 detach from the silhouette. The black-figure profiles bake the classic humanoid
 model layer that matches their texture; `motion_echo_01` bakes the base wide or
-slim player body to match the target's own model. Scene audio is a small
+slim player body to match the target's own model.
+
+Every humanoid figure carries the same signature: two ember-orange eyes riding
+the animated head pose. They are drawn as additive position-color quads — the
+textureless twin of vanilla's `RenderType.eyes` (the spider/enderman approach),
+so no asset is shipped — unfogged, unlit and steady, with a soft oversized halo
+behind each bright core. They never flash or strobe, they dim as the camera
+leaves the figure's front hemisphere instead of shining through the head, and
+on the colossus they hold at full strength while the body fades, so the eyes
+are always the last thing visible. Scene audio is a small
 allowlist of vanilla sound events played client-locally on the target's client
 only — no custom, remote or server-broadcast audio. Each scene plays an arrival
 beat, one faint seeded mid-scene beat, and a resolve beat; sound volume is

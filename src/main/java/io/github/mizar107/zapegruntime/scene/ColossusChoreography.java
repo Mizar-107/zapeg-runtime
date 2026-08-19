@@ -37,6 +37,18 @@ public final class ColossusChoreography {
     // The finale stops early: two footfalls, then the watch, then nothing.
     private static final int[] STAGE_STEPS = {4, 4, 4, 4, 2};
 
+    // Eye layout on the head's front face (the head box spans x -7.5..7.5,
+    // y 82..96, z -7.5..7.5; the face is the -z side). The spacing is
+    // deliberately a little too wide for the head — readable at 280 blocks,
+    // and wrong in a way nobody can name.
+    public static final double EYE_FACE_Z = -7.5D;
+    public static final double EYE_CENTER_Y = 89.0D;
+    public static final double EYE_HALF_SPACING = 3.6D;
+    public static final double EYE_WIDTH = 2.8D;
+    public static final double EYE_HEIGHT = 1.5D;
+    /** The narrowest the finale watch ever squeezes the eyes (height scale). */
+    public static final double EYE_MIN_NARROW = 0.35D;
+
     private ColossusChoreography() {}
 
     public static int clampStage(int stage) {
@@ -116,6 +128,24 @@ public final class ColossusChoreography {
         double side = (seed & 1L) == 0L ? 1.0D : -1.0D;
         double alternating = (elapsed & 1) == 0 ? side : -side;
         return 1.1D * alternating * settle * Math.sin(sinceStep * 0.22D);
+    }
+
+    /**
+     * Finale wrongness: while the colossus holds its watch, the eyes slowly
+     * narrow from full height to {@link #EYE_MIN_NARROW}; every other stage
+     * keeps them level. Bounded, slow and steady — a narrow, never a blink.
+     */
+    public static double eyeNarrow(int stage, double bodyAgeTicks) {
+        if (!isFinale(stage)) {
+            return 1.0D;
+        }
+        double watchStart = stepTick(stepsForStage(stage) - 1);
+        double vanish = vanishTick(stage);
+        if (vanish <= watchStart) {
+            return 1.0D;
+        }
+        double t = SceneMath.smoothstep(watchStart, vanish, bodyAgeTicks);
+        return 1.0D - (1.0D - EYE_MIN_NARROW) * t;
     }
 
     /**

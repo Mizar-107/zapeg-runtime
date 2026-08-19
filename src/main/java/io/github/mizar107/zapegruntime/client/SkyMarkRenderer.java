@@ -8,6 +8,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import io.github.mizar107.zapegruntime.scene.SceneMath;
+import io.github.mizar107.zapegruntime.scene.ScenePalette;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
@@ -79,13 +80,16 @@ public final class SkyMarkRenderer {
         quad(buffer, matrix, 0.0F, 0.0F, 45.0F, size, size, 0.34F * strength, 0.62F, 0.68F, 0.75F);
 
         if (eyes) {
-            // Two level slits, too far apart and too still to be a face.
+            // Two level slits in the signature ember orange, too far apart
+            // and too still to be a face.
             float eyeY = size * 0.16F;
             float eyeSpread = size * 0.42F;
             float eyeW = size * 0.34F;
             float eyeH = size * 0.055F;
-            quad(buffer, matrix, -eyeSpread, eyeY, 0.0F, eyeW, eyeH, 0.55F * strength, 0.72F, 0.06F, 0.07F);
-            quad(buffer, matrix, eyeSpread, eyeY, 0.0F, eyeW, eyeH, 0.55F * strength, 0.72F, 0.06F, 0.07F);
+            quad(buffer, matrix, -eyeSpread, eyeY, 0.0F, eyeW, eyeH, 0.55F * strength,
+                    ScenePalette.EYE_RED, ScenePalette.EYE_GREEN, ScenePalette.EYE_BLUE);
+            quad(buffer, matrix, eyeSpread, eyeY, 0.0F, eyeW, eyeH, 0.55F * strength,
+                    ScenePalette.EYE_RED, ScenePalette.EYE_GREEN, ScenePalette.EYE_BLUE);
         }
 
         tesselator.end();

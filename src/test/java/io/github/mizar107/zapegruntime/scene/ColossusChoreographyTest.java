@@ -147,6 +147,48 @@ class ColossusChoreographyTest {
     }
 
     @Test
+    void eyesSitOnTheFaceSlightlyTooFarApart() {
+        // The head box spans x -7.5..7.5, y 82..96, face at z -7.5.
+        double halfHead = 7.5D;
+        double outerEdge = ColossusChoreography.EYE_HALF_SPACING
+                + ColossusChoreography.EYE_WIDTH * 0.5D;
+        assertTrue(outerEdge < halfHead, "eyes must stay on the face");
+        double spacingRatio = ColossusChoreography.EYE_HALF_SPACING / halfHead;
+        assertTrue(spacingRatio > 0.35D, "the wrongness: eyes wider than any face");
+        assertTrue(spacingRatio < 0.60D, "but still plausibly a face");
+        assertTrue(ColossusChoreography.EYE_CENTER_Y > 82.0D
+                && ColossusChoreography.EYE_CENTER_Y < 96.0D);
+        assertTrue(ColossusChoreography.EYE_FACE_Z < 0.0D, "the face is the -z side");
+        // Large enough to read at the horizon stage: at 280 blocks a block
+        // is already only a few pixels, so sub-block eyes would vanish.
+        assertTrue(ColossusChoreography.EYE_WIDTH >= 2.0D);
+    }
+
+    @Test
+    void onlyTheFinaleNarrowsItsEyes() {
+        for (int stage = 0; stage < ColossusChoreography.MAX_STAGE; stage++) {
+            assertEquals(1.0D, ColossusChoreography.eyeNarrow(stage, 0.0D));
+            assertEquals(1.0D, ColossusChoreography.eyeNarrow(stage, 500.0D));
+        }
+        int finale = ColossusChoreography.MAX_STAGE;
+        double watchStart = ColossusChoreography.stepTick(
+                ColossusChoreography.stepsForStage(finale) - 1);
+        double vanish = ColossusChoreography.vanishTick(finale);
+        assertEquals(1.0D, ColossusChoreography.eyeNarrow(finale, watchStart));
+        double previous = 2.0D;
+        for (double age = watchStart; age <= vanish; age += 1.0D) {
+            double narrow = ColossusChoreography.eyeNarrow(finale, age);
+            assertTrue(narrow <= previous, "the watch only narrows, never widens");
+            assertTrue(narrow >= ColossusChoreography.EYE_MIN_NARROW - 1.0E-9D);
+            previous = narrow;
+        }
+        assertEquals(
+                ColossusChoreography.EYE_MIN_NARROW,
+                ColossusChoreography.eyeNarrow(finale, vanish),
+                1.0E-9D);
+    }
+
+    @Test
     void outOfRangeStagesClampIntoTheTable() {
         assertEquals(0, ColossusChoreography.clampStage(-3));
         assertEquals(

@@ -63,7 +63,30 @@ public final class ApparitionRenderer {
         return profile == SceneProfile.MOTION_ECHO_01;
     }
 
+    /**
+     * Every humanoid figure carries the ember-orange eyes — including the
+     * motion echo, whose eyes are the tell that the copy is wrong. Kept pure
+     * so the policy is unit-testable.
+     */
+    public static boolean hasGlowingEyes(SceneProfile profile) {
+        return profile.rendersFigure();
+    }
+
     private record FigureVisual(HumanoidModel<LivingEntity> model, RenderType renderType) {}
+
+    /**
+     * Where the eye-glow pass should land for a profile's main body pass:
+     * same offset and scale, with the alpha the eyes should peak at. Null
+     * means the profile is too faded to show eyes this frame.
+     */
+    private record EyePass(
+            float offsetX,
+            float offsetY,
+            float offsetZ,
+            float scaleX,
+            float scaleY,
+            float scaleZ,
+            float alpha) {}
 
     private static FigureVisual selectVisual(SceneProfile profile) {
         if (usesOwnSilhouette(profile)) {
@@ -120,7 +143,7 @@ public final class ApparitionRenderer {
                 .renderBuffers()
                 .bufferSource();
         RenderType renderType = visual.renderType();
-        switch (profile) {
+        EyePass eyes = switch (profile) {
             case ECHO_01 -> renderEcho(snapshot, event, currentModel, buffers, renderType, age, envelope);
             case THRESHOLD_01 -> renderThreshold(
                     snapshot,
@@ -155,12 +178,24 @@ public final class ApparitionRenderer {
                     age,
                     envelope);
             case LIGHT_FAULT_01, FOOTSTEPS_01, SKY_MARK_01, FALSE_PASSAGE_01,
-                    CHROMA_BREAK_01, WHISPER_STEPS_01 -> {
-                // Screen-space / sky / doorway / sound-only profiles render
-                // no humanoid figure.
-            }
-        }
+                    CHROMA_BREAK_01, WHISPER_STEPS_01, COLOSSUS_01 -> null;
+                    // Screen-space / sky / doorway / sound-only profiles render
+                    // no humanoid figure; the colossus draws its own eyes.
+        };
         buffers.endBatch(renderType);
+        if (eyes != null && hasGlowingEyes(profile)) {
+            EyeGlow.render(
+                    currentModel,
+                    snapshot,
+                    event,
+                    eyes.offsetX(),
+                    eyes.offsetY(),
+                    eyes.offsetZ(),
+                    eyes.scaleX(),
+                    eyes.scaleY(),
+                    eyes.scaleZ(),
+                    eyes.alpha());
+        }
     }
 
     /**
@@ -169,7 +204,7 @@ public final class ApparitionRenderer {
      * gaze dwell then resolves it. It never tracks the camera — it does not
      * know, or does not care, that it is being watched.
      */
-    private static void renderPeripheral(
+    private static EyePass renderPeripheral(
             ClientSceneManager.RenderSnapshot snapshot,
             RenderLevelStageEvent event,
             HumanoidModel<LivingEntity> currentModel,
@@ -182,7 +217,7 @@ public final class ApparitionRenderer {
         Vec3 toAnchor = snapshot.anchor().add(0.0D, 1.35D, 0.0D).subtract(cameraPosition);
         double length = toAnchor.length();
         if (length < 1.0E-4D) {
-            return;
+            return null;
         }
         double cos = Mth.clamp(look.dot(toAnchor.scale(1.0D / length)), -1.0D, 1.0D);
         double offAxisDegrees = Math.acos(cos) * Mth.RAD_TO_DEG;
@@ -195,7 +230,7 @@ public final class ApparitionRenderer {
                 * periphery
                 * (1.0F - snapshot.gazeProgress());
         if (alphaScale <= 0.001F) {
-            return;
+            return null;
         }
 
         double phase = (snapshot.descriptor().visualSeed() & 0xFFFFL) * 0.00013D;
@@ -217,9 +252,11 @@ public final class ApparitionRenderer {
                 cameraLeft.z() * 0.018F,
                 0.80F, 1.10F, 0.80F,
                 0.10F, 0.30F, 0.33F, 0.08F * alphaScale);
+        // The eyes live at the edge of vision too: same periphery collapse.
+        return new EyePass(0.0F, 0.0F, 0.0F, 0.80F, 1.10F, 0.80F, 0.90F * alphaScale);
     }
 
-    private static void renderEcho(
+    private static EyePass renderEcho(
             ClientSceneManager.RenderSnapshot snapshot,
             RenderLevelStageEvent event,
             HumanoidModel<LivingEntity> currentModel,
@@ -232,7 +269,7 @@ public final class ApparitionRenderer {
         float jitter = (float) (Math.sin(age * 2.73D + phase) * 0.012D);
         float alphaScale = envelope * (1.0F - snapshot.gazeProgress() * 0.85F);
         if (alphaScale <= 0.001F) {
-            return;
+            return null;
         }
         Vector3f cameraLeft = event.getCamera().getLeftVector();
         float split = 0.026F + pulse * 0.024F;
@@ -273,9 +310,14 @@ public final class ApparitionRenderer {
                 -jitter * 0.2F,
                 0.84F, 1.14F, 0.84F,
                 0.018F, 0.018F, 0.024F, 0.91F * alphaScale);
+        // The eyes sit on the true figure, not on the chromatic split copies.
+        return new EyePass(
+                jitter * 0.35F, 0.0F, -jitter * 0.2F,
+                0.84F, 1.14F, 0.84F,
+                0.95F * alphaScale);
     }
 
-    private static void renderThreshold(
+    private static EyePass renderThreshold(
             ClientSceneManager.RenderSnapshot snapshot,
             RenderLevelStageEvent event,
             HumanoidModel<LivingEntity> currentModel,
@@ -293,7 +335,7 @@ public final class ApparitionRenderer {
         float lateralZ = cameraLeft.z() * side * withdraw;
         float fade = (1.0F - easedGaze * 0.82F) * envelope;
         if (fade <= 0.001F) {
-            return;
+            return null;
         }
 
         currentModel.leftArm.visible = side < 0.0F;
@@ -319,9 +361,14 @@ public final class ApparitionRenderer {
                 lateralZ - cameraLeft.z() * 0.025F,
                 0.68F, 1.02F, 0.68F,
                 0.08F, 0.26F, 0.28F, 0.12F * fade);
+        // The eyes withdraw with the half-figure, still watching as it sinks.
+        return new EyePass(
+                lateralX + tremor, lateralY - sink, lateralZ - tremor,
+                0.68F, 1.02F, 0.68F,
+                0.95F * fade);
     }
 
-    private static void renderMotionEcho(
+    private static EyePass renderMotionEcho(
             ClientSceneManager.RenderSnapshot snapshot,
             RenderLevelStageEvent event,
             HumanoidModel<LivingEntity> currentModel,
@@ -339,7 +386,7 @@ public final class ApparitionRenderer {
         Vector3f cameraLeft = event.getCamera().getLeftVector();
         float fade = (1.0F - snapshot.gazeProgress() * 0.72F) * envelope;
         if (fade <= 0.001F) {
-            return;
+            return null;
         }
         // The copy stays recognisably the target: the newest image is almost
         // untinted, and only the older lag copies sink into cold shadow.
@@ -365,6 +412,12 @@ public final class ApparitionRenderer {
                 cameraLeft.z() * 0.025F,
                 0.82F, 1.08F * breathe, 0.82F,
                 0.12F, 0.34F, 0.38F, 0.10F * fade);
+        // The newest copy — the one that still looks like you — has your
+        // face and Heraldor's eyes. The lag copies stay eyeless.
+        return new EyePass(
+                0.0F, 0.0F, 0.0F,
+                0.82F, 1.08F * breathe, 0.82F,
+                0.95F * fade);
     }
 
     /**
@@ -372,7 +425,7 @@ public final class ApparitionRenderer {
      * It fades in and out with the crossing progress itself, so it is never
      * fully solid — a walker glimpsed mid-stride, gone before it is studied.
      */
-    private static void renderNearMiss(
+    private static EyePass renderNearMiss(
             ClientSceneManager.RenderSnapshot snapshot,
             RenderLevelStageEvent event,
             HumanoidModel<LivingEntity> currentModel,
@@ -386,7 +439,7 @@ public final class ApparitionRenderer {
                 1.0D - SceneMath.smoothstep(0.78D, 1.0D, progress));
         float alphaScale = envelope * crossingFade * (1.0F - snapshot.gazeProgress() * 0.9F);
         if (alphaScale <= 0.001F) {
-            return;
+            return null;
         }
 
         // A brisk, ordinary walk — the wrongness is that it is here at all.
@@ -409,6 +462,8 @@ public final class ApparitionRenderer {
                 cameraLeft.z() * 0.02F,
                 0.82F, 1.10F, 0.82F,
                 0.10F, 0.28F, 0.31F, 0.09F * alphaScale);
+        // A walker glimpsed mid-stride — and its eyes catch the light wrong.
+        return new EyePass(0.0F, 0.0F, 0.0F, 0.82F, 1.10F, 0.82F, 0.90F * alphaScale);
     }
 
     private static void renderPass(

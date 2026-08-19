@@ -31,4 +31,28 @@ class ApparitionRendererPolicyTest {
             }
         }
     }
+
+    @Test
+    void everyHumanoidFigureCarriesTheGlowingEyes() {
+        assertTrue(ApparitionRenderer.hasGlowingEyes(SceneProfile.ECHO_01));
+        assertTrue(ApparitionRenderer.hasGlowingEyes(SceneProfile.THRESHOLD_01));
+        assertTrue(ApparitionRenderer.hasGlowingEyes(SceneProfile.MOTION_ECHO_01));
+        assertTrue(ApparitionRenderer.hasGlowingEyes(SceneProfile.PERIPHERAL_01));
+        assertTrue(ApparitionRenderer.hasGlowingEyes(SceneProfile.NEAR_MISS_01));
+        // Sound-only, sky, doorway and screen-space profiles render no
+        // humanoid figure, so there is no face to light; the colossus draws
+        // its own eyes in its dedicated renderer.
+        for (SceneProfile profile : SceneProfile.values()) {
+            if (ApparitionRenderer.hasGlowingEyes(profile)) {
+                assertTrue(profile.rendersFigure());
+            }
+        }
+        assertFalse(ApparitionRenderer.hasGlowingEyes(SceneProfile.FOOTSTEPS_01));
+        assertFalse(ApparitionRenderer.hasGlowingEyes(SceneProfile.WHISPER_STEPS_01));
+        assertFalse(ApparitionRenderer.hasGlowingEyes(SceneProfile.SKY_MARK_01));
+        assertFalse(ApparitionRenderer.hasGlowingEyes(SceneProfile.FALSE_PASSAGE_01));
+        assertFalse(ApparitionRenderer.hasGlowingEyes(SceneProfile.LIGHT_FAULT_01));
+        assertFalse(ApparitionRenderer.hasGlowingEyes(SceneProfile.CHROMA_BREAK_01));
+        assertFalse(ApparitionRenderer.hasGlowingEyes(SceneProfile.COLOSSUS_01));
+    }
 }
