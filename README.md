@@ -6,16 +6,23 @@ faults without registering or saving a Minecraft entity.
 
 ## v0.3 boundaries
 
-- exact-match protocol `5`; mixed v0.2/v0.3 clients fail the handshake (v5
-  adds a bounded escalation stage to the spawn descriptor, used by
-  `colossus_01`; a v4 client would misread the longer payload);
-- twelve allowlisted profiles, with stable wire ID `0` retained for `echo_01`;
+- exact-match protocol `6`; mixed v0.3.0/v0.3.1 clients fail the handshake
+  (v6 adds `visitation_01` at wire ID 12; the descriptor layout is unchanged,
+  but a v5 client would fail closed on the unknown ID mid-session, so the
+  mismatch is refused up front);
+- thirteen allowlisted profiles, with stable wire ID `0` retained for
+  `echo_01`;
 - OP-triggered rehearsal and live scene commands, with an optional coarse
   anchor hint the Director uses to place scenes near remembered places;
 - client-camera visibility and gaze-based disappearance;
 - a bounded camera-unease layer (sub-degree jitter, brief shake pulses, slow
   unnatural roll) with strict intensity caps that never fights player control,
   plus a dedicated heavy footfall-shake mode reserved for the colossus;
+- a gaze-pull layer: during an allowlisted scene's pull window the rendered
+  camera is dragged toward the apparition's glowing eyes at a slow bounded
+  rate. The player can fight it but the pull wins, smoothly; it eases in and
+  out, decays to exactly zero on release, never touches the player's real
+  rotation, and composes with the unease layer under a combined cap;
 - scene phasing: a client-local ambience-dip prelude before the body and, for
   allowlisted profiles, a single bounded encore beat after the apparent end;
 - hard expiry and cleanup on logout, death, dimension change and restart;
@@ -78,7 +85,18 @@ Profiles are deliberately distinct and bounded:
   heavy camera pulse; the figure rocks and breathes in the fog, which is
   mixed manually because the position-color pipeline ignores shader fog. The
   anchor is a seeded horizon bearing pinned to the target's feet — nothing
-  collides, so no ground scan runs at those distances.
+  collides, so no ground scan runs at those distances;
+- `visitation_01`: the OS-level scare. Nothing renders in-game; instead the
+  client briefly steps outside the game window. A borderless always-on-top
+  window shows the bundled face asset (`visitation_face.png`, the owner's own
+  art) for a faded blink of well under two seconds; the game window title
+  momentarily reads as glitched block glyphs — never letters, words or a
+  name; the window position shivers through a small decaying pulse; and an
+  optional taskbar attention flash rides the blink. Everything restores
+  exactly: the true title and geometry always come back, the popup never
+  steals keyboard or mouse focus, nothing persists, and the layer fails
+  silent on headless or unsupported platforms. The scene never resolves by
+  gaze and the game screen itself stays clean.
 
 Figure presentation, direct-gaze progress and the light fault's spatial
 activation use the real target camera, frustum and block line of sight. The
@@ -121,6 +139,28 @@ range-compensated so distant anchors arrive faint instead of silent.
 The public mod name and IDs stay generic. Campaign names, prose, timing and
 Discord behavior remain server-side in the Heraldor Director.
 
+## Client configuration
+
+The OS-level scare layer (`visitation_01`) is governed by a per-client config
+at `config/zapeg_runtime-client.toml`, so any player can opt out locally
+without affecting anyone else. All toggles default to `true` on this
+friends-only server:
+
+```toml
+[osScares]
+# Master switch; when false, visitation scenes do nothing on this client.
+enabled = true
+# The brief borderless always-on-top face blink.
+facePopup = true
+# The glitched window title and the small window pulse.
+windowWrongness = true
+# The taskbar/dock attention flash riding the face blink.
+taskbarFlash = true
+```
+
+Every other scene layer (apparitions, sounds, camera unease, gaze pull) has
+no client toggle and is unaffected by these settings.
+
 ## Operator commands
 
 Permission-level-2 in-game operators and authenticated RCON may use:
@@ -135,8 +175,9 @@ Permission-level-2 in-game operators and authenticated RCON may use:
 
 `profile` is one of `echo_01`, `threshold_01`, `motion_echo_01`,
 `light_fault_01`, `peripheral_01`, `footsteps_01`, `sky_mark_01`,
-`false_passage_01`, `chroma_break_01`, `near_miss_01`, `whisper_steps_01`, or
-`colossus_01`. Arbitrary shader names, asset paths and URLs are rejected.
+`false_passage_01`, `chroma_break_01`, `near_miss_01`, `whisper_steps_01`,
+`colossus_01`, or `visitation_01`. Arbitrary shader names, asset paths and
+URLs are rejected.
 
 `rehearse` is a manual, non-consuming scene at the profile's default length;
 for `colossus_01` it accepts an optional stage (0–4) so any approach step can
@@ -160,4 +201,4 @@ See [ROADMAP.md](ROADMAP.md) for the reality-distortion and later combat plan.
 .\gradlew.bat test build
 ```
 
-The release jar is `build/libs/zapeg-runtime-forge-1.20.1-0.3.0.jar`.
+The release jar is `build/libs/zapeg-runtime-forge-1.20.1-0.3.1.jar`.

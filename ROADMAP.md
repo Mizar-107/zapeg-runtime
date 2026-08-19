@@ -134,6 +134,37 @@ mis-decode):
   around the anchor; depth testing stays on so foreground terrain occludes
   it honestly.
 
+## v0.3.1 — visitation slice
+
+Implemented as exact-match protocol `6` (the profile wire-ID set grew to 13
+with `visitation_01`; a v5 client would fail closed on the unknown id
+mid-session, so the handshake refuses the mismatch up front):
+
+- Gaze-pull layer: while an allowlisted scene is in its pull window, the
+  rendered camera is dragged toward the apparition's glowing eyes at a
+  bounded rate. The player can fight it — mouse input still applies — but
+  the pull wins slowly and smoothly, eases in and out, and decays to exactly
+  zero on release, so it never leaves residual rotation. It is a render-layer
+  offset (the player's real rotation is untouched), composes with the
+  camera-unease layer under a combined cap, and is photosensitivity and
+  motion-sickness safe: slow maximum rate, no snapping, no flashing. On
+  `echo_01` the pull releases as the forced look resolves the scene; on the
+  `colossus_01` finale it holds the target's gaze while the figure watches
+  back.
+- `visitation_01`: the OS-level scare profile. Renders nothing in-game;
+  instead the client briefly steps outside the game window — a borderless
+  always-on-top face blink (the bundled `visitation_face.png`, faded in and
+  out in well under two seconds), a window title that momentarily reads as
+  glitched block glyphs (never letters, never words, never a name), a small
+  decaying window-position pulse, and an optional taskbar attention flash.
+  Everything restores exactly: the original title and geometry always come
+  back, the popup never steals keyboard or mouse focus, and the layer fails
+  silent on headless or unsupported platforms. Operator-only and
+  manifestation-gated on the Director side; never gaze-resolved.
+- Per-client opt-out: the `osScares` client config (master switch plus
+  face-popup, window-wrongness and taskbar-flash sub-toggles) lets any
+  player disable the OS-level beats locally without affecting anyone else.
+
 ## v0.4 — manifestation and combat
 
 Anything that damages, collides or can be attacked becomes server-authoritative:
@@ -165,11 +196,20 @@ Heraldor Director now exposes a persistent, phase-gated OP/RCON bridge:
 /zapeg-lore director resume
 /zapeg-lore director phase start <presence|servants|manifestation>
 /zapeg-lore director phase advance
-/zapeg-lore director event rehearse apparition <echo|threshold|motion-echo|light-fault|peripheral|footsteps|sky-mark|false-passage|chroma-break|near-miss|whisper-steps|colossus> <player>
-/zapeg-lore director event trigger apparition <echo|threshold|motion-echo|light-fault|peripheral|footsteps|sky-mark|false-passage|chroma-break|near-miss|whisper-steps|colossus> <player>
+/zapeg-lore director event rehearse apparition <echo|threshold|motion-echo|light-fault|peripheral|footsteps|sky-mark|false-passage|chroma-break|near-miss|whisper-steps|colossus|visitation> <player>
+/zapeg-lore director event trigger apparition <echo|threshold|motion-echo|light-fault|peripheral|footsteps|sky-mark|false-passage|chroma-break|near-miss|whisper-steps|colossus|visitation> <player>
 /zapeg-lore director colossus reset <player>
+/zapeg-lore director discord whisper
+/zapeg-lore director voice rehearse
 /zapeg-lore director cancel
 ```
+
+Bare or malformed Director commands reply with a compact usage summary that
+spells out the rehearse-vs-trigger difference. `discord whisper` posts one
+seeded Turkish unease line through the configured webhook (fail-closed when
+unconfigured, audited in SQLite, paced by a per-world cooldown);
+`voice rehearse` enqueues a rehearsal-only voice clip through the same gates
+as the host-side `admin voice-rehearse`.
 
 Those commands enqueue one short-lived world-bound request; the persistent
 Director validates the phase, pacing and event UUID, then calls the low-level
