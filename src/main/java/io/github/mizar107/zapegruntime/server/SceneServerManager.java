@@ -4,7 +4,6 @@ import io.github.mizar107.zapegruntime.ZapeGRuntime;
 import io.github.mizar107.zapegruntime.network.SceneAckC2S;
 import io.github.mizar107.zapegruntime.network.SceneNetwork;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
-import io.github.mizar107.zapegruntime.scene.ColossusChoreography;
 import io.github.mizar107.zapegruntime.scene.SceneAck;
 import io.github.mizar107.zapegruntime.scene.SceneDescriptor;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
@@ -77,8 +76,8 @@ public final class SceneServerManager {
      *     to the profile default, and every value is clamped to the wire bound
      * @param hintX optional Director stalking-memory anchor bias, ignored when
      *     the hint is missing, non-finite or unreasonably far from the target
-     * @param stage bounded escalation stage; only colossus_01 may carry a
-     *     non-zero stage, anything else fails closed
+     * @param stage bounded escalation stage; must be {@code 0} unless the
+     *     profile declares a {@link SceneProfile#maxStage() max stage}
      */
     public static DispatchResult dispatch(
             ServerPlayer target,
@@ -93,10 +92,11 @@ public final class SceneServerManager {
         if (server == null) {
             return failure("server unavailable", eventId);
         }
-        int boundedStage = ColossusChoreography.clampStage(stage);
-        if (boundedStage != 0 && profile != SceneProfile.COLOSSUS_01) {
-            return failure("stage is only meaningful for colossus_01", eventId);
+        if (stage < 0 || stage > profile.maxStage()) {
+            return failure(
+                    "stage is not meaningful for " + profile.serializedName(), eventId);
         }
+        int boundedStage = stage;
         if (active != null) {
             return failure("another scene is active", eventId);
         }

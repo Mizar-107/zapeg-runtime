@@ -1,6 +1,8 @@
 package io.github.mizar107.zapegruntime.client;
 
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
+import io.github.mizar107.zapegruntime.scene.RiftChoreography;
+import io.github.mizar107.zapegruntime.scene.ScenePalette;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.gui.GuiGraphics;
@@ -9,6 +11,7 @@ import net.minecraft.world.level.material.FogType;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.client.event.RenderGuiEvent;
+import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.client.event.ViewportEvent;
 import net.minecraftforge.event.TickEvent;
@@ -86,8 +89,39 @@ public final class ClientSceneEvents {
         if (dip <= 0.0F) {
             return;
         }
-        event.scaleFarPlaneDistance(1.0F - 0.06F * dip);
-        event.scaleNearPlaneDistance(1.0F - 0.04F * dip);
+        float farScale = 1.0F - 0.06F * dip;
+        float nearScale = 1.0F - 0.04F * dip;
+        if (ClientSceneManager.activeProfile() == SceneProfile.RIFT_01
+                && RiftChoreography.isEclipse(ClientSceneManager.activeStage())) {
+            // Vanilla-only: shader packs that own terrain fog ignore this.
+            farScale = Math.max(RiftChoreography.ECLIPSE_FOG_FAR_SCALE, farScale * 0.55F);
+            nearScale = Math.max(0.20F, nearScale * 0.50F);
+        }
+        event.scaleFarPlaneDistance(farScale);
+        event.scaleNearPlaneDistance(nearScale);
+    }
+
+    @SubscribeEvent
+    public static void onFogColor(ViewportEvent.ComputeFogColor event) {
+        if (ClientSceneManager.activeProfile() != SceneProfile.RIFT_01
+                || !RiftChoreography.isEclipse(ClientSceneManager.activeStage())) {
+            return;
+        }
+        float dip = ClientSceneManager.fogDip((float) event.getPartialTick());
+        if (dip <= 0.0F) {
+            return;
+        }
+        float keep = 1.0F - 0.82F * dip;
+        event.setRed(event.getRed() * keep);
+        event.setGreen(event.getGreen() * keep);
+        event.setBlue(event.getBlue() * keep);
+    }
+
+    @SubscribeEvent
+    public static void onRenderGuiOverlay(RenderGuiOverlayEvent.Pre event) {
+        if (ClientSceneManager.hidesHud()) {
+            event.setCanceled(true);
+        }
     }
 
     @SubscribeEvent
@@ -150,6 +184,14 @@ public final class ClientSceneEvents {
             case SKY_MARK_01 -> drawSkyMarkWeight(graphics, width, height, intensity);
             case FALSE_PASSAGE_01 -> drawPassageSeams(graphics, width, height, intensity, seed, age);
             case CHROMA_BREAK_01 -> drawChromaBreak(graphics, width, height, intensity, seed, age);
+            case RIFT_01 -> drawRift(
+                    graphics,
+                    width,
+                    height,
+                    intensity,
+                    seed,
+                    age,
+                    ClientSceneManager.activeStage());
             case NEAR_MISS_01, WHISPER_STEPS_01, FOOTSTEPS_01, COLOSSUS_01, VISITATION_01 -> {
                 // Sound-only / crossing / colossus / visitation scenes: the
                 // screen must stay clean; the ground shake carries the
@@ -249,6 +291,171 @@ public final class ClientSceneEvents {
                     Math.min(height, y + bandHeight + 1),
                     argb(fringeAlpha, 0, 80, 92));
         }
+    }
+
+    /**
+     * Staged manifestation overlay. Pulse rates and wash caps live in
+     * {@link RiftChoreography}; this method only paints. No stage flashes the
+     * whole screen on a sub-second period.
+     */
+    private static void drawRift(
+            GuiGraphics graphics,
+            int width,
+            int height,
+            float intensity,
+            long seed,
+            double age,
+            int stage) {
+        if (RiftChoreography.isEclipse(stage)) {
+            drawEclipse(graphics, width, height, intensity);
+            return;
+        }
+        if (RiftChoreography.isTear(stage)) {
+            drawChromaBreak(graphics, width, height, intensity, seed, age);
+            return;
+        }
+        if (RiftChoreography.isUnmoor(stage)) {
+            drawUnmoor(graphics, width, height, intensity, seed, age);
+            return;
+        }
+        drawWitness(graphics, width, height, intensity, seed, age);
+    }
+
+    /** Near-black world: a heavy wash and a closing vignette, slow sine only. */
+    private static void drawEclipse(GuiGraphics graphics, int width, int height, float intensity) {
+        int wash = Math.max(
+                8,
+                Math.min(RiftChoreography.MAX_WASH_ALPHA, Math.round(RiftChoreography.MAX_WASH_ALPHA * intensity)));
+        graphics.fill(0, 0, width, height, argb(wash, 0, 1, 2));
+        int edge = Math.max(4, Math.min(90, Math.round(110.0F * intensity)));
+        int band = Math.max(8, height / 5);
+        graphics.fill(0, 0, width, band, argb(edge, 0, 0, 1));
+        graphics.fill(0, height - band, width, height, argb(edge, 0, 0, 1));
+        int side = Math.max(6, width / 8);
+        graphics.fill(0, 0, side, height, argb(edge, 0, 0, 1));
+        graphics.fill(width - side, 0, width, height, argb(edge, 0, 0, 1));
+    }
+
+    /**
+     * Slow acid: a crawling hue wash, horizontally warped scan rows, and a
+     * soft chromatic smear. Hue period is tens of seconds; warp is a few
+     * pixels.
+     */
+    private static void drawUnmoor(
+            GuiGraphics graphics,
+            int width,
+            int height,
+            float intensity,
+            long seed,
+            double age) {
+        double hue = RiftChoreography.hueDegrees(age, seed);
+        int[] rgb = hueRgb(hue);
+        int wash = Math.max(4, Math.min(48, Math.round(52.0F * intensity)));
+        graphics.fill(0, 0, width, height, argb(wash, rgb[0], rgb[1], rgb[2]));
+
+        int rows = 14;
+        int rowHeight = Math.max(2, height / rows);
+        for (int row = 0; row < rows; row++) {
+            int y = row * rowHeight;
+            int shift = RiftChoreography.warpPixels(age, y, seed);
+            int alpha = Math.max(2, Math.min(22, Math.round(18.0F * intensity)));
+            int y1 = Math.min(height, y + rowHeight);
+            if (shift >= 0) {
+                graphics.fill(0, y, Math.min(width, shift), y1, argb(alpha, rgb[0], 0, rgb[2]));
+                graphics.fill(
+                        Math.max(0, width - shift),
+                        y,
+                        width,
+                        y1,
+                        argb(alpha, 0, rgb[1], rgb[2]));
+            } else {
+                int abs = -shift;
+                graphics.fill(0, y, Math.min(width, abs), y1, argb(alpha, 0, rgb[1], rgb[2]));
+                graphics.fill(
+                        Math.max(0, width - abs),
+                        y,
+                        width,
+                        y1,
+                        argb(alpha, rgb[0], 0, rgb[2]));
+            }
+        }
+    }
+
+    /**
+     * HUD is already cancelled. Two oversized ember eyes sit in the upper
+     * third and breathe on a 70-tick sine — a hold, never a blink.
+     */
+    private static void drawWitness(
+            GuiGraphics graphics,
+            int width,
+            int height,
+            float intensity,
+            long seed,
+            double age) {
+        drawEclipse(graphics, width, height, Math.min(1.0F, intensity * 0.55F));
+        float hold = 0.72F + 0.28F * (float) Math.sin(age * (Math.PI * 2.0D) / 70.0D);
+        float strength = intensity * hold;
+        int core = Math.max(8, Math.min(220, Math.round(220.0F * strength)));
+        int halo = Math.max(4, core / 3);
+        int eyeW = Math.max(18, width / 9);
+        int eyeH = Math.max(8, height / 18);
+        int spread = Math.max(28, width / 6);
+        int cx = width / 2;
+        int cy = height / 3;
+        boolean swap = (seed & 1L) != 0L;
+        int left = cx - spread;
+        int right = cx + spread;
+        if (swap) {
+            int tmp = left;
+            left = right;
+            right = tmp;
+        }
+        drawEyeBlob(graphics, left, cy, eyeW, eyeH, core, halo);
+        drawEyeBlob(graphics, right, cy, eyeW, eyeH, core, halo);
+    }
+
+    private static void drawEyeBlob(
+            GuiGraphics graphics,
+            int cx,
+            int cy,
+            int eyeW,
+            int eyeH,
+            int core,
+            int halo) {
+        int r = Math.round(ScenePalette.EYE_RED * 255.0F);
+        int g = Math.round(ScenePalette.EYE_GREEN * 255.0F);
+        int b = Math.round(ScenePalette.EYE_BLUE * 255.0F);
+        graphics.fill(
+                cx - eyeW,
+                cy - eyeH,
+                cx + eyeW,
+                cy + eyeH,
+                argb(halo, r, g, b));
+        graphics.fill(
+                cx - eyeW * 2 / 3,
+                cy - eyeH / 2,
+                cx + eyeW * 2 / 3,
+                cy + eyeH / 2,
+                argb(core, r, g, b));
+    }
+
+    /** Cheap HSV-like hue (saturation full, value mid) for the unmoor wash. */
+    private static int[] hueRgb(double hueDegrees) {
+        double h = ((hueDegrees % 360.0D) + 360.0D) % 360.0D / 60.0D;
+        int sextant = (int) Math.floor(h);
+        double f = h - sextant;
+        int peak = 140;
+        int low = 18;
+        int rise = (int) Math.round(low + (peak - low) * f);
+        int fall = (int) Math.round(peak - (peak - low) * f);
+        return switch (sextant) {
+            case 0 -> new int[] {peak, rise, low};
+            case 1 -> new int[] {fall, peak, low};
+            case 2 -> new int[] {low, peak, rise};
+            case 3 -> new int[] {low, fall, peak};
+            case 4 -> new int[] {rise, low, peak};
+            default -> new int[] {peak, low, fall};
+        };
     }
 
     /** A faint dark wedge hugging one screen edge, seeded per scene. */

@@ -4,6 +4,13 @@ Owned Forge 1.20.1 client/server runtime for private, bounded story scenes in
 the ZapeG pack. It renders target-private apparitions and bounded reality
 faults without registering or saving a Minecraft entity.
 
+## v0.4 boundaries
+
+- exact-match protocol `7`; mixed v0.3.x (protocol 6) clients fail the
+  handshake. v7 adds `rift_01` at wire ID 13 and lets the existing descriptor
+  `stage` field select haunt/rift beats. A v6 client would reject a non-colossus
+  stage (or unknown id 13) mid-session, so the mismatch is refused up front.
+
 ## v0.3 boundaries
 
 - exact-match protocol `6`; mixed v0.3.0/v0.3.1 clients fail the handshake
@@ -86,6 +93,14 @@ Profiles are deliberately distinct and bounded:
   mixed manually because the position-color pipeline ignores shader fog. The
   anchor is a seeded horizon bearing pinned to the target's feet — nothing
   collides, so no ground scan runs at those distances;
+- `rift_01`: staged manifestation overlay (wire stage 0–3). Eclipse is a
+  bounded near-black wash plus a strong vanilla fog pull that yields to
+  shader packs on the fog plane; tear is the old chroma-break recording
+  fault; unmoor is a slow hue crawl, chromatic smear and a few pixels of
+  warp (photosensitivity-capped, never a strobe); witness cancels vanilla
+  HUD overlays and holds two oversized ember eyes on a 70-tick breathe.
+  Never gaze-resolved. Public aliases (`light-fault`, `chroma-break`,
+  `eclipse`, `unmoor`, `witness`) map onto these stages;
 - `visitation_01`: the OS-level scare. Nothing renders in-game; instead the
   client briefly steps outside the game window. A borderless always-on-top
   window shows the bundled face asset (`visitation_face.png`, the owner's own
@@ -201,4 +216,6 @@ See [ROADMAP.md](ROADMAP.md) for the reality-distortion and later combat plan.
 .\gradlew.bat test build
 ```
 
-The release jar is `build/libs/zapeg-runtime-forge-1.20.1-0.3.1.jar`.
+The release jar is `build/libs/zapeg-runtime-forge-1.20.1-0.4.0.jar`
+(protocol 7 — server, tracked `overrides/mods` jar and both client artifacts
+must all carry this same build).

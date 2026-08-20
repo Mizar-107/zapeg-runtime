@@ -18,7 +18,7 @@ class ScenePacketTest {
     @Test
     void spawnPacketRoundTripsEveryField() {
         for (SceneProfile profile : SceneProfile.values()) {
-            int stage = profile == SceneProfile.COLOSSUS_01 ? 3 : 0;
+            int stage = profile.maxStage() > 0 ? Math.min(2, profile.maxStage()) : 0;
             SceneDescriptor descriptor = new SceneDescriptor(
                     UUID.randomUUID(),
                     UUID.randomUUID(),

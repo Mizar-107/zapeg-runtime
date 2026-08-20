@@ -6,6 +6,7 @@ import com.mojang.brigadier.context.CommandContext;
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
 import io.github.mizar107.zapegruntime.scene.ColossusChoreography;
+import io.github.mizar107.zapegruntime.scene.SceneBinding;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
 import java.util.UUID;
 import net.minecraft.commands.CommandSourceStack;
@@ -30,8 +31,7 @@ public final class SceneCommands {
                                 .executes(context -> rehearse(context, SceneProfile.ECHO_01, 0))
                                 .then(Commands.argument("profile", StringArgumentType.word())
                                         .suggests((context, builder) -> SharedSuggestionProvider.suggest(
-                                                java.util.Arrays.stream(SceneProfile.values())
-                                                        .map(SceneProfile::serializedName),
+                                                SceneCommands.profileSuggestions(),
                                                 builder))
                                         .executes(SceneCommands::rehearseWithProfile)
                                         .then(Commands.argument("stage",
@@ -43,8 +43,7 @@ public final class SceneCommands {
                                 .then(Commands.argument("event_id", UuidArgument.uuid())
                                         .then(Commands.argument("profile", StringArgumentType.word())
                                                 .suggests((context, builder) -> SharedSuggestionProvider.suggest(
-                                                        java.util.Arrays.stream(SceneProfile.values())
-                                                                .map(SceneProfile::serializedName),
+                                                        SceneCommands.profileSuggestions(),
                                                         builder))
                                                 .executes(context -> trigger(context, 0, null, null, 0))
                                                 .then(Commands.literal("stage")
@@ -108,22 +107,44 @@ public final class SceneCommands {
                         .executes(SceneCommands::status)));
     }
 
+    private static java.util.List<String> profileSuggestions() {
+        java.util.List<String> names = new java.util.ArrayList<>();
+        for (SceneProfile profile : SceneProfile.values()) {
+            names.add(profile.serializedName());
+        }
+        names.add("eclipse_01");
+        names.add("unmoor_01");
+        names.add("witness_01");
+        names.add("tear_01");
+        names.add("closing_steps_01");
+        return names;
+    }
+
     private static int rehearseWithProfile(CommandContext<CommandSourceStack> context)
             throws com.mojang.brigadier.exceptions.CommandSyntaxException {
-        SceneProfile profile = parseProfile(
+        SceneBinding binding = parseBinding(
                 context.getSource(),
                 StringArgumentType.getString(context, "profile"));
-        return profile == null ? 0 : rehearse(context, profile, 0);
+        return binding == null ? 0 : rehearse(context, binding.profile(), binding.stage());
     }
 
     private static int rehearseWithStage(CommandContext<CommandSourceStack> context)
             throws com.mojang.brigadier.exceptions.CommandSyntaxException {
-        SceneProfile profile = parseProfile(
+        SceneBinding binding = parseBinding(
                 context.getSource(),
                 StringArgumentType.getString(context, "profile"));
-        return profile == null
-                ? 0
-                : rehearse(context, profile, IntegerArgumentType.getInteger(context, "stage"));
+        if (binding == null) {
+            return 0;
+        }
+        try {
+            return rehearse(
+                    context,
+                    binding.profile(),
+                    IntegerArgumentType.getInteger(context, "stage"));
+        } catch (IllegalArgumentException invalid) {
+            context.getSource().sendFailure(Component.literal(invalid.getMessage()));
+            return 0;
+        }
     }
 
     private static int rehearse(
@@ -148,28 +169,32 @@ public final class SceneCommands {
         CommandSourceStack source = context.getSource();
         ServerPlayer target = EntityArgument.getPlayer(context, "target");
         UUID eventId = UuidArgument.getUuid(context, "event_id");
-        SceneProfile profile = parseProfile(
+        SceneBinding binding = parseBinding(
                 source,
                 StringArgumentType.getString(context, "profile"));
-        if (profile == null) {
+        if (binding == null) {
             return 0;
+        }
+        int resolvedStage = stage;
+        if (resolvedStage == 0) {
+            resolvedStage = binding.stage();
         }
         SceneServerManager.DispatchResult result = SceneServerManager.dispatch(
                 target,
                 eventId,
-                profile,
+                binding.profile(),
                 false,
                 ttlOverrideTicks,
                 hintX,
                 hintZ,
-                stage);
+                resolvedStage);
         audit(source, "trigger", target, result);
         return reply(source, result);
     }
 
-    private static SceneProfile parseProfile(CommandSourceStack source, String raw) {
+    private static SceneBinding parseBinding(CommandSourceStack source, String raw) {
         try {
-            return SceneProfile.parse(raw);
+            return SceneBinding.parse(raw);
         } catch (IllegalArgumentException invalid) {
             source.sendFailure(Component.literal(invalid.getMessage()));
             return null;

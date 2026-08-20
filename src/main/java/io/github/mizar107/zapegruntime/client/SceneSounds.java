@@ -1,5 +1,6 @@
 package io.github.mizar107.zapegruntime.client;
 
+import io.github.mizar107.zapegruntime.scene.RiftChoreography;
 import io.github.mizar107.zapegruntime.scene.SceneDescriptor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -40,6 +41,7 @@ final class SceneSounds {
                 // The first ground-shaking footfall is the arrival beat.
             }
             case VISITATION_01 -> play(descriptor, position, SoundEvents.WARDEN_HEARTBEAT, 0.45F, 0.50F);
+            case RIFT_01 -> playRiftArrival(descriptor, position);
         }
     }
 
@@ -72,6 +74,9 @@ final class SceneSounds {
             case VISITATION_01 -> {
                 // The window wrongness carries the scene; no in-game beat.
             }
+            case RIFT_01 -> {
+                // Overlay pulse carries the scene; arrival already sounded.
+            }
         }
     }
 
@@ -99,6 +104,7 @@ final class SceneSounds {
             case VISITATION_01 -> {
                 // The blink is simply over; nothing answers.
             }
+            case RIFT_01 -> play(descriptor, position, SoundEvents.AMBIENT_CAVE.value(), 0.35F, 0.55F);
         }
     }
 
@@ -196,6 +202,23 @@ final class SceneSounds {
             return;
         }
         play(descriptor, minecraft.player.position(), SoundEvents.SCULK_CLICKING, 0.50F, 0.35F);
+    }
+
+    static void playRiftArrival(SceneDescriptor descriptor, Vec3 position) {
+        int stage = descriptor.stage();
+        if (RiftChoreography.isTear(stage)) {
+            playChromaTear(descriptor);
+            return;
+        }
+        if (RiftChoreography.isEclipse(stage)) {
+            play(descriptor, position, SoundEvents.WARDEN_HEARTBEAT, 0.70F, 0.48F);
+            return;
+        }
+        if (RiftChoreography.isUnmoor(stage)) {
+            play(descriptor, position, SoundEvents.PORTAL_AMBIENT, 0.40F, 0.62F);
+            return;
+        }
+        play(descriptor, position, SoundEvents.ENDERMAN_STARE, 0.55F, 0.42F);
     }
 
     /**

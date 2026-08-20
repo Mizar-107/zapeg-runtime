@@ -19,7 +19,10 @@ public final class SceneNetwork {
     // v6 adds visitation_01 (wire id 12); the descriptor layout is unchanged,
     // but a v5 client would fail closed on the unknown id mid-session, so the
     // handshake refuses the mismatch up front instead.
-    public static final String PROTOCOL = "6";
+    // v7 adds rift_01 (wire id 13) and generalises the existing stage field
+    // to haunt/rift families; a v6 client would reject non-colossus stages
+    // (or unknown id 13) mid-session, so the handshake refuses the mismatch.
+    public static final String PROTOCOL = "7";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             ResourceLocation.fromNamespaceAndPath(ZapeGRuntime.MOD_ID, "scenes"),
             () -> PROTOCOL,

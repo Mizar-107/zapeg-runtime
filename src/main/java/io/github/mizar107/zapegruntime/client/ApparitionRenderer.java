@@ -178,7 +178,8 @@ public final class ApparitionRenderer {
                     age,
                     envelope);
             case LIGHT_FAULT_01, FOOTSTEPS_01, SKY_MARK_01, FALSE_PASSAGE_01,
-                    CHROMA_BREAK_01, WHISPER_STEPS_01, COLOSSUS_01, VISITATION_01 -> null;
+                    CHROMA_BREAK_01, WHISPER_STEPS_01, COLOSSUS_01, VISITATION_01,
+                    RIFT_01 -> null;
                     // Screen-space / sky / doorway / sound-only profiles render
                     // no humanoid figure; the colossus draws its own eyes, and
                     // the visitation renders nothing in the world at all.

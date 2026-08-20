@@ -32,8 +32,8 @@ class SceneProtocolTest {
     }
 
     @Test
-    void versionSixProfileIdsRemainExplicitAndBounded() {
-        assertEquals("6", SceneNetwork.PROTOCOL);
+    void versionSevenProfileIdsRemainExplicitAndBounded() {
+        assertEquals("7", SceneNetwork.PROTOCOL);
         assertEquals(0, SceneProfile.ECHO_01.wireId());
         assertEquals(1, SceneProfile.THRESHOLD_01.wireId());
         assertEquals(2, SceneProfile.MOTION_ECHO_01.wireId());
@@ -47,6 +47,16 @@ class SceneProtocolTest {
         assertEquals(10, SceneProfile.WHISPER_STEPS_01.wireId());
         assertEquals(11, SceneProfile.COLOSSUS_01.wireId());
         assertEquals(12, SceneProfile.VISITATION_01.wireId());
+        assertEquals(13, SceneProfile.RIFT_01.wireId());
+
+        assertEquals(0, SceneProfile.ECHO_01.maxStage());
+        assertEquals(HauntChoreography.MAX_STAGE, SceneProfile.FOOTSTEPS_01.maxStage());
+        assertEquals(RiftChoreography.MAX_STAGE, SceneProfile.RIFT_01.maxStage());
+        assertEquals(ColossusChoreography.MAX_STAGE, SceneProfile.COLOSSUS_01.maxStage());
+        assertEquals(
+                ScenePlacementMode.PLAYER_RELATIVE,
+                SceneProfile.RIFT_01.placementMode());
+        assertFalse(SceneProfile.RIFT_01.rendersFigure());
 
         assertEquals(
                 ScenePlacementMode.DISTANT_SAFE_GROUND,
@@ -203,13 +213,20 @@ class SceneProtocolTest {
     }
 
     @Test
-    void chromaBreakStaysInsideThePhotosensitivityBudget() {
+    void chromaBreakAndRiftStayInsideThePhotosensitivityBudget() {
         // The tear pulse is a 45-tick sine (~0.44 Hz), far under the
         // 3-flashes-per-second threshold, and the scene is short and capped.
         assertTrue(SceneProfile.CHROMA_BREAK_01.defaultTtlTicks() <= 200);
         assertEquals(SceneProfile.CHROMA_BREAK_01.uneaseLevel(), CameraUnease.MAX_LEVEL);
         assertEquals(0, SceneProfile.CHROMA_BREAK_01.preludeTicks());
         assertEquals(0, SceneProfile.CHROMA_BREAK_01.encoreDelayTicks());
+        assertTrue(SceneProfile.RIFT_01.gazeAngleDegrees() >= 360.0D);
+        assertTrue(
+                SceneProfile.RIFT_01.gazeDwellMillis() / 50
+                        >= SceneProfile.RIFT_01.defaultTtlTicks());
+        for (int stage = 0; stage <= RiftChoreography.MAX_STAGE; stage++) {
+            assertTrue(RiftChoreography.pulseTicks(stage) >= 45.0D);
+        }
     }
 
     @Test

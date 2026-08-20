@@ -6,8 +6,10 @@ import io.github.mizar107.zapegruntime.scene.CameraUnease;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
 import io.github.mizar107.zapegruntime.scene.ColossusChoreography;
 import io.github.mizar107.zapegruntime.scene.GazePull;
+import io.github.mizar107.zapegruntime.scene.HauntChoreography;
 import io.github.mizar107.zapegruntime.scene.MotionHistory;
 import io.github.mizar107.zapegruntime.scene.PresentedGazeTracker;
+import io.github.mizar107.zapegruntime.scene.RiftChoreography;
 import io.github.mizar107.zapegruntime.scene.SceneAck;
 import io.github.mizar107.zapegruntime.scene.SceneDescriptor;
 import io.github.mizar107.zapegruntime.scene.SceneMath;
@@ -39,9 +41,6 @@ public final class ClientSceneManager {
     private static final int MOTION_HISTORY_DELAY_TICKS = 12;
     private static final int FOOTSTEP_MIN_INTERVAL_TICKS = 6;
     private static final int FOOTSTEP_INTERVAL_SPREAD = 5;
-    private static final int FOOTSTEP_COUNT = 11;
-    private static final double FOOTSTEP_START_DISTANCE = 13.0D;
-    private static final double FOOTSTEP_END_DISTANCE = 3.25D;
     // Whisper-name replay: a coarse always-on trace (one sample every five
     // ticks covers ~16 s) so the target can hear their own steps from ~10 s
     // ago. Client-local only, never sent anywhere, cleared on logout/unload.
@@ -230,11 +229,18 @@ public final class ClientSceneManager {
             case ENCORE -> tickEncore(current);
             case BODY -> {
                 switch (current.descriptor.profile()) {
-                    case FOOTSTEPS_01 -> tickFootsteps(current, minecraft);
+                    case FOOTSTEPS_01 -> {
+                        if (HauntChoreography.isWhisper(current.descriptor.stage())) {
+                            tickWhisperSteps(current, minecraft);
+                        } else {
+                            tickFootsteps(current, minecraft);
+                        }
+                    }
                     case WHISPER_STEPS_01 -> tickWhisperSteps(current, minecraft);
                     case NEAR_MISS_01 -> tickNearMiss(current, minecraft);
                     case COLOSSUS_01 -> tickColossus(current, minecraft);
                     case VISITATION_01 -> tickVisitation(current);
+                    case RIFT_01 -> tickRift(current);
                     case FALSE_PASSAGE_01 -> {
                         tickFalsePassage(current, minecraft);
                         tickMidBeat(current);
@@ -313,11 +319,18 @@ public final class ClientSceneManager {
     }
 
     /**
-     * The colossus: slow footfalls that shake the ground, one distant roar at
-     * the nearer stages, and at the finale a held watch with a heartbeat —
-     * then it is simply gone. The figure itself is render-only; this method
-     * owns only the sound and the shake-pulse timing.
+     * Overlay-only rift: the first body tick is the VISIBLE acknowledgement so
+     * intensity is not waiting on a figure that never appears.
      */
+    private static void tickRift(ActiveScene current) {
+        markVisible(current);
+        if (!current.midBeatPlayed
+                && current.ageTicks >= current.descriptor.profile().preludeTicks() + 8) {
+            current.midBeatPlayed = true;
+            SceneSounds.playArrival(current.descriptor, current.descriptor.anchor());
+        }
+    }
+
     /**
      * The visitation renders nothing in the world; its body ticks drive the
      * OS-level beats (face blink, wrong title, window pulse, taskbar flash)
@@ -334,6 +347,12 @@ public final class ClientSceneManager {
                 current.ageTicks - current.descriptor.profile().preludeTicks());
     }
 
+    /**
+     * The colossus: slow footfalls that shake the ground, one distant roar at
+     * the nearer stages, and at the finale a held watch with a heartbeat —
+     * then it is simply gone. The figure itself is render-only; this method
+     * owns only the sound and the shake-pulse timing.
+     */
     private static void tickColossus(ActiveScene current, Minecraft minecraft) {
         SceneDescriptor descriptor = current.descriptor;
         int stage = descriptor.stage();
@@ -436,7 +455,7 @@ public final class ClientSceneManager {
      * of the TTL is silence; the scene ends as TIMEOUT with nothing to gaze at.
      */
     private static void tickFootsteps(ActiveScene current, Minecraft minecraft) {
-        if (current.footstepIndex >= FOOTSTEP_COUNT
+        if (current.footstepIndex >= HauntChoreography.stepCount(current.descriptor.stage())
                 || current.ageTicks < current.nextFootstepTick) {
             return;
         }
@@ -453,10 +472,13 @@ public final class ClientSceneManager {
         Vec3 direction = length > 1.0E-4D ? toward.scale(1.0D / length) : new Vec3(1.0D, 0.0D, 1.0D);
         Vec3 lateral = new Vec3(-direction.z, 0.0D, direction.x);
         double wobble = (Math.floorMod(seed >>> 9, 5) * 0.18D - 0.36D)
-                * (1.0D - (double) current.footstepIndex / FOOTSTEP_COUNT);
-        double progress = (double) current.footstepIndex / (FOOTSTEP_COUNT - 1);
-        double distance = FOOTSTEP_START_DISTANCE
-                + (FOOTSTEP_END_DISTANCE - FOOTSTEP_START_DISTANCE) * progress;
+                * (1.0D - (double) current.footstepIndex
+                        / Math.max(1, HauntChoreography.stepCount(current.descriptor.stage())));
+        double progress = (double) current.footstepIndex
+                / Math.max(1, HauntChoreography.stepCount(current.descriptor.stage()) - 1);
+        double start = HauntChoreography.startDistance(current.descriptor.stage());
+        double end = HauntChoreography.endDistance(current.descriptor.stage());
+        double distance = start + (end - start) * progress;
         Vec3 step = playerPosition
                 .add(direction.scale(distance))
                 .add(lateral.scale(wobble));
@@ -861,11 +883,14 @@ public final class ClientSceneManager {
         if (current.descriptor.profile() == SceneProfile.FOOTSTEPS_01
                 || current.descriptor.profile() == SceneProfile.WHISPER_STEPS_01
                 || current.descriptor.profile() == SceneProfile.NEAR_MISS_01
-                || current.descriptor.profile() == SceneProfile.COLOSSUS_01) {
-            // Sound-only, crossing and colossus scenes keep a clean screen;
-            // their unease is audio, silhouette and the ground itself, never
-            // an overlay.
+                || current.descriptor.profile() == SceneProfile.COLOSSUS_01
+                || current.descriptor.profile() == SceneProfile.VISITATION_01) {
+            // Sound-only, crossing, colossus and visitation keep a clean
+            // screen; rift draws its own overlay family instead.
             return 0.0F;
+        }
+        if (current.descriptor.profile() == SceneProfile.RIFT_01) {
+            return calculateEffectIntensity(current, partialTick);
         }
         if (current.descriptor.profile() == SceneProfile.LIGHT_FAULT_01) {
             return presentLightFault(current, partialTick);
@@ -925,6 +950,7 @@ public final class ClientSceneManager {
             case WHISPER_STEPS_01 -> 41.0D;
             case COLOSSUS_01 -> 53.0D;
             case VISITATION_01 -> 41.0D;
+            case RIFT_01 -> RiftChoreography.pulseTicks(current.descriptor.stage());
         };
         double pulse = SceneMath.easedPulse(bodyAge(current, partialTick), period);
         double scale = switch (current.descriptor.profile()) {
@@ -943,6 +969,7 @@ public final class ClientSceneManager {
             // The visitation's scare lives outside the game window; the
             // screen itself stays clean.
             case VISITATION_01 -> 0.0D;
+            case RIFT_01 -> RiftChoreography.washScale(current.descriptor.stage());
         };
         double envelope = SceneMath.lifeEnvelope(
                 bodyAge(current, partialTick),
@@ -955,6 +982,20 @@ public final class ClientSceneManager {
     public static SceneProfile activeProfile() {
         ActiveScene current = active;
         return current == null ? null : current.descriptor.profile();
+    }
+
+    public static int activeStage() {
+        ActiveScene current = active;
+        return current == null ? 0 : current.descriptor.stage();
+    }
+
+    /** True while the witness stage owns the screen: vanilla HUD overlays go away. */
+    public static boolean hidesHud() {
+        ActiveScene current = active;
+        return current != null
+                && current.phase() == ScenePhase.BODY
+                && current.descriptor.profile() == SceneProfile.RIFT_01
+                && RiftChoreography.hidesHud(current.descriptor.stage());
     }
 
     public static ScenePhase scenePhase() {
@@ -994,12 +1035,19 @@ public final class ClientSceneManager {
         if (current == null) {
             return 0.0F;
         }
-        return switch (current.phase()) {
+        float dip = switch (current.phase()) {
             case PRELUDE -> (float) preludeDim(current, partialTick);
             case BODY -> (float) (0.35D * SceneMath.lifeEnvelope(
                     bodyAge(current, partialTick), bodyTicks(current), 9.0D, 6.0D));
             case ENCORE -> (float) (0.25D * encoreBeatEnvelope(current, partialTick));
         };
+        if (current.descriptor.profile() == SceneProfile.RIFT_01
+                && current.phase() == ScenePhase.BODY) {
+            dip = Math.min(
+                    1.0F,
+                    dip + RiftChoreography.extraFogDip(current.descriptor.stage()));
+        }
+        return dip;
     }
 
     /**

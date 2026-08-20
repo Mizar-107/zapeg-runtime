@@ -72,7 +72,13 @@ public enum SceneProfile {
     // gaze-resolved, and the screen itself stays clean.
     VISITATION_01(
             12, "visitation_01", 70, 360.0D, 60_000, false,
-            ScenePlacementMode.PLAYER_RELATIVE, 15, 2, 0);
+            ScenePlacementMode.PLAYER_RELATIVE, 15, 2, 0),
+    // Manifestation rift: target-private overlay family. Wire stage picks
+    // eclipse (near-black), tear (chroma), unmoor (slow acid warp) or
+    // witness (HUD gone, fullscreen eyes). Never gaze-resolved.
+    RIFT_01(
+            13, "rift_01", 200, 360.0D, 60_000, false,
+            ScenePlacementMode.PLAYER_RELATIVE, 12, 3, 0);
 
     /**
      * Length of the single final beat that closes an encore, in ticks. The
@@ -166,6 +172,19 @@ public enum SceneProfile {
      */
     public int encoreDelayTicks() {
         return encoreDelayTicks;
+    }
+
+    /**
+     * Highest wire stage this profile may carry. Zero means the stage field
+     * must stay at the default; colossus, haunt and rift escalate inside it.
+     */
+    public int maxStage() {
+        return switch (this) {
+            case COLOSSUS_01 -> ColossusChoreography.MAX_STAGE;
+            case RIFT_01 -> RiftChoreography.MAX_STAGE;
+            case FOOTSTEPS_01 -> HauntChoreography.MAX_STAGE;
+            default -> 0;
+        };
     }
 
     /**

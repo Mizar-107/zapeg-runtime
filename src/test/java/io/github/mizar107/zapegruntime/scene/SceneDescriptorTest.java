@@ -40,12 +40,13 @@ class SceneDescriptorTest {
     }
 
     @Test
-    void stageIsBoundedAndReservedForTheColossus() {
-        // Every profile carries the zero default; only colossus_01 may carry
-        // an escalation stage, and never past the choreography's stage count.
+    void stageIsBoundedPerFamily() {
         SceneDescriptor colossus = descriptor(
                 SceneProfile.COLOSSUS_01, 200, 0.0F, Vec3.ZERO, ColossusChoreography.MAX_STAGE);
         assertEquals(ColossusChoreography.MAX_STAGE, colossus.stage());
+        SceneDescriptor rift = descriptor(
+                SceneProfile.RIFT_01, 200, 0.0F, Vec3.ZERO, RiftChoreography.MAX_STAGE);
+        assertEquals(RiftChoreography.MAX_STAGE, rift.stage());
         assertThrows(
                 IllegalArgumentException.class,
                 () -> descriptor(
@@ -57,6 +58,9 @@ class SceneDescriptorTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> descriptor(SceneProfile.ECHO_01, 200, 0.0F, Vec3.ZERO, 1));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> descriptor(SceneProfile.RIFT_01, 200, 0.0F, Vec3.ZERO, 4));
     }
 
     private static SceneDescriptor descriptor(int ttl, float yaw, Vec3 anchor) {
