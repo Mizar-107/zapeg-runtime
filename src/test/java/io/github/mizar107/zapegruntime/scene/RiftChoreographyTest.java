@@ -17,9 +17,30 @@ class RiftChoreographyTest {
             assertTrue(RiftChoreography.washScale(stage) > 0.0D);
             assertTrue(RiftChoreography.washScale(stage) <= 1.0D);
         }
-        assertTrue(RiftChoreography.MAX_WASH_ALPHA <= 180);
+        // The photosensitivity budget is the slow pulse, not the depth: the
+        // wash may go near-black but never fully opaque, and never fast.
+        assertTrue(RiftChoreography.MAX_WASH_ALPHA <= 240);
         assertTrue(RiftChoreography.ECLIPSE_FOG_FAR_SCALE >= 0.35F);
         assertTrue(RiftChoreography.ECLIPSE_FOG_FAR_SCALE <= 0.55F);
+    }
+
+    @Test
+    void theEclipseActuallyReadsNearBlackAtPeakOnItsSlowestEase() {
+        // The manifestation opener: peak wash (cap x eclipse scale) must land
+        // in the near-black band, and the eclipse must breathe on the
+        // slowest pulse of the whole family — a swelling hold, not a
+        // flicker.
+        int peak = (int) Math.round(
+                RiftChoreography.MAX_WASH_ALPHA
+                        * RiftChoreography.washScale(RiftChoreography.STAGE_ECLIPSE));
+        assertTrue(peak >= 210, "daytime eclipse must read near-black, not a tint");
+        assertTrue(peak < 255, "some world must always survive under the wash");
+        for (int stage = 0; stage <= RiftChoreography.MAX_STAGE; stage++) {
+            assertTrue(
+                    RiftChoreography.pulseTicks(RiftChoreography.STAGE_ECLIPSE)
+                            >= RiftChoreography.pulseTicks(stage),
+                    "the eclipse ease must be the slowest of the family");
+        }
     }
 
     @Test

@@ -28,15 +28,23 @@ public final class RiftChoreography {
      * at 20 TPS — far under the 3-flashes-per-second photosensitivity line.
      */
     public static final double MIN_PULSE_TICKS = 50.0D;
-    /** Full-screen wash never exceeds this 0..255 alpha. */
-    public static final int MAX_WASH_ALPHA = 168;
+    /**
+     * Full-screen wash never exceeds this 0..255 alpha. Raised so the
+     * eclipse (with the fog pull live) actually reads near-black at peak —
+     * roughly 216 effective after the stage's 0.92 wash scale. Depth is
+     * photosensitivity-safe: the hazard is flash frequency, and every wash
+     * rides a slow {@code >= MIN_PULSE_TICKS} sine, never a strobe.
+     */
+    public static final int MAX_WASH_ALPHA = 235;
     /**
      * Vanilla fog far-plane pull for the eclipse. Shader packs that replace
      * terrain fog ignore this; the overlay is the darkness that survives.
      */
     public static final float ECLIPSE_FOG_FAR_SCALE = 0.42F;
 
-    private static final double[] PULSE_TICKS = {56.0D, 50.0D, 62.0D, 70.0D};
+    // The eclipse breathes on the slowest ease of the family: the darkness
+    // is a hold that swells, not a flicker.
+    private static final double[] PULSE_TICKS = {70.0D, 50.0D, 62.0D, 70.0D};
     private static final double[] WASH_SCALE = {0.92D, 0.55D, 0.70D, 0.80D};
 
     private RiftChoreography() {}

@@ -108,30 +108,35 @@ public final class SceneServerManager {
         if (placement.isEmpty()) {
             return failure("no valid loaded scene anchor", eventId);
         }
+        // Build (and thereby validate) the full wire descriptor BEFORE the
+        // ledger consume: an out-of-bounds TTL or a border-adjacent anchor
+        // must fail the dispatch without burning a deterministic Director
+        // event id — a consumed id can never be retried.
+        SceneDescriptor descriptor;
+        try {
+            descriptor = new SceneDescriptor(
+                    eventId,
+                    target.getUUID(),
+                    target.level().dimension().location(),
+                    placement.get().anchor(),
+                    placement.get().yawDegrees(),
+                    resolveTtlTicks(ttlOverrideTicks, profile),
+                    target.getRandom().nextLong(),
+                    profile,
+                    rehearsal,
+                    boundedStage);
+        } catch (IllegalArgumentException invalid) {
+            return failure(invalid.getMessage(), eventId);
+        }
         if (!rehearsal && !SceneLedgerData.get(server).consume(eventId)) {
             return failure("event id is already consumed", eventId);
         }
-
-        int ttlTicks = ttlOverrideTicks > 0
-                ? Math.min(ttlOverrideTicks, MAX_TTL_TICKS)
-                : profile.defaultTtlTicks();
-        SceneDescriptor descriptor = new SceneDescriptor(
-                eventId,
-                target.getUUID(),
-                target.level().dimension().location(),
-                placement.get().anchor(),
-                placement.get().yawDegrees(),
-                ttlTicks,
-                target.getRandom().nextLong(),
-                profile,
-                rehearsal,
-                boundedStage);
         // The slot stays occupied for the body TTL plus the full encore, so a
         // false all-clear can never overlap a second scene even if the
         // client's held terminal acknowledgement never arrives.
         active = new ActiveScene(
                 descriptor,
-                server.getTickCount() + profile.occupancyTicks(ttlTicks),
+                server.getTickCount() + profile.occupancyTicks(descriptor.ttlTicks()),
                 null);
         SceneNetwork.spawnFor(target, descriptor);
         ZapeGRuntime.LOGGER.info(
@@ -226,6 +231,20 @@ public final class SceneServerManager {
                 + " ack=" + (current.lastAcknowledgement == null
                         ? "none"
                         : current.lastAcknowledgement.name().toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * Director-facing TTL resolution: non-positive overrides fall back to
+     * the profile default, everything else clamps into the wire descriptor
+     * bounds, so no requested length can ever fail descriptor validation.
+     */
+    static int resolveTtlTicks(int ttlOverrideTicks, SceneProfile profile) {
+        if (ttlOverrideTicks <= 0) {
+            return profile.defaultTtlTicks();
+        }
+        return Math.max(
+                SceneDescriptor.MIN_TTL_TICKS,
+                Math.min(ttlOverrideTicks, MAX_TTL_TICKS));
     }
 
     static void resetForTests() {

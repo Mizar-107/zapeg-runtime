@@ -190,6 +190,44 @@ class ColossusChoreographyTest {
     }
 
     @Test
+    void farStagesClampIntoALowClientFarPlaneProportionally() {
+        // A 5-chunk client has a (5-1)*16*0.9 = 57.6-block safe range; the
+        // 280-block horizon stage must scale in rather than clip away.
+        double factor = ColossusChoreography.renderApproachFactor(0, 280.0D, 5);
+        assertEquals(57.6D / 280.0D, factor, 1.0E-9D);
+        assertTrue(factor > 0.0D && factor < 1.0D);
+        // The clamped distance times the same body scale keeps the angular
+        // read of the authored silhouette.
+        assertEquals(
+                ColossusChoreography.HEIGHT_BLOCKS / 280.0D,
+                ColossusChoreography.HEIGHT_BLOCKS * factor / (280.0D * factor),
+                1.0E-9D);
+        // Stage 1 clamps too; a roomy client is left untouched.
+        assertTrue(ColossusChoreography.renderApproachFactor(1, 220.0D, 5) < 1.0D);
+        assertEquals(1.0D, ColossusChoreography.renderApproachFactor(0, 280.0D, 32));
+        assertEquals(1.0D, ColossusChoreography.renderApproachFactor(1, 220.0D, 18));
+    }
+
+    @Test
+    void nearStagesAndDegenerateInputsNeverClamp() {
+        // Stages 2-4 already sit inside any playable far plane: the
+        // escalation ladder's near presence must never be re-scaled.
+        for (int stage = ColossusChoreography.MAX_CLAMPED_STAGE + 1;
+                stage <= ColossusChoreography.MAX_STAGE;
+                stage++) {
+            assertEquals(
+                    1.0D,
+                    ColossusChoreography.renderApproachFactor(
+                            stage, ColossusChoreography.stageDistance(stage), 2));
+        }
+        assertEquals(1.0D, ColossusChoreography.renderApproachFactor(0, Double.NaN, 5));
+        assertEquals(1.0D, ColossusChoreography.renderApproachFactor(0, 0.0D, 5));
+        assertEquals(1.0D, ColossusChoreography.renderApproachFactor(0, -10.0D, 5));
+        // Even a pathological render distance keeps a sane floor.
+        assertTrue(ColossusChoreography.renderApproachFactor(0, 280.0D, 0) > 0.0D);
+    }
+
+    @Test
     void outOfRangeStagesClampIntoTheTable() {
         assertEquals(0, ColossusChoreography.clampStage(-3));
         assertEquals(

@@ -110,6 +110,12 @@ public final class OsScareDriver {
         if (titleActive || pulseActive) {
             hooks.restoreWindow();
         }
+        if (popupShown) {
+            // A cancel/logout one tick after the blink began must not leave
+            // the face riding over the disconnect screen: dispose it now.
+            // Guarded by popupShown so the per-tick idle reset stays free.
+            hooks.closePopup();
+        }
         titleActive = false;
         pulseActive = false;
         popupShown = false;

@@ -20,6 +20,11 @@ class OsScareDriverTest {
         }
 
         @Override
+        public void closePopup() {
+            calls.add("close");
+        }
+
+        @Override
         public void applyTitle(boolean glitched, long seed, int step) {
             calls.add("title:" + glitched + ":" + step);
         }
@@ -117,6 +122,32 @@ class OsScareDriverTest {
                 "logout or cancel mid-beat restores the window at once");
         driver.reset();
         assertEquals(1, hooks.count("restore"), "reset is idempotent");
+    }
+
+    @Test
+    void aResetAfterTheBlinkBeganAlsoClosesThePopup() {
+        // The documented contract: every path ends in reset(), which
+        // restores everything — including a face popup mid-blink. A scene
+        // cancel one tick after POPUP_START_TICK must dispose it, and a
+        // reset on a scene whose blink never began must not touch it.
+        RecordingHooks hooks = new RecordingHooks();
+        OsScareDriver driver = driven(hooks, OsScareToggles.ALL_ON);
+        for (int age = 0; age <= OsScareChoreography.POPUP_START_TICK; age++) {
+            driver.tick(SceneProfile.VISITATION_01, age);
+        }
+        assertEquals(1, hooks.count("popup"), "the blink has begun");
+        assertEquals(0, hooks.count("close"), "nothing closes mid-blink on its own");
+        driver.reset();
+        assertEquals(1, hooks.count("close"), "cancel/logout disposes the shown face");
+        driver.reset();
+        assertEquals(1, hooks.count("close"), "the close is not repeated once cleared");
+
+        RecordingHooks early = new RecordingHooks();
+        OsScareDriver earlyDriver = driven(early, OsScareToggles.ALL_ON);
+        earlyDriver.tick(SceneProfile.VISITATION_01, 0);
+        earlyDriver.reset();
+        assertEquals(0, early.count("close"),
+                "a reset before the blink ever began has no popup to close");
     }
 
     @Test

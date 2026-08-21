@@ -29,6 +29,15 @@ public final class ApparitionRenderer {
     private static final ResourceLocation FIGURE_TEXTURE = ResourceLocation.fromNamespaceAndPath(
             "minecraft",
             "textures/entity/zombie/zombie.png");
+    // The peripheral dissolve: the angular ramp runs from just past the gaze
+    // cone out to +40 degrees off axis, and the presented alpha chases the
+    // angular target over about five ticks — so a fast mouse flick thins
+    // the figure away instead of blinking it out.
+    public static final double PERIPHERAL_RAMP_START_DEGREES = 1.0D;
+    public static final double PERIPHERAL_RAMP_END_DEGREES = 40.0D;
+    public static final double PERIPHERAL_ALPHA_LERP_TICKS = 5.0D;
+    private static float peripheralPresentedAlpha;
+    private static long peripheralLastFrameNanos;
     private static HumanoidModel<LivingEntity> figureModel;
     private static HumanoidModel<LivingEntity> ownModelWide;
     private static HumanoidModel<LivingEntity> ownModelSlim;
@@ -225,12 +234,12 @@ public final class ApparitionRenderer {
         double offAxisDegrees = Math.acos(cos) * Mth.RAD_TO_DEG;
         double gazeCone = snapshot.descriptor().profile().gazeAngleDegrees();
         float periphery = (float) SceneMath.smoothstep(
-                gazeCone + 1.0D,
-                gazeCone + 26.0D,
+                gazeCone + PERIPHERAL_RAMP_START_DEGREES,
+                gazeCone + PERIPHERAL_RAMP_END_DEGREES,
                 offAxisDegrees);
-        float alphaScale = envelope
-                * periphery
-                * (1.0F - snapshot.gazeProgress());
+        float alphaScale = stepPeripheralAlpha(
+                envelope * periphery * (1.0F - snapshot.gazeProgress()),
+                System.nanoTime());
         if (alphaScale <= 0.001F) {
             return null;
         }
@@ -256,6 +265,30 @@ public final class ApparitionRenderer {
                 0.10F, 0.30F, 0.33F, 0.08F * alphaScale);
         // The eyes live at the edge of vision too: same periphery collapse.
         return new EyePass(0.0F, 0.0F, 0.0F, 0.80F, 1.10F, 0.80F, 0.90F * alphaScale);
+    }
+
+    /**
+     * One frame step of the peripheral dissolve's temporal smoothing. Pure
+     * so the ease is unit-testable: it walks the presented alpha toward the
+     * angle-driven target with a time constant of about
+     * {@link #PERIPHERAL_ALPHA_LERP_TICKS} ticks, never overshoots, and
+     * snaps on a stale frame gap (a fresh scene, a paused renderer) so no
+     * stale value ever replays into a new figure.
+     */
+    static float presentedPeripheralAlpha(float previous, float target, double dtTicks) {
+        if (!(dtTicks > 0.0D) || dtTicks > 20.0D) {
+            return target;
+        }
+        double step = Math.min(1.0D, dtTicks / PERIPHERAL_ALPHA_LERP_TICKS);
+        return (float) (previous + (target - previous) * step);
+    }
+
+    private static float stepPeripheralAlpha(float target, long nowNanos) {
+        double dtTicks = (nowNanos - peripheralLastFrameNanos) / 50_000_000.0D;
+        peripheralLastFrameNanos = nowNanos;
+        peripheralPresentedAlpha =
+                presentedPeripheralAlpha(peripheralPresentedAlpha, target, dtTicks);
+        return peripheralPresentedAlpha;
     }
 
     private static EyePass renderEcho(

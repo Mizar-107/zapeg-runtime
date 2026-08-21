@@ -86,6 +86,11 @@ public final class ColossusRenderer {
         double breathe = 1.0D + Math.sin(age * 0.14D + phase) * 0.015D;
         float alpha = (float) (ColossusChoreography.baseAlpha(stage) * envelope);
         float rock = (float) ColossusChoreography.stepRockDegrees(stage, age, seed);
+        // The far-plane clamp factor computed with the anchor in
+        // observeColossus (1 when the authored distance already fits this
+        // client's far plane): body and eyes shrink together, so the
+        // silhouette keeps its authored angular size.
+        float approach = snapshot.effectProgress() > 0.0F ? snapshot.effectProgress() : 1.0F;
 
         PoseStack pose = event.getPoseStack();
         pose.pushPose();
@@ -95,7 +100,10 @@ public final class ColossusRenderer {
                 anchor.z - cameraPosition.z);
         pose.mulPose(Axis.YP.rotationDegrees(180.0F - snapshot.yawDegrees()));
         pose.mulPose(Axis.ZP.rotationDegrees(rock));
-        pose.scale((float) breathe, (float) breathe, (float) breathe);
+        pose.scale(
+                (float) breathe * approach,
+                (float) breathe * approach,
+                (float) breathe * approach);
         Matrix4f matrix = pose.last().pose();
 
         RenderSystem.enableBlend();

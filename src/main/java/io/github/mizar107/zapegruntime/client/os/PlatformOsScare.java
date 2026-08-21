@@ -2,7 +2,6 @@ package io.github.mizar107.zapegruntime.client.os;
 
 import io.github.mizar107.zapegruntime.scene.OsScareChoreography;
 import java.awt.GraphicsEnvironment;
-import java.awt.Taskbar;
 import java.awt.image.BufferedImage;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.imageio.ImageIO;
@@ -15,20 +14,24 @@ import org.lwjgl.system.MemoryStack;
 
 /**
  * Production {@link OsScareHooks}: a borderless always-on-top Swing blink
- * for the face, and GLFW title/position wrongness for the game window.
+ * for the face, and GLFW title/position/attention wrongness for the game
+ * window.
  *
  * <p>Threading: GLFW calls happen on the client tick thread (which is the
  * thread Minecraft owns the window on); everything AWT/Swing is handed to
  * the event-dispatch thread with all state precomputed, and the EDT never
- * calls back into Minecraft. Every method fails silent: headless
- * environment, unsupported toolkit feature, fullscreen quirks or any
- * toolkit exception simply skips the beat. Nothing steals focus, nothing
- * persists, nothing touches files, the clipboard or the wallpaper.
+ * calls back into Minecraft. The Swing beats are additionally gated by
+ * {@link OsScarePlatform} to Windows before any Toolkit class is touched —
+ * a macOS AWT init under {@code -XstartOnFirstThread} can hang the JVM,
+ * which no catch block contains. Every method fails silent: unsupported
+ * platform, headless environment, fullscreen quirks or any toolkit
+ * exception simply skips the beat. Nothing steals focus, nothing persists,
+ * nothing touches files, the clipboard or the wallpaper.
  */
 final class PlatformOsScare implements OsScareHooks {
 
-    private static final String FACE_RESOURCE =
-            "/assets/zapeg_runtime/textures/visitation_face.png";
+    static final String FACE_RESOURCE =
+            "/assets/zapeg_runtime/textures/misc/calibration_b.png";
     private static final AtomicBoolean POPUP_SHOWING = new AtomicBoolean();
 
     private static volatile BufferedImage faceImage;
@@ -44,12 +47,48 @@ final class PlatformOsScare implements OsScareHooks {
 
     @Override
     public void showFacePopup(int visibleMillis, int fadeMillis) {
-        if (GraphicsEnvironment.isHeadless() || !POPUP_SHOWING.compareAndSet(false, true)) {
+        // The platform gate must short-circuit first: even the isHeadless
+        // probe belongs to AWT, and no Toolkit class may load off-Windows.
+        if (!OsScarePlatform.popupBeatsAllowed()
+                || GraphicsEnvironment.isHeadless()
+                || !POPUP_SHOWING.compareAndSet(false, true)) {
             return;
         }
         try {
             SwingUtilities.invokeLater(() -> runPopup(visibleMillis, fadeMillis));
         } catch (Throwable ignored) {
+            POPUP_SHOWING.set(false);
+        }
+    }
+
+    @Override
+    public void closePopup() {
+        // POPUP_SHOWING covers both a visible popup and one still queued for
+        // the EDT; when it is clear this returns without touching AWT at
+        // all, so the driver's reset stays free on every platform.
+        if (!OsScarePlatform.popupBeatsAllowed() || !POPUP_SHOWING.get()) {
+            return;
+        }
+        try {
+            // The EDT queue is ordered: a dispose queued after runPopup
+            // always finds the window it has to close.
+            SwingUtilities.invokeLater(PlatformOsScare::disposePopup);
+        } catch (Throwable ignored) {
+            // No toolkit, nothing shown, nothing to close.
+        }
+    }
+
+    /** EDT-only: drop the popup right now; the fade timer notices and stops. */
+    private static void disposePopup() {
+        try {
+            JWindow popup = currentPopup;
+            currentPopup = null;
+            if (popup != null) {
+                popup.dispose();
+            }
+        } catch (Throwable ignored) {
+            // Disposal is best-effort; the window dies with the process.
+        } finally {
             POPUP_SHOWING.set(false);
         }
     }
@@ -97,6 +136,11 @@ final class PlatformOsScare implements OsScareHooks {
         boolean fade = opacitySupported;
         timer.addActionListener(event -> {
             try {
+                if (!window.isDisplayable()) {
+                    // Closed early by a scene reset: nothing left to fade.
+                    timer.stop();
+                    return;
+                }
                 long elapsedMillis = (System.nanoTime() - started) / 1_000_000L;
                 if (elapsedMillis >= visibleMillis) {
                     timer.stop();
@@ -156,22 +200,20 @@ final class PlatformOsScare implements OsScareHooks {
 
     @Override
     public void flashTaskbar() {
+        // GLFW flashes the game window's own taskbar button, so the beat no
+        // longer depends on the face popup existing (facePopup=false keeps
+        // the flash) and touches no AWT at all. Still gated to Windows: the
+        // suite is rehearsed there, and elsewhere it silently skips.
+        if (!OsScarePlatform.popupBeatsAllowed()) {
+            return;
+        }
         try {
-            SwingUtilities.invokeLater(() -> {
-                try {
-                    JWindow popup = currentPopup;
-                    if (popup != null
-                            && Taskbar.isTaskbarSupported()
-                            && Taskbar.getTaskbar().isSupported(
-                                    Taskbar.Feature.USER_ATTENTION_WINDOW)) {
-                        Taskbar.getTaskbar().requestWindowUserAttention(popup);
-                    }
-                } catch (Throwable ignored) {
-                    // Attention flash is a best-effort beat.
-                }
-            });
+            long handle = windowHandle();
+            if (handle != 0L) {
+                GLFW.glfwRequestWindowAttention(handle);
+            }
         } catch (Throwable ignored) {
-            // No toolkit, no flash.
+            // Attention flash is a best-effort beat.
         }
     }
 

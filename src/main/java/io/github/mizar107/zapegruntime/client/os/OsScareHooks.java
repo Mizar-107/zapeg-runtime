@@ -16,6 +16,11 @@ public interface OsScareHooks {
     /** Show the bundled face for a brief blink with a fade, then dispose. */
     void showFacePopup(int visibleMillis, int fadeMillis);
 
+    /** Dispose a shown (or still-pending) face popup immediately; a no-op
+     *  when nothing is showing. Cancel, logout and scene end route through
+     *  this so the face can never outlive its scene. */
+    void closePopup();
+
     /** Set the window title to the glitched string for this step, or back
      *  to the captured original when {@code glitched} is false. */
     void applyTitle(boolean glitched, long seed, int step);
@@ -33,6 +38,9 @@ public interface OsScareHooks {
     OsScareHooks NOOP = new OsScareHooks() {
         @Override
         public void showFacePopup(int visibleMillis, int fadeMillis) {}
+
+        @Override
+        public void closePopup() {}
 
         @Override
         public void applyTitle(boolean glitched, long seed, int step) {}

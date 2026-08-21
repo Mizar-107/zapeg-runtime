@@ -153,8 +153,9 @@ mid-session, so the handshake refuses the mismatch up front):
   back.
 - `visitation_01`: the OS-level scare profile. Renders nothing in-game;
   instead the client briefly steps outside the game window — a borderless
-  always-on-top face blink (the bundled `visitation_face.png`, faded in and
-  out in well under two seconds), a window title that momentarily reads as
+  always-on-top face blink (a bundled image at a deliberately boring asset
+  path, faded in and out in well under two seconds), a window title that
+  momentarily reads as
   glitched block glyphs (never letters, never words, never a name), a small
   decaying window-position pulse, and an optional taskbar attention flash.
   Everything restores exactly: the original title and geometry always come

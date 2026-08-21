@@ -7,6 +7,7 @@ import io.github.mizar107.zapegruntime.ZapeGRuntime;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
 import io.github.mizar107.zapegruntime.scene.ColossusChoreography;
 import io.github.mizar107.zapegruntime.scene.SceneBinding;
+import io.github.mizar107.zapegruntime.scene.SceneDescriptor;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
 import java.util.UUID;
 import net.minecraft.commands.CommandSourceStack;
@@ -20,6 +21,14 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.RegisterCommandsEvent;
 
 public final class SceneCommands {
+
+    /**
+     * Brigadier floor for {@code ttl_ticks}: the wire descriptor rejects
+     * anything under {@link SceneDescriptor#MIN_TTL_TICKS}, so the command
+     * tree must refuse it up front — an operator typo must never reach the
+     * ledger.
+     */
+    public static final int MIN_TTL_TICKS = SceneDescriptor.MIN_TTL_TICKS;
 
     private SceneCommands() {}
 
@@ -59,7 +68,8 @@ public final class SceneCommands {
                                                                         IntegerArgumentType.getInteger(
                                                                                 context, "stage")))
                                                                 .then(Commands.argument("ttl_ticks",
-                                                                                IntegerArgumentType.integer(1,
+                                                                                IntegerArgumentType.integer(
+                                                                                        MIN_TTL_TICKS,
                                                                                         SceneServerManager
                                                                                                 .MAX_TTL_TICKS))
                                                                         .executes(context -> trigger(
@@ -75,7 +85,8 @@ public final class SceneCommands {
                                                                                                 context,
                                                                                                 "stage"))))))
                                                 .then(Commands.argument("ttl_ticks",
-                                                                IntegerArgumentType.integer(1,
+                                                                IntegerArgumentType.integer(
+                                                                        MIN_TTL_TICKS,
                                                                         SceneServerManager.MAX_TTL_TICKS))
                                                         .executes(context -> trigger(
                                                                 context,

@@ -8,6 +8,7 @@ import io.github.mizar107.zapegruntime.scene.ColossusChoreography;
 import io.github.mizar107.zapegruntime.scene.GazePull;
 import io.github.mizar107.zapegruntime.scene.HauntChoreography;
 import io.github.mizar107.zapegruntime.scene.MotionHistory;
+import io.github.mizar107.zapegruntime.scene.PendingSceneHold;
 import io.github.mizar107.zapegruntime.scene.PresentedGazeTracker;
 import io.github.mizar107.zapegruntime.scene.RiftChoreography;
 import io.github.mizar107.zapegruntime.scene.SceneAck;
@@ -59,6 +60,10 @@ public final class ClientSceneManager {
     private static final int PASSAGE_COLLAPSE_TICKS = 18;
     private static final double SKY_MARK_DISTANCE = 512.0D;
     private static ActiveScene active;
+    // A scene delivered while any screen was open waits here instead of
+    // burning: choreography (and the presented TTL) starts when the screen
+    // closes. The server-side occupancy expiry bounds the wait.
+    private static final PendingSceneHold pendingHold = new PendingSceneHold();
     private static MotionHistory ambientTrace;
     private static int ambientTraceCountdown;
     // Forced-gaze state: the held render-layer offset, its frame clock, and
@@ -187,14 +192,28 @@ public final class ClientSceneManager {
             }
             return;
         }
+        // A scene that arrives while any screen is open is held, never
+        // aborted: the acknowledgement still confirms delivery exactly as
+        // before, but the choreography waits for the screen to close so the
+        // Director's ledger-consumed beat is spent on an actual scare.
+        if (!pendingHold.offer(descriptor, minecraft.screen != null)) {
+            SceneNetwork.acknowledge(descriptor.eventId(), localPlayerId, SceneAck.RECEIVED);
+            return;
+        }
+        begin(descriptor, minecraft);
+        SceneNetwork.acknowledge(descriptor.eventId(), localPlayerId, SceneAck.RECEIVED);
+    }
+
+    /** The actual visual start: from here the scene ages and presents. */
+    private static void begin(SceneDescriptor descriptor, Minecraft minecraft) {
         active = new ActiveScene(descriptor);
         if (descriptor.profile().usesMotionHistory()) {
             active.recordMotion(minecraft.player.position(), minecraft.player.getYRot());
         }
-        SceneNetwork.acknowledge(descriptor.eventId(), localPlayerId, SceneAck.RECEIVED);
     }
 
     public static void cancel(UUID eventId, CancelReason reason) {
+        pendingHold.cancel(eventId);
         ActiveScene current = active;
         if (current != null && current.descriptor.eventId().equals(eventId)) {
             current.clearMotion();
@@ -205,21 +224,24 @@ public final class ClientSceneManager {
     public static void tick() {
         recordAmbientTrace();
         ActiveScene current = active;
+        Minecraft minecraft = Minecraft.getInstance();
         if (current == null) {
             // Any OS-level beat that outlived its scene restores the window.
             OsScareDriver.instance().reset();
+            promoteHeldScene(minecraft);
             return;
         }
-        Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null
                 || minecraft.level == null
                 || !minecraft.player.isAlive()
                 || !current.descriptor.targetId().equals(minecraft.player.getUUID())
-                || !current.descriptor.dimension().equals(minecraft.level.dimension().location())
-                || minecraft.screen != null) {
+                || !current.descriptor.dimension().equals(minecraft.level.dimension().location())) {
             finish(SceneAck.ABORTED);
             return;
         }
+        // A screen opening mid-scene must not abort it: scenes are brief and
+        // server-bounded, so the choreography simply keeps playing behind
+        // the GUI instead of silently erasing the scare.
         current.ageTicks++;
         if (current.descriptor.profile().usesMotionHistory()) {
             current.recordMotion(minecraft.player.position(), minecraft.player.getYRot());
@@ -251,6 +273,29 @@ public final class ClientSceneManager {
                     finishBody(current, SceneAck.TIMEOUT);
                 }
             }
+        }
+    }
+
+    /**
+     * Starts a held scene the moment the screen that delayed it is closed.
+     * The TTL countdown begins here, at the actual visual start; a hold that
+     * turned stale (death, wrong dimension) simply keeps waiting — the
+     * server's own per-tick checks cancel it within a tick, and the cancel
+     * clears the slot.
+     */
+    private static void promoteHeldScene(Minecraft minecraft) {
+        SceneDescriptor held = pendingHold.heldScene();
+        if (held == null || minecraft.player == null || minecraft.level == null) {
+            return;
+        }
+        if (!held.targetId().equals(minecraft.player.getUUID())
+                || !held.dimension().equals(minecraft.level.dimension().location())
+                || !minecraft.player.isAlive()) {
+            return;
+        }
+        SceneDescriptor promoted = pendingHold.promote(minecraft.screen != null);
+        if (promoted != null) {
+            begin(promoted, minecraft);
         }
     }
 
@@ -759,13 +804,25 @@ public final class ClientSceneManager {
             return null;
         }
         Vec3 anchor = colossusAnchor(descriptor, bodyAge);
-        double halfWidth = 24.0D;
+        // Far stages exceed the far plane of a low-render-distance client;
+        // pull the render (never the wire) anchor in along its own bearing
+        // and shrink the body by the same factor, so the horizon silhouette
+        // survives the clip with its angular size unchanged.
+        Vec3 cameraPosition = event.getCamera().getPosition();
+        double approach = ColossusChoreography.renderApproachFactor(
+                stage,
+                cameraPosition.distanceTo(anchor),
+                Minecraft.getInstance().options.getEffectiveRenderDistance());
+        if (approach < 1.0D) {
+            anchor = cameraPosition.add(anchor.subtract(cameraPosition).scale(approach));
+        }
+        double halfWidth = 24.0D * approach;
         AABB bounds = new AABB(
                 anchor.x - halfWidth,
                 anchor.y - 4.0D,
                 anchor.z - halfWidth,
                 anchor.x + halfWidth,
-                anchor.y + ColossusChoreography.HEIGHT_BLOCKS + 8.0D,
+                anchor.y + ColossusChoreography.HEIGHT_BLOCKS * approach + 8.0D,
                 anchor.z + halfWidth);
         if (!event.getFrustum().isVisible(bounds)) {
             return null;
@@ -774,7 +831,8 @@ public final class ClientSceneManager {
             markVisible(current);
             SceneSounds.playArrival(descriptor, anchor);
         }
-        return new RenderSnapshot(descriptor, anchor, descriptor.yawDegrees(), 0.0F, 0.0F);
+        return new RenderSnapshot(
+                descriptor, anchor, descriptor.yawDegrees(), 0.0F, (float) approach);
     }
 
     /**
@@ -1200,6 +1258,8 @@ public final class ClientSceneManager {
             current.clearMotion();
         }
         active = null;
+        // A held scene must not survive logout or a level change either.
+        pendingHold.clear();
         // The ambient whisper trace is client-local memory of where the
         // player has been; it must not survive logout or a dimension change.
         ambientTrace = null;

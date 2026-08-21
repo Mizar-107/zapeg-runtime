@@ -19,10 +19,12 @@ public enum SceneProfile {
     LIGHT_FAULT_01(
             3, "light_fault_01", 140, 7.0D, 1_500, false,
             ScenePlacementMode.LOCAL_CAMERA_FOCUS, 0, 1, 0),
-    // A silhouette that only reads at the edge of vision: the narrow gaze cone
-    // and blink-length dwell make a direct look resolve it almost instantly.
+    // A silhouette that only reads at the edge of vision: the narrow gaze
+    // cone and short dwell make a direct look resolve it within a beat —
+    // long enough for the renderer's ~5-tick alpha ease to read as a
+    // dissolve rather than a pop.
     PERIPHERAL_01(
-            4, "peripheral_01", 140, 9.0D, 80, true,
+            4, "peripheral_01", 140, 9.0D, 140, true,
             ScenePlacementMode.DISTANT_SAFE_GROUND, 25, 1, 500),
     // Sound-only: footsteps circle closer with no figure to look at, so the
     // dwell must outlast the TTL and the scene always ends in silence (TIMEOUT).

@@ -301,12 +301,16 @@ final class SceneSounds {
                 4.0D,
                 Math.max(volume, distance / 16.0D * 1.08D));
         float jitter = 0.92F + ((descriptor.visualSeed() >>> 13) & 0xFL) / 15.0F * 0.16F;
+        // AMBIENT, never HOSTILE: grinders on modded servers routinely mute
+        // the hostile slider, which would turn the sound-only scenes into
+        // empty air. Ambient is the channel players leave up — it carries
+        // the cave sounds these beats impersonate anyway.
         level.playLocalSound(
                 position.x,
                 position.y,
                 position.z,
                 event,
-                SoundSource.HOSTILE,
+                SoundSource.AMBIENT,
                 rangedVolume,
                 pitch * jitter,
                 false);

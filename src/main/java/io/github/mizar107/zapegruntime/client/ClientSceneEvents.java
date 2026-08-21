@@ -99,6 +99,12 @@ public final class ClientSceneEvents {
         }
         event.scaleFarPlaneDistance(farScale);
         event.scaleNearPlaneDistance(nearScale);
+        // Forge only applies overridden fog planes from a cancelled event;
+        // without this the whole fog layer is a silent no-op on the vanilla
+        // renderer. Frames without a scene never reach here (dip <= 0), so
+        // normal play keeps the untouched vanilla fog — the restore is
+        // simply not cancelling.
+        event.setCanceled(true);
     }
 
     @SubscribeEvent

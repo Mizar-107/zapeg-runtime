@@ -27,6 +27,10 @@ public final class ColossusChoreography {
     public static final double STEP_ADVANCE_FRACTION = 0.025D;
     /** ...but a single scene never advances more than this, in blocks. */
     public static final double MAX_TOTAL_ADVANCE_BLOCKS = 30.0D;
+    /** Fraction of the client's own visible range the far stages may use. */
+    public static final double RENDER_CLIP_SAFETY = 0.9D;
+    /** Only the two far stages ever need the render-distance clamp. */
+    public static final int MAX_CLAMPED_STAGE = 1;
 
     private static final double[] STAGE_DISTANCES = {280.0D, 220.0D, 160.0D, 110.0D, 70.0D};
     // How strongly the silhouette mixes into the fog color. Below 1.0 it is
@@ -115,6 +119,31 @@ public final class ColossusChoreography {
         double raw = Math.min(Math.max(elapsedSteps, 0), stepsForStage(stage))
                 * stageDistance(stage) * STEP_ADVANCE_FRACTION;
         return Math.min(raw, MAX_TOTAL_ADVANCE_BLOCKS);
+    }
+
+    /**
+     * Render-only clamp factor (0..1] for the wire anchor's camera distance.
+     * Stages 0–1 are authored beyond the far plane of a low-render-distance
+     * client; the renderer pulls the silhouette in along the same bearing to
+     * {@code (renderDistanceChunks - 1) * 16 * RENDER_CLIP_SAFETY} blocks
+     * and scales the whole body by the same factor, so the angular read —
+     * a horizon smudge — is unchanged while the figure survives the clip.
+     * Never applied to stages 2–4 (already inside any playable far plane),
+     * and never to the wire anchor: the escalation contract stays authored.
+     */
+    public static double renderApproachFactor(
+            int stage, double anchorDistanceBlocks, int renderDistanceChunks) {
+        if (clampStage(stage) > MAX_CLAMPED_STAGE
+                || !Double.isFinite(anchorDistanceBlocks)
+                || anchorDistanceBlocks <= 0.0D) {
+            return 1.0D;
+        }
+        double visibleBlocks = Math.max(16.0D, (renderDistanceChunks - 1) * 16.0D)
+                * RENDER_CLIP_SAFETY;
+        if (anchorDistanceBlocks <= visibleBlocks) {
+            return 1.0D;
+        }
+        return visibleBlocks / anchorDistanceBlocks;
     }
 
     /**

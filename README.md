@@ -32,6 +32,11 @@ faults without registering or saving a Minecraft entity.
   rotation, and composes with the unease layer under a combined cap;
 - scene phasing: a client-local ambience-dip prelude before the body and, for
   allowlisted profiles, a single bounded encore beat after the apparent end;
+- GUI-hold: a scene that arrives while any screen is open (chat, inventory,
+  a modpack terminal) is acknowledged as delivered but held, starting — with
+  its presented TTL — only when the screen closes; a newer spawn replaces a
+  held one, cancel/logout clears it, and the server-side occupancy expiry
+  bounds the wait. A screen opening mid-scene never aborts the scene;
 - hard expiry and cleanup on logout, death, dimension change and restart;
 - no blocks, items, AI, collision, combat, loot, chat, URLs or arbitrary assets.
 
@@ -51,8 +56,9 @@ Profiles are deliberately distinct and bounded:
   non-hidden GUI frame, and requires 1.5 seconds of presented gaze to resolve;
 - `peripheral_01`: a still silhouette whose alpha collapses as the camera look
   vector nears it — it only reads at the edge of vision, glowing eyes
-  included, and a direct look resolves it within a blink-long 80 ms dwell. It
-  never tracks the camera;
+  included, over a wide angular ramp with a ~5-tick temporal ease so it
+  dissolves rather than pops, and a direct look resolves it within a short
+  140 ms dwell. It never tracks the camera;
 - `footsteps_01`: sound-only. Eleven seeded vanilla steps circle from the
   anchor's direction toward the target, stop just over three blocks away, and
   never arrive; the screen stays clean and the scene always ends in silence
@@ -92,7 +98,10 @@ Profiles are deliberately distinct and bounded:
   heavy camera pulse; the figure rocks and breathes in the fog, which is
   mixed manually because the position-color pipeline ignores shader fog. The
   anchor is a seeded horizon bearing pinned to the target's feet — nothing
-  collides, so no ground scan runs at those distances;
+  collides, so no ground scan runs at those distances. On low render
+  distances the two far stages are pulled inside the client's own far plane
+  (render-only, never the wire anchor) and scaled to match, so the horizon
+  silhouette still reads instead of being clipped away;
 - `rift_01`: staged manifestation overlay (wire stage 0–3). Eclipse is a
   bounded near-black wash plus a strong vanilla fog pull that yields to
   shader packs on the fog plane; tear is the old chroma-break recording
@@ -103,15 +112,20 @@ Profiles are deliberately distinct and bounded:
   `eclipse`, `unmoor`, `witness`) map onto these stages;
 - `visitation_01`: the OS-level scare. Nothing renders in-game; instead the
   client briefly steps outside the game window. A borderless always-on-top
-  window shows the bundled face asset (`visitation_face.png`, the owner's own
-  art) for a faded blink of well under two seconds; the game window title
+  window shows a bundled image (shipped at a deliberately boring asset path)
+  for a faded blink of well under two seconds; the game window title
   momentarily reads as glitched block glyphs — never letters, words or a
   name; the window position shivers through a small decaying pulse; and an
-  optional taskbar attention flash rides the blink. Everything restores
-  exactly: the true title and geometry always come back, the popup never
-  steals keyboard or mouse focus, nothing persists, and the layer fails
-  silent on headless or unsupported platforms. The scene never resolves by
-  gaze and the game screen itself stays clean.
+  optional taskbar attention flash rides the blink (flashing the game
+  window's own taskbar button, so it works even with the face popup opted
+  out). Everything restores exactly: the true title and geometry always come
+  back, an early cancel or logout disposes a shown popup immediately, the
+  popup never steals keyboard or mouse focus, nothing persists, and the
+  layer fails silent on headless or unsupported platforms. The face popup
+  and taskbar flash are Windows-only (skipped silently elsewhere — a macOS
+  AWT init under GLFW can hang the JVM); the title and window-pulse beats
+  are plain GLFW and run everywhere. The scene never resolves by gaze and
+  the game screen itself stays clean.
 
 Figure presentation, direct-gaze progress and the light fault's spatial
 activation use the real target camera, frustum and block line of sight. The
@@ -147,7 +161,8 @@ leaves the figure's front hemisphere instead of shining through the head, and
 on the colossus they hold at full strength while the body fades, so the eyes
 are always the last thing visible. Scene audio is a small
 allowlist of vanilla sound events played client-locally on the target's client
-only — no custom, remote or server-broadcast audio. Each scene plays an arrival
+only — no custom, remote or server-broadcast audio — on the ambient sound
+channel, which players do not mute the way grinders mute hostiles. Each scene plays an arrival
 beat, one faint seeded mid-scene beat, and a resolve beat; sound volume is
 range-compensated so distant anchors arrive faint instead of silent.
 
@@ -198,8 +213,10 @@ URLs are rejected.
 for `colossus_01` it accepts an optional stage (0–4) so any approach step can
 be previewed without touching the Director's escalation state. `trigger`
 accepts a stable UUID for Director idempotency plus an optional `ttl-ticks`
-override (1–1200) so the Director can scale scene length with campaign phase;
-the server clamps it to the same bound the wire descriptor enforces. For
+override (20–1200) so the Director can scale scene length with campaign phase;
+the server clamps it into the same bounds the wire descriptor enforces, and
+the descriptor is validated before the event id is consumed so a rejected
+dispatch never burns a deterministic beat id. For
 `colossus_01` the stage travels as an explicit bounded argument after a
 `stage` literal; it is rejected for every other profile. Ground-anchored
 profiles also accept an optional coarse `hint-x hint-z` pair; placement then
