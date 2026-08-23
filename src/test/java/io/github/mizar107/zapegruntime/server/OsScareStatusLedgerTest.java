@@ -77,6 +77,21 @@ class OsScareStatusLedgerTest {
         assertNull(ledger.get(otherPlayer), "a BUSY placeholder is not a fake report");
     }
 
+    @Test
+    void serverLifecycleClearDropsEveryWorldLocalReport() {
+        OsScareStatusLedger ledger = new OsScareStatusLedger();
+        UUID firstPlayer = UUID.randomUUID();
+        UUID secondPlayer = UUID.randomUUID();
+        ledger.recordStatus(firstPlayer, UUID.randomUUID(), 3, report(OsCleanupState.APPLIED));
+        ledger.onDispatch(secondPlayer, UUID.randomUUID());
+
+        ledger.clear();
+
+        assertEquals(0, ledger.size());
+        assertNull(ledger.get(firstPlayer));
+        assertNull(ledger.get(secondPlayer));
+    }
+
     private static OsScareReport report(OsCleanupState popupCleanup) {
         EnumMap<OsEffect, OsEffectOutcome> outcomes = new EnumMap<>(OsEffect.class);
         for (OsEffect effect : OsEffect.values()) {

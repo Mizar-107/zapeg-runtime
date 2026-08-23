@@ -13,6 +13,32 @@ world and deployment migration.
   independent dimensions: capability, primary delivery, in-game fallback and
   cleanup, all with bounded reason codes.
 
+## Batch 1 operator smoke
+
+All target arguments below are Brigadier `EntityArgument.player()` values. The
+name is resolved to a connected player before execution; it is never pasted
+into another command. Run these as a direct level-2+ player or authenticated
+RCON source (not through `/execute` or a command block):
+
+```text
+/heraldor status Mizar__107
+/heraldor diagnose Mizar__107
+/heraldor servant status Mizar__107
+/heraldor servant awaken Mizar__107 rehearsal
+/heraldor servant dismiss Mizar__107
+/zapegscene rehearse Mizar__107 visitation_01
+/zapegscene diagnose Mizar__107
+```
+
+A rehearsal Servant may be fought normally but its death must leave
+`live_victories` unchanged. For the live exact-once gate, generate a fresh UUID
+and run `/heraldor servant awaken Mizar__107 event <uuid>`; killing it once must
+increment `live_victories` by one, and reusing that UUID must not increment it
+again. `dismiss` removes either kind without awarding a victory. The visitation
+diagnostic reports each popup/title/motion/taskbar capability, primary result,
+in-game fallback and cleanup independently; packet receipt alone is not an
+`applied` result.
+
 ## v0.3 boundaries
 
 - exact-match protocol `6`; mixed v0.3.0/v0.3.1 clients fail the handshake

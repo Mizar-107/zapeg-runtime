@@ -296,6 +296,21 @@ public final class SceneServerManager {
         return true;
     }
 
+    /**
+     * Ends all JVM-local scene state at the server lifecycle boundary.
+     *
+     * <p>The retained OS report ledger deliberately outlives a player logout
+     * while the same server is running so late cleanup truth can still arrive.
+     * It must not, however, outlive the server itself: integrated-server world
+     * switches reuse the client JVM and would otherwise expose the previous
+     * world's visitation report in the next world's diagnostics.</p>
+     */
+    public static void shutdown() {
+        cancel(CancelReason.SERVER_STOP);
+        active = null;
+        osScareStatuses.clear();
+    }
+
     public static String status() {
         ActiveScene current = active;
         if (current == null) {

@@ -51,6 +51,6 @@ public final class SceneServerEvents {
 
     @SubscribeEvent
     public static void onServerStopping(ServerStoppingEvent event) {
-        SceneServerManager.cancel(CancelReason.SERVER_STOP);
+        SceneServerManager.shutdown();
     }
 }
