@@ -203,7 +203,7 @@ public final class ServantEncounterManager {
                     servant.encounterId(),
                     servant.getUUID(),
                     killerId);
-            case VICTORY_CAPACITY_EXHAUSTED, UNSUPPORTED_SCHEMA -> ZapeGRuntime.LOGGER.error(
+            case UNSUPPORTED_SCHEMA -> ZapeGRuntime.LOGGER.error(
                     "Servant victory could not be recorded encounter={} result={}",
                     servant.encounterId(),
                     result);

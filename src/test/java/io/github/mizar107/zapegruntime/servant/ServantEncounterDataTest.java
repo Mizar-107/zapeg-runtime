@@ -2,8 +2,12 @@ package io.github.mizar107.zapegruntime.servant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -194,20 +198,40 @@ class ServantEncounterDataTest {
     }
 
     @Test
-    void fullVictoryLedgerRefusesNewLiveWorkInsteadOfEvictingHistory() {
-        CompoundTag root = new CompoundTag();
-        root.putInt("SchemaVersion", ServantEncounterData.CURRENT_SCHEMA_VERSION);
-        root.put("Active", new ListTag());
-        ListTag victories = new ListTag();
-        for (long index = 1; index <= ServantEncounterData.MAX_LIVE_VICTORIES; index++) {
-            CompoundTag victory = new CompoundTag();
-            victory.putUUID("EncounterId", new UUID(1L, index));
-            victory.putUUID("TargetId", TARGET);
-            victories.add(victory);
-        }
-        root.put("LiveVictories", victories);
+    void durableVictorySnapshotIsStableImmutableAndReplayableAfterReload() {
+        ServantEncounterData data = new ServantEncounterData();
+        UUID laterEvent = new UUID(0L, 2L);
+        UUID earlierEvent = new UUID(0L, 1L);
+        ServantEncounter later = encounter(laterEvent, TARGET, UUID.randomUUID(), false);
+        ServantEncounter earlier = encounter(earlierEvent, OTHER_TARGET, UUID.randomUUID(), false);
+        data.begin(later);
+        data.finishVictory(later.encounterId(), later.servantId(), later.targetId());
+        data.begin(earlier);
+        data.finishVictory(earlier.encounterId(), earlier.servantId(), earlier.targetId());
 
-        ServantEncounterData loaded = ServantEncounterData.load(root);
+        List<ServantEncounterData.LiveVictory> expected = List.of(
+                new ServantEncounterData.LiveVictory(earlierEvent, OTHER_TARGET),
+                new ServantEncounterData.LiveVictory(laterEvent, TARGET));
+        List<ServantEncounterData.LiveVictory> beforeSave = data.liveVictories();
+        assertEquals(expected, beforeSave);
+        assertThrows(UnsupportedOperationException.class, () -> beforeSave.add(expected.get(0)));
+
+        ServantEncounterData reloaded =
+                ServantEncounterData.load(data.save(new CompoundTag()));
+        assertEquals(expected, reloaded.liveVictories());
+
+        Set<UUID> idempotentIntegration = new HashSet<>();
+        reloaded.liveVictories().forEach(victory ->
+                idempotentIntegration.add(victory.encounterId()));
+        reloaded.liveVictories().forEach(victory ->
+                idempotentIntegration.add(victory.encounterId()));
+        assertEquals(Set.of(earlierEvent, laterEvent), idempotentIntegration);
+    }
+
+    @Test
+    void fullVictoryLedgerRefusesNewLiveWorkInsteadOfEvictingHistory() {
+        ServantEncounterData loaded = ServantEncounterData.load(
+                rootWithVictories(ServantEncounterData.MAX_LIVE_VICTORIES));
         assertEquals(ServantEncounterData.MAX_LIVE_VICTORIES, loaded.terminalCount());
         assertEquals(
                 ServantEncounterData.BeginStatus.VICTORY_CAPACITY_EXHAUSTED,
@@ -217,6 +241,60 @@ class ServantEncounterDataTest {
                 ServantEncounterData.BeginStatus.STARTED,
                 loaded.begin(encounter(UUID.randomUUID(), OTHER_TARGET, UUID.randomUUID(), true))
                         .status());
+    }
+
+    @Test
+    void activeLiveEncountersReserveTerminalCapacityBeforeCompletion() {
+        ServantEncounterData data = ServantEncounterData.load(
+                rootWithVictories(ServantEncounterData.MAX_LIVE_VICTORIES - 2));
+        UUID secondTarget = UUID.fromString("c0a102bc-70e6-49b5-b10b-1e00c6d133a3");
+        UUID thirdTarget = UUID.fromString("4c23e650-bd08-4025-b527-3fd82ca3d4e3");
+        ServantEncounter first = encounter(
+                new UUID(2L, 1L), OTHER_TARGET, UUID.randomUUID(), false);
+        ServantEncounter second = encounter(
+                new UUID(2L, 2L), secondTarget, UUID.randomUUID(), false);
+
+        assertEquals(ServantEncounterData.BeginStatus.STARTED, data.begin(first).status());
+        assertEquals(ServantEncounterData.BeginStatus.STARTED, data.begin(second).status());
+        data = ServantEncounterData.load(data.save(new CompoundTag()));
+        assertEquals(ServantEncounterData.MAX_LIVE_VICTORIES, data.reservedLiveSlots());
+        assertEquals(
+                ServantEncounterData.BeginStatus.VICTORY_CAPACITY_EXHAUSTED,
+                data.begin(encounter(new UUID(2L, 3L), thirdTarget, UUID.randomUUID(), false))
+                        .status());
+        assertTrue(data.activeFor(first.targetId()).isPresent());
+        assertTrue(data.activeFor(second.targetId()).isPresent());
+
+        assertEquals(
+                ServantEncounterData.FinishResult.LIVE_CREDITED,
+                data.finishVictory(first.encounterId(), first.servantId(), first.targetId()));
+        assertEquals(
+                ServantEncounterData.FinishResult.LIVE_CREDITED,
+                data.finishVictory(second.encounterId(), second.servantId(), second.targetId()));
+        assertEquals(ServantEncounterData.MAX_LIVE_VICTORIES, data.terminalCount());
+        assertEquals(ServantEncounterData.MAX_LIVE_VICTORIES, data.reservedLiveSlots());
+        assertTrue(data.activeFor(first.targetId()).isEmpty());
+        assertTrue(data.activeFor(second.targetId()).isEmpty());
+
+        assertEquals(
+                ServantEncounterData.BeginStatus.STARTED,
+                data.begin(encounter(new UUID(2L, 4L), thirdTarget, UUID.randomUUID(), true))
+                        .status());
+    }
+
+    private static CompoundTag rootWithVictories(int count) {
+        CompoundTag root = new CompoundTag();
+        root.putInt("SchemaVersion", ServantEncounterData.CURRENT_SCHEMA_VERSION);
+        root.put("Active", new ListTag());
+        ListTag victories = new ListTag();
+        for (long index = 1; index <= count; index++) {
+            CompoundTag victory = new CompoundTag();
+            victory.putUUID("EncounterId", new UUID(1L, index));
+            victory.putUUID("TargetId", TARGET);
+            victories.add(victory);
+        }
+        root.put("LiveVictories", victories);
+        return root;
     }
 
     private static ServantEncounter encounter(

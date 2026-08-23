@@ -36,4 +36,13 @@ class ServantArchitectureContractTest {
         assertTrue(entity.contains("shouldDespawnInPeaceful"));
         assertTrue(entity.contains("isPreventingPlayerRest"));
     }
+
+    @Test
+    void forgeVictoryEventIsDocumentedAsAdvisoryAndDeduplicated() throws IOException {
+        String event = Files.readString(SOURCE_ROOT.resolve("ServantVictoryEvent.java"));
+        assertTrue(event.contains("gameplay must not"));
+        assertTrue(event.contains("deduplicate by"));
+        assertTrue(event.contains("liveVictories()"));
+        assertFalse(event.contains("Posted once"));
+    }
 }

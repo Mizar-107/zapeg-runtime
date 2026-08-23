@@ -23,8 +23,9 @@ public final class ServantEncounterData extends SavedData {
     public static final int MAX_ACTIVE_ENCOUNTERS = 256;
     /**
      * A campaign is expected to award far fewer than this many victories.
-     * The ledger never evicts: once this defensive ceiling is reached, new
-     * live encounters are refused so an old victory can never become replayable.
+     * The ledger never evicts. Completed victories and active non-rehearsal
+     * encounters share this capacity, so every live encounter reserves its
+     * future durable barrier before an entity is spawned.
      */
     public static final int MAX_LIVE_VICTORIES = 4_096;
 
@@ -64,24 +65,6 @@ public final class ServantEncounterData extends SavedData {
         }
 
         ServantEncounterData data = new ServantEncounterData();
-        Set<UUID> seenEncounterIds = new HashSet<>();
-        Set<UUID> seenServantIds = new HashSet<>();
-        ListTag active = root.getList(ACTIVE, Tag.TAG_COMPOUND);
-        int activeLimit = Math.min(active.size(), MAX_ACTIVE_ENCOUNTERS);
-        for (int index = 0; index < activeLimit; index++) {
-            try {
-                ServantEncounter encounter = ServantEncounter.load(active.getCompound(index));
-                if (data.activeByTarget.containsKey(encounter.targetId())
-                        || !seenEncounterIds.add(encounter.encounterId())
-                        || !seenServantIds.add(encounter.servantId())) {
-                    continue;
-                }
-                data.activeByTarget.put(encounter.targetId(), encounter);
-            } catch (IllegalArgumentException ignored) {
-                // Isolate corrupt records; valid siblings remain usable.
-            }
-        }
-
         ListTag victories = root.getList(LIVE_VICTORIES, Tag.TAG_COMPOUND);
         int victoryLimit = Math.min(victories.size(), MAX_LIVE_VICTORIES);
         for (int index = 0; index < victoryLimit; index++) {
@@ -99,8 +82,29 @@ public final class ServantEncounterData extends SavedData {
             data.liveVictoryTargetsByEvent.putIfAbsent(eventId, targetId);
         }
 
-        data.activeByTarget.entrySet().removeIf(entry ->
-                data.liveVictoryTargetsByEvent.containsKey(entry.getValue().encounterId()));
+        List<ServantEncounter> candidates = new ArrayList<>();
+        ListTag active = root.getList(ACTIVE, Tag.TAG_COMPOUND);
+        int activeLimit = Math.min(active.size(), MAX_ACTIVE_ENCOUNTERS);
+        for (int index = 0; index < activeLimit; index++) {
+            try {
+                candidates.add(ServantEncounter.load(active.getCompound(index)));
+            } catch (IllegalArgumentException ignored) {
+                // Isolate corrupt records; valid siblings remain usable.
+            }
+        }
+        Set<UUID> seenEncounterIds = new HashSet<>();
+        Set<UUID> seenServantIds = new HashSet<>();
+        for (ServantEncounter encounter : candidates) {
+            if (data.liveVictoryTargetsByEvent.containsKey(encounter.encounterId())
+                    || data.activeByTarget.containsKey(encounter.targetId())
+                    || !seenEncounterIds.add(encounter.encounterId())
+                    || !seenServantIds.add(encounter.servantId())
+                    || (!encounter.rehearsal()
+                            && data.reservedLiveSlots() >= MAX_LIVE_VICTORIES)) {
+                continue;
+            }
+            data.activeByTarget.put(encounter.targetId(), encounter);
+        }
         return data;
     }
 
@@ -134,7 +138,7 @@ public final class ServantEncounterData extends SavedData {
             return new BeginResult(BeginStatus.ACTIVE_CAPACITY_EXHAUSTED, null);
         }
         if (!proposed.rehearsal()
-                && liveVictoryTargetsByEvent.size() >= MAX_LIVE_VICTORIES) {
+                && reservedLiveSlots() >= MAX_LIVE_VICTORIES) {
             return new BeginResult(BeginStatus.VICTORY_CAPACITY_EXHAUSTED, null);
         }
 
@@ -173,10 +177,6 @@ public final class ServantEncounterData extends SavedData {
         if (encounter.rehearsal()) {
             setDirty();
             return FinishResult.REHEARSAL_COMPLETE;
-        }
-        if (liveVictoryTargetsByEvent.size() >= MAX_LIVE_VICTORIES) {
-            setDirty();
-            return FinishResult.VICTORY_CAPACITY_EXHAUSTED;
         }
 
         liveVictoryTargetsByEvent.put(encounterId, encounter.targetId());
@@ -245,6 +245,25 @@ public final class ServantEncounterData extends SavedData {
         return supportsCurrentSchema() && liveVictoryTargetsByEvent.containsKey(encounterId);
     }
 
+    /**
+     * Deterministic durable replay/outbox barriers, sorted by encounter UUID.
+     *
+     * <p>Integration may replay this immutable snapshot into its own world
+     * state on every startup and after a death. Consumers must apply each
+     * {@code encounterId} idempotently.</p>
+     */
+    public List<LiveVictory> liveVictories() {
+        if (!supportsCurrentSchema()) {
+            return List.of();
+        }
+        List<LiveVictory> snapshot = new ArrayList<>(liveVictoryTargetsByEvent.size());
+        liveVictoryTargetsByEvent.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> new LiveVictory(entry.getKey(), entry.getValue()))
+                .forEach(snapshot::add);
+        return List.copyOf(snapshot);
+    }
+
     public int victoryCount(UUID targetId) {
         if (!supportsCurrentSchema()) {
             return 0;
@@ -256,6 +275,16 @@ public final class ServantEncounterData extends SavedData {
 
     int terminalCount() {
         return liveVictoryTargetsByEvent.size();
+    }
+
+    int reservedLiveSlots() {
+        if (!supportsCurrentSchema()) {
+            return 0;
+        }
+        long activeLive = activeByTarget.values().stream()
+                .filter(encounter -> !encounter.rehearsal())
+                .count();
+        return Math.toIntExact(liveVictoryTargetsByEvent.size() + activeLive);
     }
 
     private boolean removeActive(UUID encounterId) {
@@ -311,13 +340,14 @@ public final class ServantEncounterData extends SavedData {
 
     public record BeginResult(BeginStatus status, ServantEncounter encounter) {}
 
+    public record LiveVictory(UUID encounterId, UUID targetId) {}
+
     public enum FinishResult {
         LIVE_CREDITED,
         REHEARSAL_COMPLETE,
         ALREADY_TERMINAL,
         NOT_ACTIVE,
         IDENTITY_MISMATCH,
-        VICTORY_CAPACITY_EXHAUSTED,
         UNSUPPORTED_SCHEMA
     }
 

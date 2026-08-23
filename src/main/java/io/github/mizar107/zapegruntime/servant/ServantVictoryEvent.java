@@ -5,8 +5,13 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.eventbus.api.Event;
 
 /**
- * Posted once after a non-rehearsal victory has been durably consumed by the
- * SavedData ledger. Campaign code may observe this event to advance a node.
+ * Advisory, at-least-once notification that a durable live-victory barrier exists.
+ *
+ * <p>This Forge event is not a transactional outbox and gameplay must not
+ * depend on receiving it. It may be delivered again during integration
+ * reconciliation; optional listeners must deduplicate by {@link #encounterId()}.
+ * Authoritative integration replays {@link ServantEncounterData#liveVictories()}
+ * into world state idempotently.</p>
  */
 public final class ServantVictoryEvent extends Event {
 
