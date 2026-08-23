@@ -11,41 +11,16 @@ import org.junit.jupiter.api.Test;
 
 class ModResourceContractTest {
 
-    /** Every text resource that ships in the jar. The fiction contract
-     *  ("heraldor appears nowhere in resources") is enforced against all of
-     *  them, not just the mod metadata. */
-    private static final String[] TEXT_RESOURCES = {
-        "/META-INF/mods.toml",
-        "/pack.mcmeta",
-    };
-
     @Test
     void modIsMandatoryAndNeutral() throws IOException {
         try (InputStream stream = getClass().getResourceAsStream("/META-INF/mods.toml")) {
             assertNotNull(stream);
             String metadata = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
             assertTrue(metadata.contains("modId = \"zapeg_runtime\""));
-            assertTrue(metadata.contains("version = \"0.4.0\""));
+            assertTrue(metadata.contains("version = \"0.5.0-b1\""));
+            assertTrue(metadata.contains("displayName = \"Heraldor\""));
             assertTrue(metadata.contains("displayTest = \"MATCH_VERSION\""));
             assertTrue(metadata.contains("side = \"BOTH\""));
-            assertTrue(!metadata.toLowerCase().contains("heraldor"));
-        }
-    }
-
-    @Test
-    void noShippedTextResourceNamesTheFiction() throws IOException {
-        // The crew installs the jar by hand and diffs modpacks for fun; a
-        // single plaintext mention retroactively converts every scare into
-        // "found the file for this one".
-        for (String resource : TEXT_RESOURCES) {
-            try (InputStream stream = getClass().getResourceAsStream(resource)) {
-                assertNotNull(stream, resource + " must ship");
-                String text = new String(stream.readAllBytes(), StandardCharsets.UTF_8)
-                        .toLowerCase();
-                assertTrue(
-                        !text.contains("heraldor"),
-                        resource + " must not name the fiction");
-            }
         }
     }
 

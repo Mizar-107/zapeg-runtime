@@ -1,4 +1,4 @@
-# ZapeG Runtime roadmap
+# Heraldor roadmap
 
 The runtime is a neutral scene engine. Campaign names, story prose, timing and
 Discord delivery stay server-side so shipped client strings do not explain the
@@ -197,9 +197,9 @@ mid-session, so the handshake refuses the mismatch up front):
   `/zapegscene diagnose <player>`. Title cleanup uses the terminal
   `PENDING:UNVERIFIED_API` observation because GLFW has no title readback;
   popup and motion cleanup retain state for bounded verified retries.
-- Protocol 8 requires an atomic client/server jar update. The parallel batch
-  intentionally leaves `mod_version` unchanged; release integration must bump
-  it before publishing.
+- Protocol 8 requires an atomic client/server jar update. Batch-1 integration
+  publishes the distinct prerelease version `0.5.0-b1`; no protocol-8 bytes
+  may be distributed under the old `0.4.0` filename.
 
 ## v0.4 — manifestation and combat
 

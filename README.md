@@ -1,10 +1,10 @@
-# ZapeG Runtime
+# Heraldor
 
-Owned Forge 1.20.1 client/server runtime for private, bounded story scenes in
-the ZapeG pack. It renders target-private apparitions and bounded reality
-faults without registering or saving a Minecraft entity.
+Server-authoritative Forge 1.20.1 story, horror, and encounter mod for the
+ZapeG pack. The stable `zapeg_runtime` mod ID and archive stem are retained for
+world and deployment migration.
 
-## v0.4 boundaries
+## Batch 1 (`0.5.0-b1`) boundaries
 
 - exact-match protocol `8`; mixed protocol 7 clients fail the handshake. v8
   adds a fixed four-effect visitation status packet. `RECEIVED` means only
@@ -259,8 +259,8 @@ See [ROADMAP.md](ROADMAP.md) for the reality-distortion and later combat plan.
 .\gradlew.bat test build
 ```
 
-The branch artifact remains
-`build/libs/zapeg-runtime-forge-1.20.1-0.4.0.jar`, but release integration must
-bump the mod version. Protocol 8 is wire-incompatible: server, tracked
+The reviewed Batch-1 artifact is
+`build/libs/zapeg-runtime-forge-1.20.1-0.5.0-b1.jar`. Protocol 8 is
+wire-incompatible: server, tracked
 `overrides/mods` jar and every client artifact must be replaced atomically
 with the same build.
