@@ -1,6 +1,7 @@
 package io.github.mizar107.zapegruntime.server;
 
 import java.util.Objects;
+import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.UUID;
 
@@ -11,19 +12,28 @@ public final class HeraldorDiagnostics {
 
     public static String format(PlayerDiagnostic diagnostic) {
         Objects.requireNonNull(diagnostic, "diagnostic");
-        HeraldorWorldData.PlayerSnapshot state = diagnostic.state();
-        StringJoiner milestones = new StringJoiner(",", "[", "]");
-        state.milestones().stream().sorted().forEach(milestones::add);
-        return "heraldor target=" + diagnostic.playerName()
+        HeraldorWorldData.SchemaStatus schema = diagnostic.schemaStatus();
+        Optional<HeraldorWorldData.PlayerSnapshot> state = diagnostic.state();
+        String prefix = "heraldor target=" + diagnostic.playerName()
                 + " uuid=" + diagnostic.playerId()
                 + " runtime=" + diagnostic.runtimeVersion()
                 + " protocol=" + diagnostic.protocolVersion()
                 + " dimension=" + diagnostic.dimension()
                 + " scene={" + diagnostic.activeScene() + "}"
-                + " state={schema=" + HeraldorWorldData.CURRENT_SCHEMA_VERSION
-                + " victories=" + state.victories()
+                + " state={loaded_schema=" + schema.loadedVersion()
+                + " current_schema=" + schema.currentVersion()
+                + " migrated=" + schema.migratedFromLegacy()
+                + " writable=" + schema.writable();
+        if (state.isEmpty()) {
+            return prefix + " progress=unavailable}";
+        }
+        HeraldorWorldData.PlayerSnapshot progress = state.orElseThrow();
+        StringJoiner milestones = new StringJoiner(",", "[", "]");
+        progress.milestones().stream().sorted().forEach(milestones::add);
+        return prefix
+                + " victories=" + progress.victories()
                 + " milestones=" + milestones
-                + " consumed_events=" + state.consumedEventCount()
+                + " consumed_events=" + progress.consumedEventCount()
                 + "}";
     }
 
@@ -34,7 +44,8 @@ public final class HeraldorDiagnostics {
             String protocolVersion,
             String dimension,
             String activeScene,
-            HeraldorWorldData.PlayerSnapshot state) {
+            HeraldorWorldData.SchemaStatus schemaStatus,
+            Optional<HeraldorWorldData.PlayerSnapshot> state) {
 
         public PlayerDiagnostic {
             Objects.requireNonNull(playerName, "playerName");
@@ -43,6 +54,7 @@ public final class HeraldorDiagnostics {
             Objects.requireNonNull(protocolVersion, "protocolVersion");
             Objects.requireNonNull(dimension, "dimension");
             Objects.requireNonNull(activeScene, "activeScene");
+            Objects.requireNonNull(schemaStatus, "schemaStatus");
             Objects.requireNonNull(state, "state");
         }
     }

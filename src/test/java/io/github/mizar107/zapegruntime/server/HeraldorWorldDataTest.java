@@ -88,8 +88,55 @@ class HeraldorWorldDataTest {
     void unversionedEmptyStateMigratesOnSave() {
         HeraldorWorldData loaded = HeraldorWorldData.load(new CompoundTag());
         assertEquals(0, loaded.loadedSchemaVersion());
+        assertTrue(loaded.isDirty());
+        assertEquals(
+                new HeraldorWorldData.SchemaStatus(0, 1, true, true),
+                loaded.schemaStatus());
         assertEquals(
                 HeraldorWorldData.CURRENT_SCHEMA_VERSION,
                 loaded.save(new CompoundTag()).getInt("SchemaVersion"));
+    }
+
+    @Test
+    void schemaZeroMigrationRetainsRecognizedProgress() {
+        HeraldorWorldData original = new HeraldorWorldData();
+        original.markMilestone(PLAYER_A, "legacy.arrival");
+        original.recordVictory(
+                PLAYER_A,
+                UUID.fromString("70000000-0000-0000-0000-000000000007"));
+        CompoundTag legacyRoot = original.save(new CompoundTag());
+        legacyRoot.remove("SchemaVersion");
+
+        HeraldorWorldData migrated = HeraldorWorldData.load(legacyRoot);
+        assertTrue(migrated.isDirty());
+        assertEquals(1, migrated.snapshot(PLAYER_A).victories());
+        assertEquals(Set.of("legacy.arrival"), migrated.snapshot(PLAYER_A).milestones());
+    }
+
+    @Test
+    void futureSchemaIsReadOnlyAndRoundTripsWithoutDowngradeOrFieldLoss() {
+        CompoundTag futureRoot = new CompoundTag();
+        futureRoot.putInt("SchemaVersion", 8);
+        futureRoot.putString("FutureOnly", "keep-me-verbatim");
+        CompoundTag nested = new CompoundTag();
+        nested.putLong("UnknownCounter", 99L);
+        futureRoot.put("UnknownPayload", nested);
+
+        HeraldorWorldData loaded = HeraldorWorldData.load(futureRoot);
+        assertEquals(
+                new HeraldorWorldData.SchemaStatus(8, 1, false, false),
+                loaded.schemaStatus());
+        assertTrue(loaded.snapshotForDiagnostics(PLAYER_A).isEmpty());
+        IllegalStateException failure = assertThrows(
+                IllegalStateException.class,
+                () -> loaded.recordVictory(
+                        PLAYER_A,
+                        UUID.fromString("60000000-0000-0000-0000-000000000006")));
+        assertTrue(failure.getMessage().contains("schema 8"));
+
+        CompoundTag preserved = loaded.save(new CompoundTag());
+        assertEquals(8, preserved.getInt("SchemaVersion"));
+        assertEquals("keep-me-verbatim", preserved.getString("FutureOnly"));
+        assertEquals(99L, preserved.getCompound("UnknownPayload").getLong("UnknownCounter"));
     }
 }

@@ -9,6 +9,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -44,13 +45,17 @@ public final class HeraldorWorldData extends SavedData {
 
     private final Map<UUID, MutablePlayerState> players = new HashMap<>();
     private final int loadedSchemaVersion;
+    private final CompoundTag preservedUnsupportedRoot;
 
     public HeraldorWorldData() {
-        this(CURRENT_SCHEMA_VERSION);
+        this(CURRENT_SCHEMA_VERSION, null);
     }
 
-    private HeraldorWorldData(int loadedSchemaVersion) {
+    private HeraldorWorldData(
+            int loadedSchemaVersion,
+            CompoundTag preservedUnsupportedRoot) {
         this.loadedSchemaVersion = loadedSchemaVersion;
+        this.preservedUnsupportedRoot = preservedUnsupportedRoot;
     }
 
     public static HeraldorWorldData get(MinecraftServer server) {
@@ -64,7 +69,27 @@ public final class HeraldorWorldData extends SavedData {
         int schemaVersion = root.contains(SCHEMA_VERSION_KEY, Tag.TAG_INT)
                 ? root.getInt(SCHEMA_VERSION_KEY)
                 : 0;
-        HeraldorWorldData data = new HeraldorWorldData(schemaVersion);
+        return switch (schemaVersion) {
+            case 0 -> migrateSchemaZero(root);
+            case CURRENT_SCHEMA_VERSION -> loadSchemaOne(root);
+            default -> new HeraldorWorldData(schemaVersion, root.copy());
+        };
+    }
+
+    private static HeraldorWorldData migrateSchemaZero(CompoundTag root) {
+        HeraldorWorldData data = loadKnownSchema(root, 0);
+        // computeIfAbsent will persist the migrated v1 representation on the
+        // next world save even if no campaign event occurs this session.
+        data.setDirty();
+        return data;
+    }
+
+    private static HeraldorWorldData loadSchemaOne(CompoundTag root) {
+        return loadKnownSchema(root, CURRENT_SCHEMA_VERSION);
+    }
+
+    private static HeraldorWorldData loadKnownSchema(CompoundTag root, int schemaVersion) {
+        HeraldorWorldData data = new HeraldorWorldData(schemaVersion, null);
         ListTag encodedPlayers = root.getList(PLAYERS_KEY, Tag.TAG_COMPOUND);
         for (int index = 0; index < encodedPlayers.size(); index++) {
             CompoundTag encoded = encodedPlayers.getCompound(index);
@@ -84,8 +109,26 @@ public final class HeraldorWorldData extends SavedData {
     /** Returns an immutable view without creating a saved player entry. */
     public PlayerSnapshot snapshot(UUID playerId) {
         Objects.requireNonNull(playerId, "playerId");
+        requireSupportedSchema();
         MutablePlayerState state = players.get(playerId);
         return state == null ? PlayerSnapshot.EMPTY : state.snapshot();
+    }
+
+    /** Diagnostic-safe progress view; unknown schemas are never guessed at. */
+    public Optional<PlayerSnapshot> snapshotForDiagnostics(UUID playerId) {
+        Objects.requireNonNull(playerId, "playerId");
+        if (!schemaStatus().writable()) {
+            return Optional.empty();
+        }
+        return Optional.of(snapshot(playerId));
+    }
+
+    public SchemaStatus schemaStatus() {
+        return new SchemaStatus(
+                loadedSchemaVersion,
+                CURRENT_SCHEMA_VERSION,
+                loadedSchemaVersion == 0,
+                preservedUnsupportedRoot == null);
     }
 
     /**
@@ -96,6 +139,7 @@ public final class HeraldorWorldData extends SavedData {
     public boolean consumeEvent(UUID playerId, UUID eventId) {
         Objects.requireNonNull(playerId, "playerId");
         Objects.requireNonNull(eventId, "eventId");
+        requireSupportedSchema();
         MutablePlayerState state = stateFor(playerId);
         if (!state.consumedEvents.add(eventId)) {
             return false;
@@ -108,6 +152,7 @@ public final class HeraldorWorldData extends SavedData {
     public boolean recordVictory(UUID playerId, UUID eventId) {
         Objects.requireNonNull(playerId, "playerId");
         Objects.requireNonNull(eventId, "eventId");
+        requireSupportedSchema();
         MutablePlayerState state = stateFor(playerId);
         if (!state.consumedEvents.add(eventId)) {
             return false;
@@ -121,6 +166,7 @@ public final class HeraldorWorldData extends SavedData {
     public boolean applyMilestone(UUID playerId, UUID eventId, String milestoneId) {
         Objects.requireNonNull(playerId, "playerId");
         Objects.requireNonNull(eventId, "eventId");
+        requireSupportedSchema();
         String validatedMilestone = validateMilestoneId(milestoneId);
         MutablePlayerState state = stateFor(playerId);
         if (!state.consumedEvents.add(eventId)) {
@@ -134,6 +180,7 @@ public final class HeraldorWorldData extends SavedData {
     /** Records an administrative or migration milestone without an event. */
     public boolean markMilestone(UUID playerId, String milestoneId) {
         Objects.requireNonNull(playerId, "playerId");
+        requireSupportedSchema();
         String validatedMilestone = validateMilestoneId(milestoneId);
         if (!stateFor(playerId).milestones.add(validatedMilestone)) {
             return false;
@@ -148,6 +195,12 @@ public final class HeraldorWorldData extends SavedData {
 
     @Override
     public CompoundTag save(CompoundTag root) {
+        if (preservedUnsupportedRoot != null) {
+            // Never downgrade or reinterpret a save created by a newer (or
+            // otherwise unsupported) schema. Returning the untouched payload
+            // keeps even fields this runtime does not know about lossless.
+            return preservedUnsupportedRoot.copy();
+        }
         root.putInt(SCHEMA_VERSION_KEY, CURRENT_SCHEMA_VERSION);
         ListTag encodedPlayers = new ListTag();
         List<Map.Entry<UUID, MutablePlayerState>> orderedPlayers =
@@ -168,6 +221,16 @@ public final class HeraldorWorldData extends SavedData {
 
     private MutablePlayerState stateFor(UUID playerId) {
         return players.computeIfAbsent(playerId, ignored -> new MutablePlayerState());
+    }
+
+    private void requireSupportedSchema() {
+        if (preservedUnsupportedRoot != null) {
+            throw new IllegalStateException(
+                    "Heraldor data schema " + loadedSchemaVersion
+                            + " is unsupported by runtime schema "
+                            + CURRENT_SCHEMA_VERSION
+                            + "; progress access and mutations are disabled");
+        }
     }
 
     private static String validateMilestoneId(String milestoneId) {
@@ -231,6 +294,12 @@ public final class HeraldorWorldData extends SavedData {
             milestones = Collections.unmodifiableSet(new LinkedHashSet<>(milestones));
         }
     }
+
+    public record SchemaStatus(
+            int loadedVersion,
+            int currentVersion,
+            boolean migratedFromLegacy,
+            boolean writable) {}
 
     private static final class MutablePlayerState {
         private int victories;

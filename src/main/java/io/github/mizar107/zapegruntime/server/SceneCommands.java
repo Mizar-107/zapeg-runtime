@@ -16,7 +16,6 @@ import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.UuidArgument;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.rcon.RconConsoleSource;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.RegisterCommandsEvent;
 
@@ -34,7 +33,7 @@ public final class SceneCommands {
 
     public static void register(RegisterCommandsEvent event) {
         event.getDispatcher().register(Commands.literal("zapegscene")
-                .requires(SceneCommands::operatorOrDirector)
+                .requires(CommandSourcePolicy::operatorOrDirector)
                 .then(Commands.literal("rehearse")
                         .then(Commands.argument("target", EntityArgument.player())
                                 .executes(context -> rehearse(context, SceneProfile.ECHO_01, 0))
@@ -210,24 +209,6 @@ public final class SceneCommands {
             source.sendFailure(Component.literal(invalid.getMessage()));
             return null;
         }
-    }
-
-    private static boolean operatorOrDirector(CommandSourceStack source) {
-        if (!source.hasPermission(2)) {
-            return false;
-        }
-        if (source.getEntity() instanceof ServerPlayer player) {
-            // `execute as <op>` changes the effective entity but retains the
-            // command block/function as the underlying source. Only a command
-            // typed by this exact player is admitted.
-            return source.source == player;
-        }
-        // MinecraftServer is also the raw source used by server-derived
-        // function stacks, so local console cannot be admitted without also
-        // admitting that redirect path. Host automation uses authenticated
-        // RCON instead.
-        return source.getEntity() == null
-                && source.source instanceof RconConsoleSource;
     }
 
     private static int cancelAll(CommandContext<CommandSourceStack> context) {

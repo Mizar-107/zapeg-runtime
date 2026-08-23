@@ -36,7 +36,7 @@ public final class HeraldorCommands {
 
     public static LiteralArgumentBuilder<CommandSourceStack> createRoot() {
         LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("heraldor")
-                .requires(source -> source.hasPermission(2));
+                .requires(CommandSourcePolicy::operatorOrDirector);
         root.then(targetedDiagnostic("status"));
         root.then(targetedDiagnostic("diagnose"));
         return root;
@@ -51,8 +51,7 @@ public final class HeraldorCommands {
     private static int diagnose(CommandContext<CommandSourceStack> context)
             throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer target = EntityArgument.getPlayer(context, "target");
-        HeraldorWorldData.PlayerSnapshot state =
-                HeraldorWorldData.get(context.getSource().getServer()).snapshot(target.getUUID());
+        HeraldorWorldData worldData = HeraldorWorldData.get(context.getSource().getServer());
         String diagnostic = HeraldorDiagnostics.format(
                 new HeraldorDiagnostics.PlayerDiagnostic(
                         target.getGameProfile().getName(),
@@ -61,7 +60,8 @@ public final class HeraldorCommands {
                         SceneNetwork.PROTOCOL,
                         target.level().dimension().location().toString(),
                         SceneServerManager.statusFor(target.getUUID()),
-                        state));
+                        worldData.schemaStatus(),
+                        worldData.snapshotForDiagnostics(target.getUUID())));
         context.getSource().sendSuccess(() -> Component.literal(diagnostic), false);
         ZapeGRuntime.LOGGER.info(
                 "Heraldor diagnostic source={} target={} uuid={}",
