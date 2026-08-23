@@ -45,4 +45,28 @@ class ServantArchitectureContractTest {
         assertTrue(event.contains("liveVictories()"));
         assertFalse(event.contains("Posted once"));
     }
+
+    @Test
+    void integrationWiresRegistryAndExactlyOneSharedHeraldorRoot() throws IOException {
+        Path runtimeRoot = SOURCE_ROOT.getParent();
+        String mod = Files.readString(runtimeRoot.resolve("ZapeGRuntime.java"));
+        String events = Files.readString(
+                runtimeRoot.resolve("server").resolve("SceneServerEvents.java"));
+
+        assertTrue(mod.contains("ServantEntities.register(modBus)"));
+        assertTrue(events.contains(
+                "HeraldorCommands.register(event, ServantCommands::attach)"));
+        assertFalse(events.contains("HeraldorCommands.register(event);"));
+    }
+
+    @Test
+    void permanentBarriersReplayIntoTheUuidCampaignAuthority() throws IOException {
+        String sync = Files.readString(SOURCE_ROOT.resolve("ServantProgressionSync.java"));
+        String manager = Files.readString(SOURCE_ROOT.resolve("ServantEncounterManager.java"));
+
+        assertTrue(sync.contains("ServantEncounterData.get(server).liveVictories()"));
+        assertTrue(sync.contains("worldData.recordVictory("));
+        assertTrue(manager.contains("ServantProgressionSync.replayAll(server)"));
+        assertTrue(manager.contains("ServantProgressionSync.syncBarrier("));
+    }
 }

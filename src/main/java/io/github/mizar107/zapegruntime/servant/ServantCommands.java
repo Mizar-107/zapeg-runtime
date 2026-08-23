@@ -101,7 +101,8 @@ public final class ServantCommands {
                         + " deadline=" + encounter.deadlineGameTime())
                 .orElse("active=0");
         context.getSource().sendSuccess(
-                () -> Component.literal(detail + " live_victories=" + victories),
+                () -> Component.literal(detail + " live_victories="
+                        + (victories < 0 ? "unavailable" : victories)),
                 false);
         return 1;
     }

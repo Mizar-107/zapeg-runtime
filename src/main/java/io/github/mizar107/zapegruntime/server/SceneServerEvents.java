@@ -2,6 +2,7 @@ package io.github.mizar107.zapegruntime.server;
 
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
+import io.github.mizar107.zapegruntime.servant.ServantCommands;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
@@ -19,7 +20,7 @@ public final class SceneServerEvents {
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
         SceneCommands.register(event);
-        HeraldorCommands.register(event);
+        HeraldorCommands.register(event, ServantCommands::attach);
     }
 
     @SubscribeEvent

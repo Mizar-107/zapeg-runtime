@@ -15,7 +15,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
-import net.minecraftforge.common.MinecraftForge;
 
 /** Owns Servant spawning, bounded recovery, expiry, cancellation, and victory credit. */
 public final class ServantEncounterManager {
@@ -178,17 +177,10 @@ public final class ServantEncounterManager {
                 servant.encounterId(), servant.getUUID(), killerId);
         switch (result) {
             case LIVE_CREDITED -> {
-                int victories = data.victoryCount(killerId);
-                ZapeGRuntime.LOGGER.info(
-                        "Servant live victory encounter={} target={} victories={}",
-                        servant.encounterId(),
-                        killerId,
-                        victories);
-                MinecraftForge.EVENT_BUS.post(new ServantVictoryEvent(
+                ServantProgressionSync.syncBarrier(
                         server,
-                        servant.encounterId(),
-                        killerId,
-                        victories));
+                        new ServantEncounterData.LiveVictory(
+                                servant.encounterId(), killerId));
             }
             case REHEARSAL_COMPLETE -> ZapeGRuntime.LOGGER.info(
                     "Servant rehearsal completed without progression encounter={} target={}",
@@ -247,11 +239,12 @@ public final class ServantEncounterManager {
     }
 
     public static int victoryCount(MinecraftServer server, UUID targetId) {
-        return ServantEncounterData.get(server).victoryCount(targetId);
+        return ServantProgressionSync.victoryCount(server, targetId);
     }
 
     public static void onServerStarted(MinecraftServer server) {
         STOPPING_SERVERS.remove(server);
+        ServantProgressionSync.replayAll(server);
     }
 
     public static void onServerStopping(MinecraftServer server) {
