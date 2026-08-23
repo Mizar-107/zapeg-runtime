@@ -19,6 +19,7 @@ public final class SceneServerEvents {
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
         SceneCommands.register(event);
+        HeraldorCommands.register(event);
     }
 
     @SubscribeEvent

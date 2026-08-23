@@ -233,6 +233,19 @@ public final class SceneServerManager {
                         : current.lastAcknowledgement.name().toLowerCase(Locale.ROOT));
     }
 
+    /** Target-scoped scene summary for the native Heraldor diagnostic tree. */
+    public static String statusFor(UUID playerId) {
+        ActiveScene current = active;
+        if (current == null || !current.descriptor.targetId().equals(playerId)) {
+            return "active=0";
+        }
+        return "active=1 event=" + current.descriptor.eventId()
+                + " profile=" + current.descriptor.profile().serializedName()
+                + " ack=" + (current.lastAcknowledgement == null
+                        ? "none"
+                        : current.lastAcknowledgement.name().toLowerCase(Locale.ROOT));
+    }
+
     /**
      * Director-facing TTL resolution: non-positive overrides fall back to
      * the profile default, everything else clamps into the wire descriptor
