@@ -163,8 +163,10 @@ mid-session, so the handshake refuses the mismatch up front):
   The popup never steals keyboard or mouse focus, and unsupported platforms
   report a bounded capability result. Operator-only and manifestation-gated
   on the Director side; never gaze-resolved.
-- Per-client opt-in: the `osScares` client config master switch defaults off.
-  A player must enable it locally before the face-popup, window-wrongness or
+- Per-client opt-in: `osScares.externalEffectsOptInV2` defaults off and is the
+  sole consent authority. The legacy 0.4.x `enabled` value remains parseable
+  but is ignored, so an old `enabled=true` never silently migrates consent.
+  A player must enable V2 locally before the face-popup, window-wrongness or
   taskbar-flash sub-toggles can request an external OS effect.
 
 ### Protocol 8 diagnostic hardening

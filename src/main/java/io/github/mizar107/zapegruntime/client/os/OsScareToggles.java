@@ -1,9 +1,10 @@
 package io.github.mizar107.zapegruntime.client.os;
 
 /**
- * Per-client opt-in for external OS effects. The master switch gates
- * everything and defaults off; each sub-toggle selects a beat only after the
- * player opts in. {@link #ALL_OFF} is the fail-closed unloaded/error state.
+ * Resolved per-client external-effect settings. The {@code master} field is
+ * derived exclusively from versioned consent; each sub-toggle selects a beat
+ * only after that consent is true. {@link #ALL_OFF} is the fail-closed
+ * unloaded/error state.
  */
 public record OsScareToggles(
         boolean master, boolean facePopup, boolean windowWrongness, boolean taskbarFlash) {

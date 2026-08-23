@@ -23,11 +23,15 @@ class OsScareConfigTest {
     }
 
     @Test
-    void sourceContractPinsDefaultOffAndBothFailClosedReturns() throws IOException {
+    void sourceContractPinsVersionedConsentAndBothFailClosedReturns() throws IOException {
         String config = Files.readString(CLIENT_SOURCE.resolve("OsScareConfig.java"));
 
+        assertTrue(config.contains(".define(\"externalEffectsOptInV2\", false)"));
         assertTrue(config.contains(".define(\"enabled\", false)"));
         assertFalse(config.contains(".define(\"enabled\", true)"));
+        assertTrue(config.contains("EXTERNAL_EFFECTS_OPT_IN_V2.get()"));
+        assertTrue(config.contains("LEGACY_ENABLED.get()"));
+        assertTrue(config.contains("ExternalEffectsConsent.resolve("));
         assertEquals(2, occurrences(config, "return OsScareToggles.ALL_OFF;"),
                 "unloaded and exceptional reads must both fail closed");
     }
@@ -38,8 +42,8 @@ class OsScareConfigTest {
 
         assertTrue(events.contains("if (!toggles.master())"));
         assertTrue(events.contains(
-                "OS scare opt-in disabled; external effects will not be requested"));
-        assertTrue(events.contains("OS scare opt-in enabled; effect preflight {}"));
+                "OS scare V2 opt-in disabled; legacy enabled is ignored"));
+        assertTrue(events.contains("OS scare V2 opt-in enabled; effect preflight {}"));
         assertFalse(events.contains("OS effect preflight {}"));
     }
 

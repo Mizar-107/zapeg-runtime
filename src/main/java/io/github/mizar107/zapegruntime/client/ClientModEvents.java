@@ -22,11 +22,11 @@ public final class ClientModEvents {
             var toggles = OsScareConfig.toggles();
             if (!toggles.master()) {
                 ZapeGRuntime.LOGGER.info(
-                        "OS scare opt-in disabled; external effects will not be requested");
+                        "OS scare V2 opt-in disabled; legacy enabled is ignored");
                 return;
             }
             ZapeGRuntime.LOGGER.info(
-                    "OS scare opt-in enabled; effect preflight {}",
+                    "OS scare V2 opt-in enabled; effect preflight {}",
                     OsScareDriver.instance().preflight().compactString());
         });
     }

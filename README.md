@@ -215,15 +215,22 @@ Discord behavior remain server-side in the Heraldor Director.
 ## Client configuration
 
 The external OS-effect layer (`visitation_01`) is governed by a per-client
-config at `config/zapeg_runtime-client.toml`. Its master switch defaults to
-`false`: each player must explicitly opt in locally. Sub-toggles default to
-`true`, but have no effect while the master switch is off. Missing, unloaded
-or unreadable config also means off.
+config at `config/zapeg_runtime-client.toml`. Its versioned consent switch
+defaults to `false`: each player must explicitly opt in locally. Sub-toggles
+default to `true`, but have no effect while versioned consent is off. Missing,
+unloaded or unreadable config also means off.
+
+Migration is deliberately non-inheriting. A 0.4.x client may already have
+`enabled = true`; that legacy value is now deprecated and ignored. It does not
+opt the player in. Only setting `externalEffectsOptInV2 = true` after updating
+the mod enables external effects.
 
 ```toml
 [osScares]
-# Master switch; external OS effects require explicit opt-in.
+# Deprecated 0.4.x key. Ignored; never grants consent.
 enabled = false
+# The only external-effect consent authority. Defaults off.
+externalEffectsOptInV2 = false
 # The brief borderless always-on-top face blink.
 facePopup = true
 # The glitched window title and the small window pulse.
