@@ -5,31 +5,48 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.IntTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.saveddata.SavedData;
 
-/** Server-authoritative Servant encounter state. */
+/** Server-authoritative Servant encounter state with an explicit disk schema. */
 public final class ServantEncounterData extends SavedData {
 
+    public static final int CURRENT_SCHEMA_VERSION = 1;
+    public static final int MAX_ACTIVE_ENCOUNTERS = 256;
+    /**
+     * A campaign is expected to award far fewer than this many victories.
+     * The ledger never evicts: once this defensive ceiling is reached, new
+     * live encounters are refused so an old victory can never become replayable.
+     */
+    public static final int MAX_LIVE_VICTORIES = 4_096;
+
     private static final String DATA_NAME = "zapeg_runtime_servants";
+    private static final String SCHEMA_VERSION = "SchemaVersion";
     private static final String ACTIVE = "Active";
-    private static final String TERMINAL = "Terminal";
-    private static final String VICTORIES = "Victories";
-    private static final String PLAYER_ID = "PlayerId";
-    private static final String COUNT = "Count";
+    private static final String LIVE_VICTORIES = "LiveVictories";
+    private static final String ENCOUNTER_ID = "EncounterId";
+    private static final String TARGET_ID = "TargetId";
+    private static final UUID NIL_UUID = new UUID(0L, 0L);
 
     private final Map<UUID, ServantEncounter> activeByTarget = new HashMap<>();
-    private final Set<UUID> terminalEncounters = new HashSet<>();
-    private final Map<UUID, Integer> liveVictories = new HashMap<>();
+    private final Map<UUID, UUID> liveVictoryTargetsByEvent = new HashMap<>();
+    private final CompoundTag unsupportedRoot;
+
+    public ServantEncounterData() {
+        unsupportedRoot = null;
+    }
+
+    private ServantEncounterData(CompoundTag unsupportedRoot) {
+        this.unsupportedRoot = unsupportedRoot.copy();
+    }
 
     public static ServantEncounterData get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(
@@ -39,53 +56,64 @@ public final class ServantEncounterData extends SavedData {
     }
 
     public static ServantEncounterData load(CompoundTag root) {
-        ServantEncounterData data = new ServantEncounterData();
+        if (!root.contains(SCHEMA_VERSION, Tag.TAG_INT)
+                || root.getInt(SCHEMA_VERSION) != CURRENT_SCHEMA_VERSION) {
+            // Unknown past/future data is kept byte-for-byte and all mutation
+            // is rejected. A migration can later understand it safely.
+            return new ServantEncounterData(root);
+        }
 
+        ServantEncounterData data = new ServantEncounterData();
+        Set<UUID> seenEncounterIds = new HashSet<>();
+        Set<UUID> seenServantIds = new HashSet<>();
         ListTag active = root.getList(ACTIVE, Tag.TAG_COMPOUND);
-        for (int index = 0; index < active.size(); index++) {
+        int activeLimit = Math.min(active.size(), MAX_ACTIVE_ENCOUNTERS);
+        for (int index = 0; index < activeLimit; index++) {
             try {
                 ServantEncounter encounter = ServantEncounter.load(active.getCompound(index));
-                // A corrupt save containing two encounters for one player is
-                // resolved deterministically: the lexically smaller event id wins.
-                data.activeByTarget.merge(
-                        encounter.targetId(),
-                        encounter,
-                        (left, right) -> left.encounterId().toString()
-                                        .compareTo(right.encounterId().toString()) <= 0
-                                ? left
-                                : right);
-            } catch (IllegalArgumentException ignored) {
-                // One damaged record must not prevent the rest of the world loading.
-            }
-        }
-
-        ListTag terminal = root.getList(TERMINAL, Tag.TAG_STRING);
-        for (int index = 0; index < terminal.size(); index++) {
-            try {
-                data.terminalEncounters.add(UUID.fromString(terminal.getString(index)));
-            } catch (IllegalArgumentException ignored) {
-                // Ignore malformed legacy entries.
-            }
-        }
-        data.activeByTarget.entrySet().removeIf(
-                entry -> data.terminalEncounters.contains(entry.getValue().encounterId()));
-
-        ListTag victories = root.getList(VICTORIES, Tag.TAG_COMPOUND);
-        for (int index = 0; index < victories.size(); index++) {
-            CompoundTag victory = victories.getCompound(index);
-            if (victory.hasUUID(PLAYER_ID)) {
-                int count = Math.max(0, victory.getInt(COUNT));
-                if (count > 0) {
-                    data.liveVictories.put(victory.getUUID(PLAYER_ID), count);
+                if (data.activeByTarget.containsKey(encounter.targetId())
+                        || !seenEncounterIds.add(encounter.encounterId())
+                        || !seenServantIds.add(encounter.servantId())) {
+                    continue;
                 }
+                data.activeByTarget.put(encounter.targetId(), encounter);
+            } catch (IllegalArgumentException ignored) {
+                // Isolate corrupt records; valid siblings remain usable.
             }
         }
+
+        ListTag victories = root.getList(LIVE_VICTORIES, Tag.TAG_COMPOUND);
+        int victoryLimit = Math.min(victories.size(), MAX_LIVE_VICTORIES);
+        for (int index = 0; index < victoryLimit; index++) {
+            CompoundTag victory = victories.getCompound(index);
+            if (!victory.hasUUID(ENCOUNTER_ID) || !victory.hasUUID(TARGET_ID)) {
+                continue;
+            }
+            UUID eventId = victory.getUUID(ENCOUNTER_ID);
+            UUID targetId = victory.getUUID(TARGET_ID);
+            if (NIL_UUID.equals(eventId)
+                    || NIL_UUID.equals(targetId)
+                    || eventId.equals(targetId)) {
+                continue;
+            }
+            data.liveVictoryTargetsByEvent.putIfAbsent(eventId, targetId);
+        }
+
+        data.activeByTarget.entrySet().removeIf(entry ->
+                data.liveVictoryTargetsByEvent.containsKey(entry.getValue().encounterId()));
         return data;
     }
 
+    public boolean supportsCurrentSchema() {
+        return unsupportedRoot == null;
+    }
+
     public BeginResult begin(ServantEncounter proposed) {
-        if (terminalEncounters.contains(proposed.encounterId())) {
-            return new BeginResult(BeginStatus.REPLAYED_TERMINAL, null);
+        if (!supportsCurrentSchema()) {
+            return new BeginResult(BeginStatus.UNSUPPORTED_SCHEMA, null);
+        }
+        if (liveVictoryTargetsByEvent.containsKey(proposed.encounterId())) {
+            return new BeginResult(BeginStatus.REPLAYED_LIVE_VICTORY, null);
         }
 
         Optional<ServantEncounter> sameEvent = findByEncounter(proposed.encounterId());
@@ -102,25 +130,33 @@ public final class ServantEncounterData extends SavedData {
         if (busy != null) {
             return new BeginResult(BeginStatus.TARGET_BUSY, busy);
         }
+        if (activeByTarget.size() >= MAX_ACTIVE_ENCOUNTERS) {
+            return new BeginResult(BeginStatus.ACTIVE_CAPACITY_EXHAUSTED, null);
+        }
+        if (!proposed.rehearsal()
+                && liveVictoryTargetsByEvent.size() >= MAX_LIVE_VICTORIES) {
+            return new BeginResult(BeginStatus.VICTORY_CAPACITY_EXHAUSTED, null);
+        }
 
         activeByTarget.put(proposed.targetId(), proposed);
         setDirty();
         return new BeginResult(BeginStatus.STARTED, proposed);
     }
 
-    /** Roll back a reservation only when spawning failed before an entity entered the world. */
+    /** Roll back a reservation without consuming its campaign event id. */
     public boolean rollbackSpawn(UUID encounterId) {
-        Optional<ServantEncounter> existing = findByEncounter(encounterId);
-        if (existing.isEmpty()) {
-            return false;
-        }
-        activeByTarget.remove(existing.get().targetId());
-        setDirty();
-        return true;
+        return removeActive(encounterId);
     }
 
+    /**
+     * Completes a committed entity death. Only a live victory creates a
+     * permanent replay barrier; rehearsals are immediately retryable.
+     */
     public FinishResult finishVictory(UUID encounterId, UUID servantId, UUID killerId) {
-        if (terminalEncounters.contains(encounterId)) {
+        if (!supportsCurrentSchema()) {
+            return FinishResult.UNSUPPORTED_SCHEMA;
+        }
+        if (liveVictoryTargetsByEvent.containsKey(encounterId)) {
             return FinishResult.ALREADY_TERMINAL;
         }
         Optional<ServantEncounter> match = findByEncounter(encounterId);
@@ -134,88 +170,114 @@ public final class ServantEncounterData extends SavedData {
         }
 
         activeByTarget.remove(encounter.targetId());
-        terminalEncounters.add(encounterId);
         if (encounter.rehearsal()) {
             setDirty();
             return FinishResult.REHEARSAL_COMPLETE;
         }
+        if (liveVictoryTargetsByEvent.size() >= MAX_LIVE_VICTORIES) {
+            setDirty();
+            return FinishResult.VICTORY_CAPACITY_EXHAUSTED;
+        }
 
-        liveVictories.merge(encounter.targetId(), 1, Integer::sum);
+        liveVictoryTargetsByEvent.put(encounterId, encounter.targetId());
         setDirty();
         return FinishResult.LIVE_CREDITED;
     }
 
+    /** Logout, operator cancellation, expiry, and failed recovery stay retryable. */
     public boolean close(UUID encounterId) {
-        if (terminalEncounters.contains(encounterId)) {
-            return false;
-        }
-        Optional<ServantEncounter> match = findByEncounter(encounterId);
-        if (match.isEmpty()) {
-            return false;
-        }
-        activeByTarget.remove(match.get().targetId());
-        terminalEncounters.add(encounterId);
-        setDirty();
-        return true;
+        return removeActive(encounterId);
     }
 
-    public boolean replaceEntity(
-            UUID encounterId,
-            UUID replacementId,
-            int chunkX,
-            int chunkZ) {
+    public RecoveryClaim claimRecovery(UUID encounterId) {
+        if (!supportsCurrentSchema()) {
+            return RecoveryClaim.UNSUPPORTED_SCHEMA;
+        }
         Optional<ServantEncounter> match = findByEncounter(encounterId);
         if (match.isEmpty()) {
-            return false;
+            return RecoveryClaim.NOT_ACTIVE;
         }
-        ServantEncounter updated = match.get().withEntity(replacementId, chunkX, chunkZ);
-        activeByTarget.put(updated.targetId(), updated);
+        ServantEncounter encounter = match.get();
+        if (encounter.recoveryAttempted()) {
+            return RecoveryClaim.ALREADY_ATTEMPTED;
+        }
+        activeByTarget.put(encounter.targetId(), encounter.claimRecovery());
         setDirty();
-        return true;
+        return RecoveryClaim.CLAIMED;
     }
 
-    public boolean updateLocation(UUID encounterId, int chunkX, int chunkZ) {
+    public boolean replaceRecoveredEntity(UUID encounterId, UUID replacementId) {
+        if (!supportsCurrentSchema()) {
+            return false;
+        }
         Optional<ServantEncounter> match = findByEncounter(encounterId);
-        if (match.isEmpty()) {
+        if (match.isEmpty() || !match.get().recoveryAttempted()) {
             return false;
         }
-        ServantEncounter updated = match.get().withLocation(chunkX, chunkZ);
-        if (updated == match.get()) {
-            return false;
-        }
+        ServantEncounter updated = match.get().withRecoveredEntity(replacementId);
         activeByTarget.put(updated.targetId(), updated);
         setDirty();
         return true;
     }
 
     public Optional<ServantEncounter> activeFor(UUID targetId) {
-        return Optional.ofNullable(activeByTarget.get(targetId));
+        return supportsCurrentSchema()
+                ? Optional.ofNullable(activeByTarget.get(targetId))
+                : Optional.empty();
     }
 
     public Optional<ServantEncounter> findByEncounter(UUID encounterId) {
+        if (!supportsCurrentSchema()) {
+            return Optional.empty();
+        }
         return activeByTarget.values().stream()
                 .filter(encounter -> encounter.encounterId().equals(encounterId))
                 .findFirst();
     }
 
     public Collection<ServantEncounter> activeEncounters() {
-        return Collections.unmodifiableList(new ArrayList<>(activeByTarget.values()));
+        return supportsCurrentSchema()
+                ? Collections.unmodifiableList(new ArrayList<>(activeByTarget.values()))
+                : List.of();
     }
 
-    public boolean isTerminal(UUID encounterId) {
-        return terminalEncounters.contains(encounterId);
+    public boolean isLiveVictory(UUID encounterId) {
+        return supportsCurrentSchema() && liveVictoryTargetsByEvent.containsKey(encounterId);
     }
 
     public int victoryCount(UUID targetId) {
-        return liveVictories.getOrDefault(targetId, 0);
+        if (!supportsCurrentSchema()) {
+            return 0;
+        }
+        return Math.toIntExact(liveVictoryTargetsByEvent.values().stream()
+                .filter(targetId::equals)
+                .count());
     }
 
     int terminalCount() {
-        return terminalEncounters.size();
+        return liveVictoryTargetsByEvent.size();
+    }
+
+    private boolean removeActive(UUID encounterId) {
+        if (!supportsCurrentSchema()) {
+            return false;
+        }
+        Optional<ServantEncounter> existing = findByEncounter(encounterId);
+        if (existing.isEmpty()) {
+            return false;
+        }
+        activeByTarget.remove(existing.get().targetId());
+        setDirty();
+        return true;
     }
 
     @Override
     public CompoundTag save(CompoundTag root) {
+        if (!supportsCurrentSchema()) {
+            return unsupportedRoot.copy();
+        }
+
+        root.putInt(SCHEMA_VERSION, CURRENT_SCHEMA_VERSION);
         ListTag active = new ListTag();
         activeByTarget.values().stream()
                 .sorted((left, right) -> left.targetId().toString()
@@ -223,24 +285,16 @@ public final class ServantEncounterData extends SavedData {
                 .forEach(encounter -> active.add(encounter.save()));
         root.put(ACTIVE, active);
 
-        ListTag terminal = new ListTag();
-        terminalEncounters.stream()
-                .map(UUID::toString)
-                .sorted()
-                .map(StringTag::valueOf)
-                .forEach(terminal::add);
-        root.put(TERMINAL, terminal);
-
         ListTag victories = new ListTag();
-        liveVictories.entrySet().stream()
+        liveVictoryTargetsByEvent.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> {
                     CompoundTag victory = new CompoundTag();
-                    victory.putUUID(PLAYER_ID, entry.getKey());
-                    victory.put(COUNT, IntTag.valueOf(entry.getValue()));
+                    victory.putUUID(ENCOUNTER_ID, entry.getKey());
+                    victory.putUUID(TARGET_ID, entry.getValue());
                     victories.add(victory);
                 });
-        root.put(VICTORIES, victories);
+        root.put(LIVE_VICTORIES, victories);
         return root;
     }
 
@@ -248,8 +302,11 @@ public final class ServantEncounterData extends SavedData {
         STARTED,
         IDEMPOTENT,
         TARGET_BUSY,
-        REPLAYED_TERMINAL,
-        EVENT_ID_CONFLICT
+        REPLAYED_LIVE_VICTORY,
+        EVENT_ID_CONFLICT,
+        ACTIVE_CAPACITY_EXHAUSTED,
+        VICTORY_CAPACITY_EXHAUSTED,
+        UNSUPPORTED_SCHEMA
     }
 
     public record BeginResult(BeginStatus status, ServantEncounter encounter) {}
@@ -259,6 +316,15 @@ public final class ServantEncounterData extends SavedData {
         REHEARSAL_COMPLETE,
         ALREADY_TERMINAL,
         NOT_ACTIVE,
-        IDENTITY_MISMATCH
+        IDENTITY_MISMATCH,
+        VICTORY_CAPACITY_EXHAUSTED,
+        UNSUPPORTED_SCHEMA
+    }
+
+    public enum RecoveryClaim {
+        CLAIMED,
+        ALREADY_ATTEMPTED,
+        NOT_ACTIVE,
+        UNSUPPORTED_SCHEMA
     }
 }

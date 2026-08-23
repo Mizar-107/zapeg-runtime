@@ -3,15 +3,10 @@ package io.github.mizar107.zapegruntime.servant;
 import java.util.Objects;
 import java.util.UUID;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.resources.ResourceLocation;
 
-/**
- * Persistent identity and recovery coordinates for one Servant encounter.
- *
- * <p>The encounter UUID is the durable identity. The entity UUID may change
- * during reconciliation if Minecraft saved the ledger but not the entity's
- * chunk. This distinction is what makes retries idempotent without making a
- * missing entity permanently brick a player's story.</p>
- */
+/** Persistent identity for one Servant encounter. */
 public record ServantEncounter(
         UUID encounterId,
         UUID targetId,
@@ -19,25 +14,39 @@ public record ServantEncounter(
         String dimension,
         boolean rehearsal,
         long deadlineGameTime,
-        int chunkX,
-        int chunkZ) {
+        boolean recoveryAttempted) {
 
+    static final int MAX_DIMENSION_ID_LENGTH = 128;
+    private static final UUID NIL_UUID = new UUID(0L, 0L);
     private static final String ENCOUNTER_ID = "EncounterId";
     private static final String TARGET_ID = "TargetId";
     private static final String SERVANT_ID = "ServantId";
     private static final String DIMENSION = "Dimension";
     private static final String REHEARSAL = "Rehearsal";
     private static final String DEADLINE = "Deadline";
-    private static final String CHUNK_X = "ChunkX";
-    private static final String CHUNK_Z = "ChunkZ";
+    private static final String RECOVERY_ATTEMPTED = "RecoveryAttempted";
 
     public ServantEncounter {
         Objects.requireNonNull(encounterId, "encounterId");
         Objects.requireNonNull(targetId, "targetId");
         Objects.requireNonNull(servantId, "servantId");
         Objects.requireNonNull(dimension, "dimension");
-        if (dimension.isBlank()) {
-            throw new IllegalArgumentException("dimension must not be blank");
+        if (NIL_UUID.equals(encounterId)
+                || NIL_UUID.equals(targetId)
+                || NIL_UUID.equals(servantId)) {
+            throw new IllegalArgumentException("Servant UUIDs must not be nil");
+        }
+        if (encounterId.equals(targetId)
+                || encounterId.equals(servantId)
+                || targetId.equals(servantId)) {
+            throw new IllegalArgumentException("Servant UUID roles must be distinct");
+        }
+        if (dimension.isBlank() || dimension.length() > MAX_DIMENSION_ID_LENGTH) {
+            throw new IllegalArgumentException("invalid dimension length");
+        }
+        ResourceLocation parsedDimension = ResourceLocation.tryParse(dimension);
+        if (parsedDimension == null || !parsedDimension.toString().equals(dimension)) {
+            throw new IllegalArgumentException("invalid dimension id");
         }
         if (deadlineGameTime < 0L) {
             throw new IllegalArgumentException("deadlineGameTime must be non-negative");
@@ -48,7 +57,21 @@ public record ServantEncounter(
         return gameTime >= deadlineGameTime;
     }
 
-    public ServantEncounter withEntity(UUID replacementId, int replacementChunkX, int replacementChunkZ) {
+    public ServantEncounter claimRecovery() {
+        if (recoveryAttempted) {
+            return this;
+        }
+        return new ServantEncounter(
+                encounterId,
+                targetId,
+                servantId,
+                dimension,
+                rehearsal,
+                deadlineGameTime,
+                true);
+    }
+
+    public ServantEncounter withRecoveredEntity(UUID replacementId) {
         return new ServantEncounter(
                 encounterId,
                 targetId,
@@ -56,15 +79,7 @@ public record ServantEncounter(
                 dimension,
                 rehearsal,
                 deadlineGameTime,
-                replacementChunkX,
-                replacementChunkZ);
-    }
-
-    public ServantEncounter withLocation(int updatedChunkX, int updatedChunkZ) {
-        if (updatedChunkX == chunkX && updatedChunkZ == chunkZ) {
-            return this;
-        }
-        return withEntity(servantId, updatedChunkX, updatedChunkZ);
+                true);
     }
 
     CompoundTag save() {
@@ -75,8 +90,7 @@ public record ServantEncounter(
         tag.putString(DIMENSION, dimension);
         tag.putBoolean(REHEARSAL, rehearsal);
         tag.putLong(DEADLINE, deadlineGameTime);
-        tag.putInt(CHUNK_X, chunkX);
-        tag.putInt(CHUNK_Z, chunkZ);
+        tag.putBoolean(RECOVERY_ATTEMPTED, recoveryAttempted);
         return tag;
     }
 
@@ -84,7 +98,10 @@ public record ServantEncounter(
         if (!tag.hasUUID(ENCOUNTER_ID)
                 || !tag.hasUUID(TARGET_ID)
                 || !tag.hasUUID(SERVANT_ID)
-                || !tag.contains(DIMENSION)) {
+                || !tag.contains(DIMENSION, Tag.TAG_STRING)
+                || !tag.contains(REHEARSAL, Tag.TAG_BYTE)
+                || !tag.contains(DEADLINE, Tag.TAG_LONG)
+                || !tag.contains(RECOVERY_ATTEMPTED, Tag.TAG_BYTE)) {
             throw new IllegalArgumentException("incomplete Servant encounter");
         }
         return new ServantEncounter(
@@ -94,7 +111,6 @@ public record ServantEncounter(
                 tag.getString(DIMENSION),
                 tag.getBoolean(REHEARSAL),
                 tag.getLong(DEADLINE),
-                tag.getInt(CHUNK_X),
-                tag.getInt(CHUNK_Z));
+                tag.getBoolean(RECOVERY_ATTEMPTED));
     }
 }

@@ -1,40 +1,29 @@
 package io.github.mizar107.zapegruntime.servant;
 
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
 import javax.annotation.Nullable;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.util.Mth;
-import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.common.MinecraftForge;
 
-/** Owns all Servant spawning, recovery, expiry, cancellation, and victory credit. */
+/** Owns Servant spawning, bounded recovery, expiry, cancellation, and victory credit. */
 public final class ServantEncounterManager {
 
     public static final int LIFETIME_TICKS = 120 * 20;
     private static final int RECONCILE_INTERVAL_TICKS = 20;
     private static final Set<MinecraftServer> STOPPING_SERVERS =
             Collections.newSetFromMap(new WeakHashMap<>());
-    private static final int[][] SPAWN_OFFSETS = {
-        {0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1},
-        {2, 0}, {-2, 0}, {0, 2}, {0, -2}, {1, 1}, {-1, -1}
-    };
 
     private ServantEncounterManager() {}
 
@@ -42,10 +31,7 @@ public final class ServantEncounterManager {
         return awaken(target, UUID.randomUUID(), rehearsal);
     }
 
-    /**
-     * Starts or idempotently resolves an encounter. Callers that retry the
-     * same event UUID receive the existing entity instead of a duplicate.
-     */
+    /** Same event UUID is idempotent while active and replay-safe after a live victory. */
     public static StartResult awaken(
             ServerPlayer target,
             UUID encounterId,
@@ -54,27 +40,40 @@ public final class ServantEncounterManager {
         if (server == null) {
             return StartResult.failed(StartStatus.NO_SERVER, encounterId, "target has no server");
         }
+        ServantEncounterData data = ServantEncounterData.get(server);
+        if (!data.supportsCurrentSchema()) {
+            return StartResult.failed(
+                    StartStatus.UNSUPPORTED_SCHEMA,
+                    encounterId,
+                    "Servant data schema is unsupported; preserved read-only");
+        }
+
         ServerLevel level = target.serverLevel();
         HeraldorServant servant = ServantEntities.SERVANT.get().create(level);
         if (servant == null) {
             return StartResult.failed(StartStatus.SPAWN_FAILED, encounterId, "entity creation failed");
         }
-
-        long deadline = server.overworld().getGameTime() + LIFETIME_TICKS;
+        long gameTime = server.overworld().getGameTime();
+        if (gameTime < 0L || gameTime > Long.MAX_VALUE - LIFETIME_TICKS) {
+            return StartResult.failed(
+                    StartStatus.INVALID_REQUEST, encounterId, "invalid world game time");
+        }
+        long deadline = gameTime + LIFETIME_TICKS;
         servant.configure(encounterId, target.getUUID(), rehearsal, deadline);
-        placeNearTarget(servant, target);
-        ChunkPos chunk = servant.chunkPosition();
-        ServantEncounter proposed = new ServantEncounter(
-                encounterId,
-                target.getUUID(),
-                servant.getUUID(),
-                level.dimension().location().toString(),
-                rehearsal,
-                deadline,
-                chunk.x,
-                chunk.z);
-
-        ServantEncounterData data = ServantEncounterData.get(server);
+        ServantEncounter proposed;
+        try {
+            proposed = new ServantEncounter(
+                    encounterId,
+                    target.getUUID(),
+                    servant.getUUID(),
+                    level.dimension().location().toString(),
+                    rehearsal,
+                    deadline,
+                    false);
+        } catch (IllegalArgumentException | NullPointerException invalid) {
+            return StartResult.failed(
+                    StartStatus.INVALID_REQUEST, encounterId, "invalid encounter identity");
+        }
         ServantEncounterData.BeginResult reservation = data.begin(proposed);
         switch (reservation.status()) {
             case IDEMPOTENT -> {
@@ -93,21 +92,41 @@ public final class ServantEncounterManager {
                         existing.servantId(),
                         "target already has an active Servant");
             }
-            case REPLAYED_TERMINAL -> {
+            case REPLAYED_LIVE_VICTORY -> {
                 return StartResult.failed(
-                        StartStatus.REPLAYED_TERMINAL,
+                        StartStatus.REPLAYED_LIVE_VICTORY,
                         encounterId,
-                        "encounter id was already consumed");
+                        "live victory already consumed this event");
             }
             case EVENT_ID_CONFLICT -> {
                 return StartResult.failed(
                         StartStatus.EVENT_ID_CONFLICT,
                         encounterId,
-                        "encounter id belongs to another target");
+                        "encounter id belongs to another target or mode");
+            }
+            case ACTIVE_CAPACITY_EXHAUSTED, VICTORY_CAPACITY_EXHAUSTED -> {
+                return StartResult.failed(
+                        StartStatus.CAPACITY_EXHAUSTED,
+                        encounterId,
+                        "Servant ledger capacity exhausted");
+            }
+            case UNSUPPORTED_SCHEMA -> {
+                return StartResult.failed(
+                        StartStatus.UNSUPPORTED_SCHEMA,
+                        encounterId,
+                        "Servant data schema is unsupported; preserved read-only");
             }
             case STARTED -> {
                 // Continue below.
             }
+        }
+
+        if (ServantSpawnPolicy.placeSafely(level, servant, target).isEmpty()) {
+            data.rollbackSpawn(encounterId);
+            return StartResult.failed(
+                    StartStatus.NO_SAFE_SPAWN,
+                    encounterId,
+                    "no safe loaded spawn candidate");
         }
 
         if (!level.addFreshEntity(servant)) {
@@ -131,10 +150,10 @@ public final class ServantEncounterManager {
 
     public static void tick(MinecraftServer server) {
         ServantEncounterData data = ServantEncounterData.get(server);
+        if (!data.supportsCurrentSchema()) {
+            return;
+        }
         long now = server.overworld().getGameTime();
-
-        // Deadlines are checked every tick. Reconciliation is intentionally
-        // less frequent because it can load a recorded entity chunk.
         for (ServantEncounter encounter : data.activeEncounters()) {
             if (encounter.isExpired(now)) {
                 close(server, encounter, CloseReason.EXPIRED);
@@ -143,36 +162,17 @@ public final class ServantEncounterManager {
         if (server.getTickCount() % RECONCILE_INTERVAL_TICKS != 0) {
             return;
         }
-
         for (ServantEncounter encounter : data.activeEncounters()) {
             reconcile(server, encounter);
         }
-        discardOrphansAndDuplicates(server, data);
     }
 
-    public static void onServerStarted(MinecraftServer server) {
-        STOPPING_SERVERS.remove(server);
-    }
-
-    public static void onServerStopping(MinecraftServer server) {
-        // PlayerLoggedOutEvent is also emitted while a server shuts down. In
-        // that path the entity and ledger must remain intact for restart
-        // reconciliation, rather than being treated as a voluntary logout.
-        STOPPING_SERVERS.add(server);
-    }
-
-    public static boolean isServerStopping(MinecraftServer server) {
-        return STOPPING_SERVERS.contains(server);
-    }
-
-    public static void onDeath(HeraldorServant servant, DamageSource source) {
-        if (!(servant.level() instanceof ServerLevel level)
-                || servant.encounterId() == null
-                || source.getEntity() == null) {
+    /** Called only after LivingEntity.die changed its protected dead flag. */
+    public static void onCommittedDeath(HeraldorServant servant, UUID killerId) {
+        if (!(servant.level() instanceof ServerLevel level) || servant.encounterId() == null) {
             return;
         }
         MinecraftServer server = level.getServer();
-        UUID killerId = source.getEntity().getUUID();
         ServantEncounterData data = ServantEncounterData.get(server);
         ServantEncounterData.FinishResult result = data.finishVictory(
                 servant.encounterId(), servant.getUUID(), killerId);
@@ -203,7 +203,35 @@ public final class ServantEncounterManager {
                     servant.encounterId(),
                     servant.getUUID(),
                     killerId);
+            case VICTORY_CAPACITY_EXHAUSTED, UNSUPPORTED_SCHEMA -> ZapeGRuntime.LOGGER.error(
+                    "Servant victory could not be recorded encounter={} result={}",
+                    servant.encounterId(),
+                    result);
         }
+    }
+
+    /**
+     * EntityJoinLevelEvent calls this before accepting a persisted Servant.
+     * A later-loaded pre-recovery entity fails the exact entity-UUID match.
+     */
+    public static boolean acceptsJoinedEntity(HeraldorServant servant, ServerLevel level) {
+        ServantEncounterData data = ServantEncounterData.get(level.getServer());
+        if (!data.supportsCurrentSchema()) {
+            return true;
+        }
+        UUID encounterId = servant.encounterId();
+        if (encounterId == null) {
+            return false;
+        }
+        Optional<ServantEncounter> active = data.findByEncounter(encounterId);
+        return ServantJoinPolicy.accepts(
+                active.orElse(null),
+                servant.encounterId(),
+                servant.designatedTargetId(),
+                servant.getUUID(),
+                level.dimension().location().toString(),
+                servant.rehearsal(),
+                servant.deadlineGameTime());
     }
 
     public static boolean cancelForTarget(
@@ -211,10 +239,7 @@ public final class ServantEncounterManager {
             UUID targetId,
             CloseReason reason) {
         Optional<ServantEncounter> active = ServantEncounterData.get(server).activeFor(targetId);
-        if (active.isEmpty()) {
-            return false;
-        }
-        return close(server, active.get(), reason);
+        return active.isPresent() && close(server, active.get(), reason);
     }
 
     public static Optional<ServantEncounter> activeFor(MinecraftServer server, UUID targetId) {
@@ -225,60 +250,54 @@ public final class ServantEncounterManager {
         return ServantEncounterData.get(server).victoryCount(targetId);
     }
 
+    public static void onServerStarted(MinecraftServer server) {
+        STOPPING_SERVERS.remove(server);
+    }
+
+    public static void onServerStopping(MinecraftServer server) {
+        STOPPING_SERVERS.add(server);
+    }
+
+    public static boolean isServerStopping(MinecraftServer server) {
+        return STOPPING_SERVERS.contains(server);
+    }
+
     private static void reconcile(MinecraftServer server, ServantEncounter encounter) {
         ServerPlayer target = server.getPlayerList().getPlayer(encounter.targetId());
         if (target == null) {
-            // Preserve restart state until the player reconnects or the
-            // persisted game-time deadline expires. Do not force-load chunks.
             return;
         }
-
         ServerLevel level = resolveLevel(server, encounter.dimension());
         if (level == null || target.serverLevel() != level) {
             close(server, encounter, CloseReason.DIMENSION_CHANGE);
             return;
         }
 
-        HeraldorServant servant = findExpected(level, encounter);
-        if (servant == null) {
-            // Loading the last recorded chunk first prevents creating a twin
-            // of an entity that merely had not been loaded after restart.
-            level.getChunk(encounter.chunkX(), encounter.chunkZ());
-            servant = findExpected(level, encounter);
-        }
-        if (servant == null) {
-            servant = findByEncounter(level, encounter);
-            if (servant != null) {
-                ChunkPos chunk = servant.chunkPosition();
-                ServantEncounterData.get(server).replaceEntity(
-                        encounter.encounterId(), servant.getUUID(), chunk.x, chunk.z);
-                encounter = encounter.withEntity(servant.getUUID(), chunk.x, chunk.z);
-            }
-        }
-        if (servant == null) {
-            replaceMissingEntity(server, level, target, encounter);
+        Entity loaded = level.getEntity(encounter.servantId());
+        if (loaded instanceof HeraldorServant servant && servant.identityMatches(encounter)) {
             return;
+        }
+        if (loaded instanceof HeraldorServant invalid) {
+            invalid.discard();
         }
 
-        if (!servant.identityMatches(encounter)) {
-            servant.discard();
-            replaceMissingEntity(server, level, target, encounter);
-            return;
+        ServantEncounterData data = ServantEncounterData.get(server);
+        ServantEncounterData.RecoveryClaim claim = data.claimRecovery(encounter.encounterId());
+        if (claim == ServantEncounterData.RecoveryClaim.CLAIMED) {
+            recoverOnce(server, level, target, encounter);
+        } else if (claim == ServantEncounterData.RecoveryClaim.ALREADY_ATTEMPTED) {
+            close(server, encounter, CloseReason.MISSING_AFTER_RECOVERY);
         }
-        ChunkPos currentChunk = servant.chunkPosition();
-        ServantEncounterData.get(server).updateLocation(
-                encounter.encounterId(), currentChunk.x, currentChunk.z);
     }
 
-    private static void replaceMissingEntity(
+    private static void recoverOnce(
             MinecraftServer server,
             ServerLevel level,
             ServerPlayer target,
             ServantEncounter oldRecord) {
         HeraldorServant replacement = ServantEntities.SERVANT.get().create(level);
         if (replacement == null) {
-            ZapeGRuntime.LOGGER.error(
-                    "Could not recreate missing Servant encounter={}", oldRecord.encounterId());
+            close(server, oldRecord, CloseReason.RECOVERY_FAILED);
             return;
         }
         replacement.configure(
@@ -286,25 +305,24 @@ public final class ServantEncounterManager {
                 oldRecord.targetId(),
                 oldRecord.rehearsal(),
                 oldRecord.deadlineGameTime());
-        placeNearTarget(replacement, target);
-        ChunkPos chunk = replacement.chunkPosition();
+        if (ServantSpawnPolicy.placeSafely(level, replacement, target).isEmpty()) {
+            close(server, oldRecord, CloseReason.NO_SAFE_RECOVERY_SPAWN);
+            return;
+        }
+
         ServantEncounterData data = ServantEncounterData.get(server);
-        if (!data.replaceEntity(
-                oldRecord.encounterId(), replacement.getUUID(), chunk.x, chunk.z)) {
+        if (!data.replaceRecoveredEntity(oldRecord.encounterId(), replacement.getUUID())) {
+            close(server, oldRecord, CloseReason.RECOVERY_FAILED);
             return;
         }
         if (!level.addFreshEntity(replacement)) {
-            data.replaceEntity(
-                    oldRecord.encounterId(),
-                    oldRecord.servantId(),
-                    oldRecord.chunkX(),
-                    oldRecord.chunkZ());
+            data.close(oldRecord.encounterId());
             ZapeGRuntime.LOGGER.error(
                     "World rejected replacement Servant encounter={}", oldRecord.encounterId());
             return;
         }
         ZapeGRuntime.LOGGER.warn(
-                "Reconciled missing Servant encounter={} old_entity={} new_entity={}",
+                "Reconciled missing Servant once encounter={} old_entity={} new_entity={}",
                 oldRecord.encounterId(),
                 oldRecord.servantId(),
                 replacement.getUUID());
@@ -320,8 +338,8 @@ public final class ServantEncounterManager {
         }
         ServerLevel level = resolveLevel(server, encounter.dimension());
         if (level != null) {
-            Entity entity = level.getEntity(encounter.servantId());
-            if (entity instanceof HeraldorServant servant) {
+            Entity loaded = level.getEntity(encounter.servantId());
+            if (loaded instanceof HeraldorServant servant) {
                 servant.discard();
             }
         }
@@ -331,56 +349,6 @@ public final class ServantEncounterManager {
                 encounter.targetId(),
                 reason);
         return true;
-    }
-
-    private static void discardOrphansAndDuplicates(
-            MinecraftServer server,
-            ServantEncounterData data) {
-        for (ServerLevel level : server.getAllLevels()) {
-            List<HeraldorServant> removals = new ArrayList<>();
-            for (Entity entity : level.getAllEntities()) {
-                if (!(entity instanceof HeraldorServant servant)) {
-                    continue;
-                }
-                UUID eventId = servant.encounterId();
-                Optional<ServantEncounter> record = eventId == null
-                        ? Optional.empty()
-                        : data.findByEncounter(eventId);
-                if (record.isEmpty()
-                        || !record.get().servantId().equals(servant.getUUID())
-                        || !record.get().targetId().equals(servant.designatedTargetId())) {
-                    removals.add(servant);
-                }
-            }
-            removals.forEach(HeraldorServant::discard);
-        }
-    }
-
-    @Nullable
-    private static HeraldorServant findExpected(
-            ServerLevel level,
-            ServantEncounter encounter) {
-        Entity entity = level.getEntity(encounter.servantId());
-        return entity instanceof HeraldorServant servant ? servant : null;
-    }
-
-    @Nullable
-    private static HeraldorServant findByEncounter(
-            ServerLevel level,
-            ServantEncounter encounter) {
-        HeraldorServant selected = null;
-        for (Entity entity : level.getAllEntities()) {
-            if (!(entity instanceof HeraldorServant servant)
-                    || !encounter.encounterId().equals(servant.encounterId())
-                    || !encounter.targetId().equals(servant.designatedTargetId())) {
-                continue;
-            }
-            if (selected == null
-                    || servant.getUUID().toString().compareTo(selected.getUUID().toString()) < 0) {
-                selected = servant;
-            }
-        }
-        return selected;
     }
 
     @Nullable
@@ -393,45 +361,18 @@ public final class ServantEncounterManager {
         return server.getLevel(key);
     }
 
-    private static void placeNearTarget(HeraldorServant servant, ServerPlayer target) {
-        Vec3 look = target.getLookAngle();
-        double horizontalLength = Math.sqrt(look.x * look.x + look.z * look.z);
-        double directionX = horizontalLength < 0.001D ? 0.0D : look.x / horizontalLength;
-        double directionZ = horizontalLength < 0.001D ? 1.0D : look.z / horizontalLength;
-        Vec3 base = target.position().subtract(directionX * 5.0D, 0.0D, directionZ * 5.0D);
-        ServerLevel level = target.serverLevel();
-
-        for (int yOffset : new int[] {0, 1, -1, 2, -2}) {
-            for (int[] offset : SPAWN_OFFSETS) {
-                double x = Math.floor(base.x) + 0.5D + offset[0];
-                double y = target.getY() + yOffset;
-                double z = Math.floor(base.z) + 0.5D + offset[1];
-                servant.moveTo(x, y, z, target.getYRot() + 180.0F, 0.0F);
-                if (level.noCollision(servant)) {
-                    return;
-                }
-            }
-        }
-
-        // Last-resort deterministic placement. addFreshEntity still has the
-        // final say; reconciliation can retry if the world rejects it.
-        BlockPos fallback = target.blockPosition().offset(0, 1, 0);
-        servant.moveTo(
-                fallback.getX() + 0.5D,
-                Mth.clamp(fallback.getY(), level.getMinBuildHeight() + 1, level.getMaxBuildHeight() - 3),
-                fallback.getZ() + 0.5D,
-                target.getYRot() + 180.0F,
-                0.0F);
-    }
-
     public enum StartStatus {
         STARTED,
         ALREADY_ACTIVE,
         TARGET_BUSY,
-        REPLAYED_TERMINAL,
+        REPLAYED_LIVE_VICTORY,
         EVENT_ID_CONFLICT,
+        CAPACITY_EXHAUSTED,
+        NO_SAFE_SPAWN,
         SPAWN_FAILED,
-        NO_SERVER
+        NO_SERVER,
+        INVALID_REQUEST,
+        UNSUPPORTED_SCHEMA
     }
 
     public record StartResult(
@@ -454,6 +395,9 @@ public final class ServantEncounterManager {
         OPERATOR,
         LOGOUT,
         TARGET_DEATH,
-        DIMENSION_CHANGE
+        DIMENSION_CHANGE,
+        RECOVERY_FAILED,
+        NO_SAFE_RECOVERY_SPAWN,
+        MISSING_AFTER_RECOVERY
     }
 }

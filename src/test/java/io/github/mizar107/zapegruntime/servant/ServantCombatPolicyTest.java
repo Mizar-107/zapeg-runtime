@@ -16,5 +16,8 @@ class ServantCombatPolicyTest {
         assertFalse(ServantCombatPolicy.allows(target, UUID.randomUUID()));
         assertFalse(ServantCombatPolicy.allows(target, null));
         assertFalse(ServantCombatPolicy.allows(null, target));
+        assertTrue(ServantCombatPolicy.preventsRest(target, target));
+        assertFalse(ServantCombatPolicy.preventsRest(target, UUID.randomUUID()));
+        assertFalse(ServantCombatPolicy.DESPAWN_IN_PEACEFUL);
     }
 }

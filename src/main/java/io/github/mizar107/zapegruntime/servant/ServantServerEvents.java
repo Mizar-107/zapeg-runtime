@@ -3,7 +3,7 @@ package io.github.mizar107.zapegruntime.servant;
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
@@ -24,12 +24,25 @@ public final class ServantServerEvents {
     }
 
     @SubscribeEvent
-    public static void onLivingDeath(LivingDeathEvent event) {
-        if (event.getEntity() instanceof ServerPlayer player && player.getServer() != null) {
+    public static void onPlayerClone(PlayerEvent.Clone event) {
+        if (event.isWasDeath()
+                && event.getEntity() instanceof ServerPlayer player
+                && player.getServer() != null) {
             ServantEncounterManager.cancelForTarget(
                     player.getServer(),
                     player.getUUID(),
                     ServantEncounterManager.CloseReason.TARGET_DEATH);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onEntityJoin(EntityJoinLevelEvent event) {
+        if (event.getEntity() instanceof HeraldorServant servant
+                && event.getLevel() instanceof net.minecraft.server.level.ServerLevel level
+                && !ServantEncounterManager.acceptsJoinedEntity(servant, level)) {
+            // A pre-recovery entity that loads later cannot become a twin.
+            servant.discard();
+            event.setCanceled(true);
         }
     }
 

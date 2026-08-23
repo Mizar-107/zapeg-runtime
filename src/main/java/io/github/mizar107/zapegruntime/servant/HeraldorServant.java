@@ -9,13 +9,10 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
-import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
-import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.RandomStrollGoal;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.monster.WitherSkeleton;
@@ -62,10 +59,8 @@ public final class HeraldorServant extends WitherSkeleton {
         goalSelector.addGoal(1, new FloatGoal(this));
         goalSelector.addGoal(2, new MeleeAttackGoal(this, 1.08D, false));
         goalSelector.addGoal(5, new RandomStrollGoal(this, 0.75D));
-        goalSelector.addGoal(6, new LookAtPlayerGoal(this, ServerPlayer.class, 24.0F));
-        goalSelector.addGoal(7, new RandomLookAroundGoal(this));
-        // Deliberately no target-selector goals. customServerAiStep resolves
-        // exactly one UUID and setTarget rejects every other entity.
+        // No generic player-look or target-selector goals. MeleeAttackGoal
+        // looks only at the single target installed by customServerAiStep.
     }
 
     public void configure(
@@ -167,12 +162,14 @@ public final class HeraldorServant extends WitherSkeleton {
 
     @Override
     public void die(DamageSource source) {
-        // Forge's cancellable LivingDeathEvent has already succeeded before
-        // this method is entered, so progression cannot be credited for a
-        // death another mod later cancels. The SavedData ledger still makes
-        // repeated die calls harmless.
+        boolean deadBeforeDie = dead;
         super.die(source);
-        ServantEncounterManager.onDeath(this, source);
+        Entity killer = source.getEntity();
+        UUID killerId = killer == null ? null : killer.getUUID();
+        if (ServantDeathCreditGate.shouldCredit(
+                deadBeforeDie, dead, designatedTargetId, killerId)) {
+            ServantEncounterManager.onCommittedDeath(this, killerId);
+        }
     }
 
     private boolean isDesignatedTarget(Entity candidate) {
@@ -183,6 +180,17 @@ public final class HeraldorServant extends WitherSkeleton {
     @Override
     public boolean removeWhenFarAway(double distanceToClosestPlayer) {
         return false;
+    }
+
+    @Override
+    protected boolean shouldDespawnInPeaceful() {
+        return ServantCombatPolicy.DESPAWN_IN_PEACEFUL;
+    }
+
+    @Override
+    public boolean isPreventingPlayerRest(Player player) {
+        return ServantCombatPolicy.preventsRest(designatedTargetId, player.getUUID())
+                && super.isPreventingPlayerRest(player);
     }
 
     @Override
