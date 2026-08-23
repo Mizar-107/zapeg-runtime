@@ -4,6 +4,8 @@ import io.github.mizar107.zapegruntime.ZapeGRuntime;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
 import io.github.mizar107.zapegruntime.scene.SceneAck;
 import io.github.mizar107.zapegruntime.scene.SceneDescriptor;
+import io.github.mizar107.zapegruntime.scene.OsScareReport;
+import java.util.UUID;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkDirection;
@@ -22,7 +24,11 @@ public final class SceneNetwork {
     // v7 adds rift_01 (wire id 13) and generalises the existing stage field
     // to haunt/rift families; a v6 client would reject non-colossus stages
     // (or unknown id 13) mid-session, so the handshake refuses the mismatch.
-    public static final String PROTOCOL = "7";
+    // v8 adds a fixed-size visitation effect-status packet. It separates
+    // verified OS outcomes from the generic scene acknowledgement stream;
+    // mixed v7/v8 installations must fail the handshake rather than report a
+    // false VISIBLE or silently discard diagnostics.
+    public static final String PROTOCOL = "8";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             ResourceLocation.fromNamespaceAndPath(ZapeGRuntime.MOD_ID, "scenes"),
             () -> PROTOCOL,
@@ -57,6 +63,14 @@ public final class SceneNetwork {
                 .decoder(SceneAckC2S::decode)
                 .consumerMainThread(SceneAckC2S::handle)
                 .add();
+        CHANNEL.messageBuilder(
+                        OsScareStatusC2S.class,
+                        nextMessageId++,
+                        NetworkDirection.PLAY_TO_SERVER)
+                .encoder(OsScareStatusC2S::encode)
+                .decoder(OsScareStatusC2S::decode)
+                .consumerMainThread(OsScareStatusC2S::handle)
+                .add();
     }
 
     public static void spawnFor(ServerPlayer target, SceneDescriptor descriptor) {
@@ -74,5 +88,13 @@ public final class SceneNetwork {
             java.util.UUID targetId,
             SceneAck acknowledgement) {
         CHANNEL.sendToServer(new SceneAckC2S(eventId, targetId, acknowledgement));
+    }
+
+    public static void reportOsScare(
+            UUID eventId,
+            UUID targetId,
+            int sequence,
+            OsScareReport report) {
+        CHANNEL.sendToServer(new OsScareStatusC2S(eventId, targetId, sequence, report));
     }
 }

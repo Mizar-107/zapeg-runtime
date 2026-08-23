@@ -12,8 +12,8 @@ import java.util.Locale;
  * <p>The gate must run before any AWT/Swing/Toolkit class is touched: on
  * macOS the first Toolkit initialisation inside a GLFW client launched with
  * {@code -XstartOnFirstThread} classically deadlocks or crashes the JVM,
- * and a hang is not a {@link Throwable} — the fail-silent catch blocks
- * cannot contain it. Elsewhere the beats simply do not happen.
+ * and a hang is not a {@link Throwable}. Elsewhere those beats report the
+ * bounded {@code platform_unsupported} capability instead of touching AWT.
  */
 final class OsScarePlatform {
 
@@ -29,7 +29,7 @@ final class OsScarePlatform {
 
     /**
      * True only for a Windows {@code os.name}; anything else — macOS,
-     * Linux, null, exotic — fails silent. Injectable so the gate itself is
+     * Linux, null, exotic — reports unsupported. Injectable so the gate is
      * unit-testable on any build machine.
      */
     static boolean popupBeatsAllowed(String osName) {

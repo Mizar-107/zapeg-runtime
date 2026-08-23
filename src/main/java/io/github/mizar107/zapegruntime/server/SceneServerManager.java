@@ -3,11 +3,15 @@ package io.github.mizar107.zapegruntime.server;
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
 import io.github.mizar107.zapegruntime.network.SceneAckC2S;
 import io.github.mizar107.zapegruntime.network.SceneNetwork;
+import io.github.mizar107.zapegruntime.network.OsScareStatusC2S;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
 import io.github.mizar107.zapegruntime.scene.SceneAck;
 import io.github.mizar107.zapegruntime.scene.SceneDescriptor;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
+import io.github.mizar107.zapegruntime.scene.OsScareReport;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.server.MinecraftServer;
@@ -16,6 +20,8 @@ import net.minecraft.server.level.ServerPlayer;
 public final class SceneServerManager {
 
     private static ActiveScene active;
+    private static final int MAX_DIAGNOSTIC_PLAYERS = 64;
+    private static final Map<UUID, LastOsScareStatus> lastOsScareStatuses = new HashMap<>();
 
     private SceneServerManager() {}
 
@@ -24,12 +30,30 @@ public final class SceneServerManager {
     private record ActiveScene(
             SceneDescriptor descriptor,
             int expiresAtServerTick,
-            SceneAck lastAcknowledgement) {
+            SceneAck lastAcknowledgement,
+            OsScareReport osScareReport,
+            int osScareSequence) {
 
         ActiveScene withAcknowledgement(SceneAck acknowledgement) {
-            return new ActiveScene(descriptor, expiresAtServerTick, acknowledgement);
+            return new ActiveScene(
+                    descriptor,
+                    expiresAtServerTick,
+                    acknowledgement,
+                    osScareReport,
+                    osScareSequence);
+        }
+
+        ActiveScene withOsScareStatus(OsScareReport report, int sequence) {
+            return new ActiveScene(
+                    descriptor,
+                    expiresAtServerTick,
+                    lastAcknowledgement,
+                    report,
+                    sequence);
         }
     }
+
+    private record LastOsScareStatus(UUID eventId, int sequence, OsScareReport report) {}
 
     /** Hard bound for Director-requested TTL overrides (60 seconds). */
     public static final int MAX_TTL_TICKS = SceneDescriptor.MAX_TTL_TICKS;
@@ -137,7 +161,9 @@ public final class SceneServerManager {
         active = new ActiveScene(
                 descriptor,
                 server.getTickCount() + profile.occupancyTicks(descriptor.ttlTicks()),
-                null);
+                null,
+                null,
+                -1);
         SceneNetwork.spawnFor(target, descriptor);
         ZapeGRuntime.LOGGER.info(
                 "Dispatched scene {} profile={} target={} rehearsal={}",
@@ -165,6 +191,27 @@ public final class SceneServerManager {
         if (message.acknowledgement().terminal()) {
             active = null;
         }
+    }
+
+    public static void handleOsScareStatus(ServerPlayer sender, OsScareStatusC2S message) {
+        ActiveScene current = active;
+        if (current == null
+                || current.descriptor.profile() != SceneProfile.VISITATION_01
+                || !current.descriptor.eventId().equals(message.eventId())
+                || !current.descriptor.targetId().equals(sender.getUUID())
+                || !message.targetId().equals(sender.getUUID())
+                || message.sequence() <= current.osScareSequence) {
+            return;
+        }
+        active = current.withOsScareStatus(message.report(), message.sequence());
+        rememberOsScareStatus(sender.getUUID(), new LastOsScareStatus(
+                message.eventId(), message.sequence(), message.report()));
+        ZapeGRuntime.LOGGER.info(
+                "Scene {} OS status sequence={} target={} {}",
+                message.eventId(),
+                message.sequence(),
+                sender.getGameProfile().getName(),
+                message.report().compactString());
     }
 
     public static void tick(MinecraftServer server) {
@@ -230,7 +277,38 @@ public final class SceneServerManager {
                 + " profile=" + current.descriptor.profile().serializedName()
                 + " ack=" + (current.lastAcknowledgement == null
                         ? "none"
-                        : current.lastAcknowledgement.name().toLowerCase(Locale.ROOT));
+                        : current.lastAcknowledgement.name().toLowerCase(Locale.ROOT))
+                + (current.descriptor.profile() == SceneProfile.VISITATION_01
+                        ? " os=" + (current.osScareReport == null
+                                ? "awaiting"
+                                : current.osScareReport.compactString())
+                        : "");
+    }
+
+    /** Permission-gated operator view of the latest bounded client report. */
+    public static String diagnose(ServerPlayer target) {
+        ActiveScene current = active;
+        if (current != null
+                && current.descriptor.targetId().equals(target.getUUID())
+                && current.descriptor.profile() == SceneProfile.VISITATION_01) {
+            return "target=" + target.getGameProfile().getName()
+                    + " protocol=" + SceneNetwork.PROTOCOL
+                    + " active=1 event=" + current.descriptor.eventId()
+                    + " os=" + (current.osScareReport == null
+                            ? "awaiting"
+                            : current.osScareReport.compactString());
+        }
+        LastOsScareStatus previous = lastOsScareStatuses.get(target.getUUID());
+        if (previous == null) {
+            return "target=" + target.getGameProfile().getName()
+                    + " protocol=" + SceneNetwork.PROTOCOL
+                    + " active=0 os=none";
+        }
+        return "target=" + target.getGameProfile().getName()
+                + " protocol=" + SceneNetwork.PROTOCOL
+                + " active=0 last_event=" + previous.eventId
+                + " sequence=" + previous.sequence
+                + " os=" + previous.report.compactString();
     }
 
     /** Target-scoped scene summary for the native Heraldor diagnostic tree. */
@@ -262,6 +340,16 @@ public final class SceneServerManager {
 
     static void resetForTests() {
         active = null;
+        lastOsScareStatuses.clear();
+    }
+
+    private static void rememberOsScareStatus(UUID playerId, LastOsScareStatus status) {
+        if (!lastOsScareStatuses.containsKey(playerId)
+                && lastOsScareStatuses.size() >= MAX_DIAGNOSTIC_PLAYERS) {
+            UUID oldestArbitraryKey = lastOsScareStatuses.keySet().iterator().next();
+            lastOsScareStatuses.remove(oldestArbitraryKey);
+        }
+        lastOsScareStatuses.put(playerId, status);
     }
 
     private static DispatchResult failure(String message, UUID eventId) {

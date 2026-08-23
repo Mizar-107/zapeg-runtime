@@ -166,6 +166,22 @@ mid-session, so the handshake refuses the mismatch up front):
   face-popup, window-wrongness and taskbar-flash sub-toggles) lets any
   player disable the OS-level beats locally without affecting anyone else.
 
+### Protocol 8 diagnostic hardening
+
+- Visitation no longer emits the render pipeline's generic `VISIBLE`
+  acknowledgement. Delivery (`RECEIVED`) and terminal lifecycle remain on the
+  scene acknowledgement channel; presentation truth lives in a separate,
+  fixed-size four-effect report.
+- Window title, window motion, external popup and taskbar each report a
+  bounded capability/application state and non-sensitive reason code. The
+  popup cannot become `APPLIED` until the Swing EDT verifies `isShowing()`.
+- Client setup validates the bundled PNG before a scene. Failures are logged
+  by enum code only and are visible to permission-level-2 operators through
+  `/zapegscene diagnose <player>`; all opt-outs and cleanup guarantees remain.
+- Protocol 8 requires an atomic client/server jar update. The parallel batch
+  intentionally leaves `mod_version` unchanged; release integration must bump
+  it before publishing.
+
 ## v0.4 — manifestation and combat
 
 Anything that damages, collides or can be attacked becomes server-authoritative:

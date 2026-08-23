@@ -114,7 +114,10 @@ public final class SceneCommands {
                 .then(Commands.literal("cancel-all")
                         .executes(SceneCommands::cancelAll))
                 .then(Commands.literal("status")
-                        .executes(SceneCommands::status)));
+                        .executes(SceneCommands::status))
+                .then(Commands.literal("diagnose")
+                        .then(Commands.argument("target", EntityArgument.player())
+                                .executes(SceneCommands::diagnose))));
     }
 
     private static java.util.List<String> profileSuggestions() {
@@ -223,6 +226,18 @@ public final class SceneCommands {
         context.getSource().sendSuccess(
                 () -> Component.literal(SceneServerManager.status()),
                 false);
+        return 1;
+    }
+
+    private static int diagnose(CommandContext<CommandSourceStack> context)
+            throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer target = EntityArgument.getPlayer(context, "target");
+        String diagnostic = SceneServerManager.diagnose(target);
+        context.getSource().sendSuccess(() -> Component.literal(diagnostic), false);
+        ZapeGRuntime.LOGGER.info(
+                "Scene operator action=diagnose source={} target={}",
+                context.getSource().getTextName(),
+                target.getGameProfile().getName());
         return 1;
     }
 

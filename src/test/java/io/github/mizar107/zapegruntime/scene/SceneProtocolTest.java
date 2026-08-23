@@ -32,8 +32,8 @@ class SceneProtocolTest {
     }
 
     @Test
-    void versionSevenProfileIdsRemainExplicitAndBounded() {
-        assertEquals("7", SceneNetwork.PROTOCOL);
+    void versionEightProfileIdsRemainExplicitAndBounded() {
+        assertEquals("8", SceneNetwork.PROTOCOL);
         assertEquals(0, SceneProfile.ECHO_01.wireId());
         assertEquals(1, SceneProfile.THRESHOLD_01.wireId());
         assertEquals(2, SceneProfile.MOTION_ECHO_01.wireId());

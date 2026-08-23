@@ -1,8 +1,13 @@
 package io.github.mizar107.zapegruntime.network;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.mizar107.zapegruntime.scene.CancelReason;
+import io.github.mizar107.zapegruntime.scene.OsEffect;
+import io.github.mizar107.zapegruntime.scene.OsEffectOutcome;
+import io.github.mizar107.zapegruntime.scene.OsEffectReason;
+import io.github.mizar107.zapegruntime.scene.OsScareReport;
 import io.github.mizar107.zapegruntime.scene.SceneAck;
 import io.github.mizar107.zapegruntime.scene.SceneDescriptor;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
@@ -62,5 +67,31 @@ class ScenePacketTest {
                 new SceneCancelS2C(eventId, CancelReason.OPERATOR),
                 SceneCancelS2C.decode(cancelBuffer));
         cancelBuffer.release();
+    }
+
+    @Test
+    void osScareStatusPacketRoundTripsEveryBoundedOutcome() {
+        UUID eventId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        OsScareReport report = new OsScareReport(
+                OsEffectOutcome.applied(OsEffect.WINDOW_TITLE),
+                OsEffectOutcome.unsupported(
+                        OsEffect.WINDOW_MOTION, OsEffectReason.FULLSCREEN),
+                OsEffectOutcome.failed(
+                        OsEffect.EXTERNAL_POPUP, OsEffectReason.ASSET_INVALID),
+                OsEffectOutcome.disabled(
+                        OsEffect.TASKBAR, OsEffectReason.EFFECT_DISABLED));
+        OsScareStatusC2S message = new OsScareStatusC2S(eventId, targetId, 4, report);
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            OsScareStatusC2S.encode(message, buffer);
+            assertEquals(message, OsScareStatusC2S.decode(buffer));
+        } finally {
+            buffer.release();
+        }
+        assertThrows(IllegalArgumentException.class, () -> new OsScareStatusC2S(
+                eventId, targetId, -1, report));
+        assertThrows(IllegalArgumentException.class, () -> new OsScareStatusC2S(
+                eventId, targetId, OsScareStatusC2S.MAX_SEQUENCE + 1, report));
     }
 }

@@ -6,10 +6,11 @@ faults without registering or saving a Minecraft entity.
 
 ## v0.4 boundaries
 
-- exact-match protocol `7`; mixed v0.3.x (protocol 6) clients fail the
-  handshake. v7 adds `rift_01` at wire ID 13 and lets the existing descriptor
-  `stage` field select haunt/rift beats. A v6 client would reject a non-colossus
-  stage (or unknown id 13) mid-session, so the mismatch is refused up front.
+- exact-match protocol `8`; mixed protocol 7 clients fail the handshake. v8
+  adds a fixed four-effect visitation status packet. `RECEIVED` means only
+  that the scene arrived; visitation never emits generic `VISIBLE`. Title,
+  motion, popup and taskbar outcomes are reported independently as ready,
+  pending, applied, disabled, unsupported or failed with bounded reason codes.
 
 ## v0.3 boundaries
 
@@ -110,7 +111,7 @@ Profiles are deliberately distinct and bounded:
   HUD overlays and holds two oversized ember eyes on a 70-tick breathe.
   Never gaze-resolved. Public aliases (`light-fault`, `chroma-break`,
   `eclipse`, `unmoor`, `witness`) map onto these stages;
-- `visitation_01`: the OS-level scare. Nothing renders in-game; instead the
+- `visitation_01`: the optional OS-level scare. Nothing renders in-game; instead the
   client briefly steps outside the game window. A borderless always-on-top
   window shows a bundled image (shipped at a deliberately boring asset path)
   for a faded blink of well under two seconds; the game window title
@@ -120,9 +121,11 @@ Profiles are deliberately distinct and bounded:
   window's own taskbar button, so it works even with the face popup opted
   out). Everything restores exactly: the true title and geometry always come
   back, an early cancel or logout disposes a shown popup immediately, the
-  popup never steals keyboard or mouse focus, nothing persists, and the
-  layer fails silent on headless or unsupported platforms. The face popup
-  and taskbar flash are Windows-only (skipped silently elsewhere — a macOS
+  popup never steals keyboard or mouse focus, and nothing persists. The
+  layer preflights its bundled PNG at client setup and reports every effect
+  through fixed non-sensitive status/reason enums; the popup is `applied`
+  only after the Swing EDT confirms its window is actually showing. The face popup
+  and taskbar flash are Windows-only (reported unsupported elsewhere — a macOS
   AWT init under GLFW can hang the JVM); the title and window-pulse beats
   are plain GLFW and run everywhere. The scene never resolves by gaze and
   the game screen itself stays clean.
@@ -197,6 +200,7 @@ Permission-level-2 in-game operators and authenticated RCON may use:
 
 ```text
 /zapegscene status
+/zapegscene diagnose <online-player>
 /zapegscene rehearse <online-player> [profile] [stage]
 /zapegscene trigger <online-player> <event-uuid> <profile> [ttl-ticks] [hint-x hint-z]
 /zapegscene trigger <online-player> <event-uuid> colossus_01 stage <0-4> [ttl-ticks]
@@ -225,6 +229,13 @@ target. The current slice still allows one global scene and logs every
 operator dispatch. Command blocks and functions cannot invoke the command
 tree.
 
+`diagnose` reports protocol, active/last visitation event and the four latest
+client outcomes. Example: `title=applied motion=unsupported:fullscreen
+popup=failed:asset_invalid taskbar=disabled:effect_disabled`. It exposes no
+paths, exception text, native handles or monitor names. `status` includes the
+same bounded report while a visitation is active. A normal scene
+acknowledgement is never presented as proof of an OS effect.
+
 See [ROADMAP.md](ROADMAP.md) for the reality-distortion and later combat plan.
 
 ## Development
@@ -233,6 +244,8 @@ See [ROADMAP.md](ROADMAP.md) for the reality-distortion and later combat plan.
 .\gradlew.bat test build
 ```
 
-The release jar is `build/libs/zapeg-runtime-forge-1.20.1-0.4.0.jar`
-(protocol 7 — server, tracked `overrides/mods` jar and both client artifacts
-must all carry this same build).
+The branch artifact remains
+`build/libs/zapeg-runtime-forge-1.20.1-0.4.0.jar`, but release integration must
+bump the mod version. Protocol 8 is wire-incompatible: server, tracked
+`overrides/mods` jar and every client artifact must be replaced atomically
+with the same build.

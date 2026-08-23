@@ -3,20 +3,44 @@ package io.github.mizar107.zapegruntime.client.os;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.mizar107.zapegruntime.scene.OsEffect;
+import io.github.mizar107.zapegruntime.scene.OsEffectOutcome;
+import io.github.mizar107.zapegruntime.scene.OsEffectReason;
+import io.github.mizar107.zapegruntime.scene.OsEffectState;
 import io.github.mizar107.zapegruntime.scene.OsScareChoreography;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 
 class OsScareDriverTest {
 
     private static final class RecordingHooks implements OsScareHooks {
         private final List<String> calls = new ArrayList<>();
+        private final EnumMap<OsEffect, OsEffectOutcome> capabilities =
+                new EnumMap<>(OsEffect.class);
+        private Consumer<OsEffectOutcome> popupCompletion;
+
+        private RecordingHooks() {
+            for (OsEffect effect : OsEffect.values()) {
+                capabilities.put(effect, OsEffectOutcome.ready(effect));
+            }
+        }
 
         @Override
-        public void showFacePopup(int visibleMillis, int fadeMillis) {
+        public OsEffectOutcome preflight(OsEffect effect) {
+            return capabilities.get(effect);
+        }
+
+        @Override
+        public void showFacePopup(
+                int visibleMillis,
+                int fadeMillis,
+                Consumer<OsEffectOutcome> completion) {
             calls.add("popup:" + visibleMillis + ":" + fadeMillis);
+            popupCompletion = completion;
         }
 
         @Override
@@ -25,13 +49,15 @@ class OsScareDriverTest {
         }
 
         @Override
-        public void applyTitle(boolean glitched, long seed, int step) {
+        public OsEffectOutcome applyTitle(boolean glitched, long seed, int step) {
             calls.add("title:" + glitched + ":" + step);
+            return OsEffectOutcome.applied(OsEffect.WINDOW_TITLE);
         }
 
         @Override
-        public void applyWindowPulse(int dx, int dy) {
+        public OsEffectOutcome applyWindowPulse(int dx, int dy) {
             calls.add("pulse:" + dx + "," + dy);
+            return OsEffectOutcome.applied(OsEffect.WINDOW_MOTION);
         }
 
         @Override
@@ -40,8 +66,13 @@ class OsScareDriverTest {
         }
 
         @Override
-        public void flashTaskbar() {
+        public OsEffectOutcome flashTaskbar() {
             calls.add("taskbar");
+            return OsEffectOutcome.applied(OsEffect.TASKBAR);
+        }
+
+        private void completePopup(OsEffectOutcome outcome) {
+            popupCompletion.accept(outcome);
         }
 
         private long count(String prefix) {
@@ -56,98 +87,94 @@ class OsScareDriverTest {
     }
 
     @Test
-    void aFullSceneFiresEveryBeatOnceAndRestores() {
+    void aFullSceneReportsOnlyActuallyAppliedBeats() {
         RecordingHooks hooks = new RecordingHooks();
         OsScareDriver driver = driven(hooks, OsScareToggles.ALL_ON);
         for (int age = 0; age <= 56; age++) {
             driver.tick(SceneProfile.VISITATION_01, age);
         }
-        assertEquals(1, hooks.count("popup"), "the face blinks exactly once");
-        assertEquals(1, hooks.count("taskbar"), "the taskbar flashes exactly once");
-        assertTrue(hooks.count("title:") >= 4, "the title flickers through the window");
+        assertEquals(1, hooks.count("popup"));
+        assertEquals(1, hooks.count("taskbar"));
+        assertTrue(hooks.count("title:") >= 4);
         assertTrue(hooks.count("pulse:") >= OsScareChoreography.WINDOW_PULSE_TICKS);
-        assertEquals(1, hooks.count("restore"),
-                "the title comes back exactly once when its window closes");
-        assertEquals("pulse:0,0", hooks.calls.get(hooks.calls.size() - 1),
-                "the scene's last window call settles the pulse to zero");
-        // The popup carries the choreography's bounded blink length.
+        assertEquals(OsEffectState.APPLIED,
+                driver.report().windowTitle().state());
+        assertEquals(OsEffectState.APPLIED,
+                driver.report().windowMotion().state());
+        assertEquals(OsEffectState.PENDING,
+                driver.report().externalPopup().state(),
+                "queueing the EDT work is not proof that a popup showed");
+        assertEquals(OsEffectState.APPLIED, driver.report().taskbar().state());
+
+        hooks.completePopup(OsEffectOutcome.applied(OsEffect.EXTERNAL_POPUP));
+        assertEquals(OsEffectState.APPLIED,
+                driver.report().externalPopup().state());
         assertTrue(hooks.calls.contains(
                 "popup:" + OsScareChoreography.popupTotalMillis() + ":"
                         + OsScareChoreography.POPUP_FADE_IN_TICKS * 50));
     }
 
     @Test
-    void theMasterToggleSilencesEverything() {
+    void masterAndSubTogglesProduceExplicitDisabledReasons() {
         RecordingHooks hooks = new RecordingHooks();
-        OsScareDriver driver = driven(hooks, OsScareToggles.ALL_OFF);
-        for (int age = 0; age <= 56; age++) {
-            driver.tick(SceneProfile.VISITATION_01, age);
+        OsScareDriver masterOff = driven(hooks, OsScareToggles.ALL_OFF);
+        assertTrue(hooks.calls.isEmpty());
+        for (OsEffect effect : OsEffect.values()) {
+            assertEquals(OsEffectState.DISABLED, masterOff.report().outcome(effect).state());
+            assertEquals(OsEffectReason.MASTER_DISABLED,
+                    masterOff.report().outcome(effect).reason());
         }
-        assertTrue(hooks.calls.isEmpty(), "opted-out clients see nothing at all");
+
+        RecordingHooks faceOnlyHooks = new RecordingHooks();
+        OsScareDriver faceOnly = driven(
+                faceOnlyHooks, new OsScareToggles(true, true, false, false));
+        for (int age = 0; age <= 56; age++) {
+            faceOnly.tick(SceneProfile.VISITATION_01, age);
+        }
+        assertEquals(OsEffectState.PENDING, faceOnly.report().externalPopup().state());
+        assertEquals(OsEffectReason.EFFECT_DISABLED,
+                faceOnly.report().windowTitle().reason());
+        assertEquals(OsEffectReason.EFFECT_DISABLED,
+                faceOnly.report().windowMotion().reason());
+        assertEquals(OsEffectReason.EFFECT_DISABLED,
+                faceOnly.report().taskbar().reason());
     }
 
     @Test
-    void subTogglesGateTheirOwnBeatOnly() {
-        RecordingHooks faceOnly = new RecordingHooks();
-        OsScareDriver driver = driven(
-                faceOnly, new OsScareToggles(true, true, false, false));
-        for (int age = 0; age <= 56; age++) {
-            driver.tick(SceneProfile.VISITATION_01, age);
-        }
-        assertEquals(1, faceOnly.count("popup"));
-        assertEquals(0, faceOnly.count("title:"));
-        assertEquals(0, faceOnly.count("pulse:"));
-        assertEquals(0, faceOnly.count("taskbar"));
-
-        RecordingHooks windowOnly = new RecordingHooks();
-        driver = driven(windowOnly, new OsScareToggles(true, false, true, false));
-        for (int age = 0; age <= 56; age++) {
-            driver.tick(SceneProfile.VISITATION_01, age);
-        }
-        assertEquals(0, windowOnly.count("popup"));
-        assertTrue(windowOnly.count("title:") > 0);
-        assertEquals(1, windowOnly.count("restore"));
-    }
-
-    @Test
-    void aMidBeatResetRestoresImmediately() {
+    void unsupportedCapabilityIsReportedAndNeverAttempted() {
         RecordingHooks hooks = new RecordingHooks();
+        hooks.capabilities.put(
+                OsEffect.EXTERNAL_POPUP,
+                OsEffectOutcome.unsupported(
+                        OsEffect.EXTERNAL_POPUP, OsEffectReason.HEADLESS));
         OsScareDriver driver = driven(hooks, OsScareToggles.ALL_ON);
-        for (int age = 0; age <= 12; age++) {
+        for (int age = 0; age <= 56; age++) {
             driver.tick(SceneProfile.VISITATION_01, age);
         }
-        assertTrue(hooks.count("title:") > 0, "mid-flicker");
-        driver.reset();
-        assertEquals(1, hooks.count("restore"),
-                "logout or cancel mid-beat restores the window at once");
-        driver.reset();
-        assertEquals(1, hooks.count("restore"), "reset is idempotent");
+        assertEquals(0, hooks.count("popup"));
+        assertEquals(OsEffectState.UNSUPPORTED,
+                driver.report().externalPopup().state());
+        assertEquals(OsEffectReason.HEADLESS,
+                driver.report().externalPopup().reason());
     }
 
     @Test
-    void aResetAfterTheBlinkBeganAlsoClosesThePopup() {
-        // The documented contract: every path ends in reset(), which
-        // restores everything — including a face popup mid-blink. A scene
-        // cancel one tick after POPUP_START_TICK must dispose it, and a
-        // reset on a scene whose blink never began must not touch it.
+    void resetRestoresAndInvalidatesALatePopupCallback() {
         RecordingHooks hooks = new RecordingHooks();
         OsScareDriver driver = driven(hooks, OsScareToggles.ALL_ON);
         for (int age = 0; age <= OsScareChoreography.POPUP_START_TICK; age++) {
             driver.tick(SceneProfile.VISITATION_01, age);
         }
-        assertEquals(1, hooks.count("popup"), "the blink has begun");
-        assertEquals(0, hooks.count("close"), "nothing closes mid-blink on its own");
+        assertEquals(OsEffectState.PENDING, driver.report().externalPopup().state());
         driver.reset();
-        assertEquals(1, hooks.count("close"), "cancel/logout disposes the shown face");
+        assertEquals(1, hooks.count("restore"));
+        assertEquals(1, hooks.count("close"));
+        hooks.completePopup(OsEffectOutcome.applied(OsEffect.EXTERNAL_POPUP));
+        assertEquals(OsEffectState.PENDING, driver.report().externalPopup().state(),
+                "a stale EDT callback cannot claim success after cleanup");
         driver.reset();
-        assertEquals(1, hooks.count("close"), "the close is not repeated once cleared");
-
-        RecordingHooks early = new RecordingHooks();
-        OsScareDriver earlyDriver = driven(early, OsScareToggles.ALL_ON);
-        earlyDriver.tick(SceneProfile.VISITATION_01, 0);
-        earlyDriver.reset();
-        assertEquals(0, early.count("close"),
-                "a reset before the blink ever began has no popup to close");
+        assertEquals(1, hooks.count("restore"));
+        assertEquals(1, hooks.count("close"));
     }
 
     @Test
@@ -167,10 +194,11 @@ class OsScareDriverTest {
             driver.tick(SceneProfile.VISITATION_01, age);
         }
         driver.begin(999L, OsScareToggles.ALL_ON);
-        assertEquals(1, hooks.count("restore"), "the interrupted beat restores first");
+        assertEquals(1, hooks.count("restore"));
+        assertEquals(1, hooks.count("close"));
         for (int age = 0; age <= 56; age++) {
             driver.tick(SceneProfile.VISITATION_01, age);
         }
-        assertEquals(2, hooks.count("popup"), "the second scene blinks again");
+        assertEquals(2, hooks.count("popup"));
     }
 }

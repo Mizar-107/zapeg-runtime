@@ -1,9 +1,17 @@
 package io.github.mizar107.zapegruntime.client.os;
 
+import io.github.mizar107.zapegruntime.ZapeGRuntime;
+import io.github.mizar107.zapegruntime.scene.OsEffect;
+import io.github.mizar107.zapegruntime.scene.OsEffectOutcome;
+import io.github.mizar107.zapegruntime.scene.OsEffectReason;
+import io.github.mizar107.zapegruntime.scene.OsEffectState;
 import io.github.mizar107.zapegruntime.scene.OsScareChoreography;
 import java.awt.GraphicsEnvironment;
 import java.awt.image.BufferedImage;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import javax.imageio.ImageIO;
 import javax.swing.JWindow;
 import javax.swing.SwingUtilities;
@@ -12,30 +20,16 @@ import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.system.MemoryStack;
 
-/**
- * Production {@link OsScareHooks}: a borderless always-on-top Swing blink
- * for the face, and GLFW title/position/attention wrongness for the game
- * window.
- *
- * <p>Threading: GLFW calls happen on the client tick thread (which is the
- * thread Minecraft owns the window on); everything AWT/Swing is handed to
- * the event-dispatch thread with all state precomputed, and the EDT never
- * calls back into Minecraft. The Swing beats are additionally gated by
- * {@link OsScarePlatform} to Windows before any Toolkit class is touched —
- * a macOS AWT init under {@code -XstartOnFirstThread} can hang the JVM,
- * which no catch block contains. Every method fails silent: unsupported
- * platform, headless environment, fullscreen quirks or any toolkit
- * exception simply skips the beat. Nothing steals focus, nothing persists,
- * nothing touches files, the clipboard or the wallpaper.
- */
+/** Production GLFW/Swing hooks with bounded, observable outcomes. */
 final class PlatformOsScare implements OsScareHooks {
 
     static final String FACE_RESOURCE =
             "/assets/zapeg_runtime/textures/misc/calibration_b.png";
     private static final AtomicBoolean POPUP_SHOWING = new AtomicBoolean();
+    private static final Set<String> LOGGED_FAILURES = ConcurrentHashMap.newKeySet();
 
     private static volatile BufferedImage faceImage;
-    private static volatile boolean faceImageFailed;
+    private static volatile OsEffectReason faceImageFailure;
     private static volatile JWindow currentPopup;
 
     private Integer originalX;
@@ -46,61 +40,129 @@ final class PlatformOsScare implements OsScareHooks {
     }
 
     @Override
-    public void showFacePopup(int visibleMillis, int fadeMillis) {
-        // The platform gate must short-circuit first: even the isHeadless
-        // probe belongs to AWT, and no Toolkit class may load off-Windows.
-        if (!OsScarePlatform.popupBeatsAllowed()
-                || GraphicsEnvironment.isHeadless()
-                || !POPUP_SHOWING.compareAndSet(false, true)) {
+    public OsEffectOutcome preflight(OsEffect effect) {
+        return switch (effect) {
+            case WINDOW_TITLE -> windowPreflight(effect, false);
+            case WINDOW_MOTION -> windowPreflight(effect, true);
+            case EXTERNAL_POPUP -> popupPreflight();
+            case TASKBAR -> taskbarPreflight();
+        };
+    }
+
+    private OsEffectOutcome windowPreflight(OsEffect effect, boolean requireWindowed) {
+        try {
+            Minecraft minecraft = Minecraft.getInstance();
+            if (minecraft == null || minecraft.getWindow() == null || windowHandle() == 0L) {
+                return failed(effect, OsEffectReason.WINDOW_UNAVAILABLE);
+            }
+            if (requireWindowed && minecraft.getWindow().isFullscreen()) {
+                return OsEffectOutcome.unsupported(effect, OsEffectReason.FULLSCREEN);
+            }
+            return OsEffectOutcome.ready(effect);
+        } catch (Throwable failure) {
+            return failed(effect, OsEffectReason.GLFW_FAILURE);
+        }
+    }
+
+    private OsEffectOutcome popupPreflight() {
+        if (!OsScarePlatform.popupBeatsAllowed()) {
+            return OsEffectOutcome.unsupported(
+                    OsEffect.EXTERNAL_POPUP, OsEffectReason.PLATFORM_UNSUPPORTED);
+        }
+        try {
+            if (GraphicsEnvironment.isHeadless()) {
+                return OsEffectOutcome.unsupported(
+                        OsEffect.EXTERNAL_POPUP, OsEffectReason.HEADLESS);
+            }
+        } catch (Throwable failure) {
+            return failed(OsEffect.EXTERNAL_POPUP, OsEffectReason.TOOLKIT_FAILURE);
+        }
+        return faceImage() == null
+                ? failed(
+                        OsEffect.EXTERNAL_POPUP,
+                        faceImageFailure == null
+                                ? OsEffectReason.ASSET_INVALID
+                                : faceImageFailure)
+                : OsEffectOutcome.ready(OsEffect.EXTERNAL_POPUP);
+    }
+
+    private OsEffectOutcome taskbarPreflight() {
+        if (!OsScarePlatform.popupBeatsAllowed()) {
+            return OsEffectOutcome.unsupported(
+                    OsEffect.TASKBAR, OsEffectReason.PLATFORM_UNSUPPORTED);
+        }
+        return windowPreflight(OsEffect.TASKBAR, false);
+    }
+
+    @Override
+    public void showFacePopup(
+            int visibleMillis,
+            int fadeMillis,
+            Consumer<OsEffectOutcome> completion) {
+        OsEffectOutcome preflight = popupPreflight();
+        if (preflight.state() != OsEffectState.READY) {
+            complete(completion, preflight);
+            return;
+        }
+        if (!POPUP_SHOWING.compareAndSet(false, true)) {
+            complete(completion, failed(
+                    OsEffect.EXTERNAL_POPUP, OsEffectReason.ALREADY_ACTIVE));
             return;
         }
         try {
-            SwingUtilities.invokeLater(() -> runPopup(visibleMillis, fadeMillis));
-        } catch (Throwable ignored) {
+            SwingUtilities.invokeLater(
+                    () -> runPopup(visibleMillis, fadeMillis, completion));
+        } catch (Throwable failure) {
             POPUP_SHOWING.set(false);
+            complete(completion, failed(
+                    OsEffect.EXTERNAL_POPUP, OsEffectReason.EDT_UNAVAILABLE));
         }
     }
 
     @Override
     public void closePopup() {
-        // POPUP_SHOWING covers both a visible popup and one still queued for
-        // the EDT; when it is clear this returns without touching AWT at
-        // all, so the driver's reset stays free on every platform.
         if (!OsScarePlatform.popupBeatsAllowed() || !POPUP_SHOWING.get()) {
             return;
         }
         try {
-            // The EDT queue is ordered: a dispose queued after runPopup
-            // always finds the window it has to close.
             SwingUtilities.invokeLater(PlatformOsScare::disposePopup);
-        } catch (Throwable ignored) {
-            // No toolkit, nothing shown, nothing to close.
+        } catch (Throwable failure) {
+            logFailure(OsEffect.EXTERNAL_POPUP, OsEffectReason.EDT_UNAVAILABLE);
+            POPUP_SHOWING.set(false);
         }
     }
 
-    /** EDT-only: drop the popup right now; the fade timer notices and stops. */
     private static void disposePopup() {
+        JWindow popup = currentPopup;
+        currentPopup = null;
         try {
-            JWindow popup = currentPopup;
-            currentPopup = null;
-            if (popup != null) {
+            if (popup != null && popup.isDisplayable()) {
                 popup.dispose();
             }
-        } catch (Throwable ignored) {
-            // Disposal is best-effort; the window dies with the process.
+        } catch (Throwable failure) {
+            logFailure(OsEffect.EXTERNAL_POPUP, OsEffectReason.TOOLKIT_FAILURE);
         } finally {
             POPUP_SHOWING.set(false);
         }
     }
 
-    private static void runPopup(int visibleMillis, int fadeMillis) {
+    private static void runPopup(
+            int visibleMillis,
+            int fadeMillis,
+            Consumer<OsEffectOutcome> completion) {
+        JWindow window = null;
         try {
             BufferedImage image = faceImage();
             if (image == null) {
                 POPUP_SHOWING.set(false);
+                complete(completion, failed(
+                        OsEffect.EXTERNAL_POPUP,
+                        faceImageFailure == null
+                                ? OsEffectReason.ASSET_INVALID
+                                : faceImageFailure));
                 return;
             }
-            JWindow window = new JWindow();
+            window = new JWindow();
             window.setFocusableWindowState(false);
             window.setAlwaysOnTop(true);
             window.setBackground(new java.awt.Color(0, 0, 0, 0));
@@ -119,37 +181,44 @@ final class PlatformOsScare implements OsScareHooks {
             }
             currentPopup = window;
             window.setVisible(true);
+            if (!window.isShowing()) {
+                finishPopup(window);
+                complete(completion, failed(
+                        OsEffect.EXTERNAL_POPUP, OsEffectReason.POPUP_NOT_SHOWING));
+                return;
+            }
+            // This is the only path allowed to claim that the popup applied.
+            complete(completion, OsEffectOutcome.applied(OsEffect.EXTERNAL_POPUP));
             startFade(window, visibleMillis, fadeMillis, opacitySupported);
-        } catch (Throwable ignored) {
-            POPUP_SHOWING.set(false);
+        } catch (Throwable failure) {
+            if (window != null) {
+                finishPopup(window);
+            } else {
+                currentPopup = null;
+                POPUP_SHOWING.set(false);
+            }
+            complete(completion, failed(
+                    OsEffect.EXTERNAL_POPUP, OsEffectReason.TOOLKIT_FAILURE));
         }
     }
 
-    /** Fade in, hold, fade out, dispose — all on the EDT, never touching
-     *  Minecraft state. Without per-window opacity the blink degrades to a
-     *  plain hold-and-dispose. */
     private static void startFade(
             JWindow window, int visibleMillis, int fadeMillis, boolean opacitySupported) {
         long started = System.nanoTime();
-        boolean[] failed = {false};
         Timer timer = new Timer(40, null);
-        boolean fade = opacitySupported;
         timer.addActionListener(event -> {
             try {
                 if (!window.isDisplayable()) {
-                    // Closed early by a scene reset: nothing left to fade.
                     timer.stop();
                     return;
                 }
                 long elapsedMillis = (System.nanoTime() - started) / 1_000_000L;
                 if (elapsedMillis >= visibleMillis) {
                     timer.stop();
-                    window.dispose();
-                    currentPopup = null;
-                    POPUP_SHOWING.set(false);
+                    finishPopup(window);
                     return;
                 }
-                if (fade) {
+                if (opacitySupported) {
                     float opacity;
                     if (elapsedMillis < fadeMillis) {
                         opacity = OsScareChoreography.POPUP_PEAK_OPACITY
@@ -162,95 +231,107 @@ final class PlatformOsScare implements OsScareHooks {
                     }
                     window.setOpacity(Math.max(0.0F, Math.min(1.0F, opacity)));
                 }
-            } catch (Throwable ignored) {
-                failed[0] = true;
+            } catch (Throwable failure) {
+                logFailure(OsEffect.EXTERNAL_POPUP, OsEffectReason.TOOLKIT_FAILURE);
                 timer.stop();
-                window.dispose();
-                currentPopup = null;
-                POPUP_SHOWING.set(false);
+                finishPopup(window);
             }
         });
         timer.setRepeats(true);
         timer.start();
     }
 
-    private static BufferedImage faceImage() {
-        if (faceImageFailed) {
-            return null;
+    /** EDT-only bounded cleanup; state clears even when native disposal fails. */
+    private static void finishPopup(JWindow window) {
+        try {
+            if (window.isDisplayable()) {
+                window.dispose();
+            }
+        } catch (Throwable failure) {
+            logFailure(OsEffect.EXTERNAL_POPUP, OsEffectReason.TOOLKIT_FAILURE);
+        } finally {
+            if (currentPopup == window) {
+                currentPopup = null;
+            }
+            POPUP_SHOWING.set(false);
         }
+    }
+
+    private static BufferedImage faceImage() {
         BufferedImage image = faceImage;
-        if (image == null) {
-            synchronized (PlatformOsScare.class) {
-                if (faceImage == null && !faceImageFailed) {
+        if (image != null || faceImageFailure != null) {
+            return image;
+        }
+        synchronized (PlatformOsScare.class) {
+            if (faceImage == null && faceImageFailure == null) {
+                try (var stream = PlatformOsScare.class.getResourceAsStream(FACE_RESOURCE)) {
+                    PngAssetValidator.Validation validation = PngAssetValidator.validate(stream);
+                    if (!validation.valid()) {
+                        faceImageFailure = validation.reason();
+                    }
+                } catch (Throwable invalid) {
+                    faceImageFailure = OsEffectReason.ASSET_INVALID;
+                }
+                if (faceImageFailure == null) {
                     try (var stream = PlatformOsScare.class.getResourceAsStream(FACE_RESOURCE)) {
-                        if (stream == null) {
-                            faceImageFailed = true;
-                        } else {
-                            faceImage = ImageIO.read(stream);
+                        faceImage = ImageIO.read(stream);
+                        if (faceImage == null) {
+                            faceImageFailure = OsEffectReason.ASSET_INVALID;
                         }
-                    } catch (Throwable ignored) {
-                        faceImageFailed = true;
+                    } catch (Throwable invalid) {
+                        faceImageFailure = OsEffectReason.ASSET_INVALID;
                     }
                 }
-                image = faceImage;
             }
+            return faceImage;
         }
-        return image;
     }
 
     @Override
-    public void flashTaskbar() {
-        // GLFW flashes the game window's own taskbar button, so the beat no
-        // longer depends on the face popup existing (facePopup=false keeps
-        // the flash) and touches no AWT at all. Still gated to Windows: the
-        // suite is rehearsed there, and elsewhere it silently skips.
-        if (!OsScarePlatform.popupBeatsAllowed()) {
-            return;
+    public OsEffectOutcome flashTaskbar() {
+        OsEffectOutcome preflight = taskbarPreflight();
+        if (preflight.state() != OsEffectState.READY) {
+            return preflight;
         }
         try {
-            long handle = windowHandle();
-            if (handle != 0L) {
-                GLFW.glfwRequestWindowAttention(handle);
-            }
-        } catch (Throwable ignored) {
-            // Attention flash is a best-effort beat.
+            GLFW.glfwRequestWindowAttention(windowHandle());
+            return OsEffectOutcome.applied(OsEffect.TASKBAR);
+        } catch (Throwable failure) {
+            return failed(OsEffect.TASKBAR, OsEffectReason.GLFW_FAILURE);
         }
     }
 
     @Override
-    public void applyTitle(boolean glitched, long seed, int step) {
+    public OsEffectOutcome applyTitle(boolean glitched, long seed, int step) {
+        OsEffectOutcome preflight = windowPreflight(OsEffect.WINDOW_TITLE, false);
+        if (preflight.state() != OsEffectState.READY) {
+            return preflight;
+        }
         try {
             Minecraft minecraft = Minecraft.getInstance();
-            if (minecraft == null || minecraft.getWindow() == null) {
-                return;
-            }
             if (glitched) {
                 minecraft.getWindow().setTitle(OsScareChoreography.glitchedTitle(seed, step));
             } else {
                 restoreTitle(minecraft);
             }
-        } catch (Throwable ignored) {
-            // A title beat that cannot apply simply does not happen.
+            return OsEffectOutcome.applied(OsEffect.WINDOW_TITLE);
+        } catch (Throwable failure) {
+            return failed(OsEffect.WINDOW_TITLE, OsEffectReason.GLFW_FAILURE);
         }
     }
 
-    /** GLFW has no title getter, so the current title cannot be captured for
-     *  later restore. Instead the restore recomputes exactly what the game
-     *  itself would show right now — the same call Minecraft makes on
-     *  language and state changes — which is the exact original title for
-     *  any client whose title is the vanilla one. */
     private static void restoreTitle(Minecraft minecraft) {
         minecraft.updateTitle();
     }
 
     @Override
-    public void applyWindowPulse(int dx, int dy) {
+    public OsEffectOutcome applyWindowPulse(int dx, int dy) {
+        OsEffectOutcome preflight = windowPreflight(OsEffect.WINDOW_MOTION, true);
+        if (preflight.state() != OsEffectState.READY) {
+            return preflight;
+        }
         try {
-            Minecraft minecraft = Minecraft.getInstance();
             long handle = windowHandle();
-            if (handle == 0L || minecraft.getWindow().isFullscreen()) {
-                return;
-            }
             if (originalX == null) {
                 try (MemoryStack stack = MemoryStack.stackPush()) {
                     var xBuffer = stack.mallocInt(1);
@@ -260,9 +341,20 @@ final class PlatformOsScare implements OsScareHooks {
                     originalY = yBuffer.get(0);
                 }
             }
-            GLFW.glfwSetWindowPos(handle, originalX + dx, originalY + dy);
-        } catch (Throwable ignored) {
-            // A window pulse that cannot apply simply does not happen.
+            int expectedX = originalX + dx;
+            int expectedY = originalY + dy;
+            GLFW.glfwSetWindowPos(handle, expectedX, expectedY);
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                var xBuffer = stack.mallocInt(1);
+                var yBuffer = stack.mallocInt(1);
+                GLFW.glfwGetWindowPos(handle, xBuffer, yBuffer);
+                if (xBuffer.get(0) != expectedX || yBuffer.get(0) != expectedY) {
+                    return failed(OsEffect.WINDOW_MOTION, OsEffectReason.GLFW_FAILURE);
+                }
+            }
+            return OsEffectOutcome.applied(OsEffect.WINDOW_MOTION);
+        } catch (Throwable failure) {
+            return failed(OsEffect.WINDOW_MOTION, OsEffectReason.GLFW_FAILURE);
         }
     }
 
@@ -273,13 +365,16 @@ final class PlatformOsScare implements OsScareHooks {
             if (minecraft != null && minecraft.getWindow() != null) {
                 restoreTitle(minecraft);
             }
+        } catch (Throwable failure) {
+            logFailure(OsEffect.WINDOW_TITLE, OsEffectReason.GLFW_FAILURE);
+        }
+        try {
             long handle = windowHandle();
             if (handle != 0L && originalX != null && originalY != null) {
                 GLFW.glfwSetWindowPos(handle, originalX, originalY);
             }
-        } catch (Throwable ignored) {
-            // Restore is best-effort; the offsets are tiny and the title is
-            // rewritten by the game on major state changes anyway.
+        } catch (Throwable failure) {
+            logFailure(OsEffect.WINDOW_MOTION, OsEffectReason.GLFW_FAILURE);
         } finally {
             originalX = null;
             originalY = null;
@@ -292,8 +387,32 @@ final class PlatformOsScare implements OsScareHooks {
             return minecraft == null || minecraft.getWindow() == null
                     ? 0L
                     : minecraft.getWindow().getWindow();
-        } catch (Throwable ignored) {
+        } catch (Throwable failure) {
             return 0L;
+        }
+    }
+
+    private static OsEffectOutcome failed(OsEffect effect, OsEffectReason reason) {
+        logFailure(effect, reason);
+        return OsEffectOutcome.failed(effect, reason);
+    }
+
+    private static void logFailure(OsEffect effect, OsEffectReason reason) {
+        String key = effect.serializedName() + ":" + reason.serializedName();
+        if (LOGGED_FAILURES.add(key)) {
+            ZapeGRuntime.LOGGER.warn(
+                    "OS effect outcome effect={} state=failed reason={}",
+                    effect.serializedName(),
+                    reason.serializedName());
+        }
+    }
+
+    private static void complete(
+            Consumer<OsEffectOutcome> completion, OsEffectOutcome outcome) {
+        try {
+            completion.accept(outcome);
+        } catch (Throwable ignored) {
+            // Reporting cannot be allowed to strand an already-created popup.
         }
     }
 }

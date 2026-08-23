@@ -8,6 +8,7 @@ import io.github.mizar107.zapegruntime.scene.ColossusChoreography;
 import io.github.mizar107.zapegruntime.scene.GazePull;
 import io.github.mizar107.zapegruntime.scene.HauntChoreography;
 import io.github.mizar107.zapegruntime.scene.MotionHistory;
+import io.github.mizar107.zapegruntime.scene.OsScareReport;
 import io.github.mizar107.zapegruntime.scene.PendingSceneHold;
 import io.github.mizar107.zapegruntime.scene.PresentedGazeTracker;
 import io.github.mizar107.zapegruntime.scene.RiftChoreography;
@@ -28,7 +29,8 @@ import net.minecraftforge.client.event.RenderLevelStageEvent;
 
 /**
  * Owns the target client's transient scene state. Nothing here is persisted, and no
- * camera or gaze data is sent to the server beyond a bounded acknowledgement enum.
+ * camera or gaze data is sent to the server. The only client diagnostics are
+ * bounded acknowledgements and the four fixed visitation effect outcomes.
  *
  * <p>Every scene runs PRELUDE (ambience dip only, nothing shown) → BODY (the
  * profile's actual content) → ENCORE (a silent gap and one final beat for
@@ -117,6 +119,8 @@ public final class ClientSceneManager {
         private int nextColossusHeartbeatTick;
         private boolean colossusVanishRumbled;
         private boolean visitationBegun;
+        private OsScareReport lastOsScareReport;
+        private int osScareStatusSequence;
         private long gazeStartedNanos;
         private float gazeProgress;
         private MotionSample delayedMotionSample;
@@ -217,6 +221,9 @@ public final class ClientSceneManager {
         ActiveScene current = active;
         if (current != null && current.descriptor.eventId().equals(eventId)) {
             current.clearMotion();
+            if (current.descriptor.profile() == SceneProfile.VISITATION_01) {
+                OsScareDriver.instance().reset();
+            }
             active = null;
         }
     }
@@ -390,6 +397,15 @@ public final class ClientSceneManager {
         driver.tick(
                 SceneProfile.VISITATION_01,
                 current.ageTicks - current.descriptor.profile().preludeTicks());
+        OsScareReport report = driver.report();
+        if (!report.equals(current.lastOsScareReport)) {
+            SceneNetwork.reportOsScare(
+                    current.descriptor.eventId(),
+                    current.descriptor.targetId(),
+                    current.osScareStatusSequence++,
+                    report);
+            current.lastOsScareReport = report;
+        }
     }
 
     /**
@@ -583,10 +599,12 @@ public final class ClientSceneManager {
             resetGaze(current);
             return null;
         }
-        if (current.descriptor.profile() == SceneProfile.FOOTSTEPS_01
-                || current.descriptor.profile() == SceneProfile.WHISPER_STEPS_01) {
-            // Sound-only: nothing to render and no gaze to measure; tick()
-            // owns the lifecycle and the VISIBLE acknowledgement.
+        if (!usesRenderObservation(current.descriptor.profile())) {
+            // Sound-only profiles have no render observation. Visitation is
+            // deliberately here too: its separate effect-status packet is the
+            // only evidence of OS presentation, so it can never emit the
+            // generic VISIBLE acknowledgement merely because its anchor was
+            // inside the frustum.
             return null;
         }
         if (current.descriptor.profile() == SceneProfile.SKY_MARK_01) {
@@ -1272,6 +1290,13 @@ public final class ClientSceneManager {
         return active != null;
     }
 
+    /** Pure policy seam: visitation can never gain VISIBLE from a render pass. */
+    static boolean usesRenderObservation(SceneProfile profile) {
+        return profile != SceneProfile.FOOTSTEPS_01
+                && profile != SceneProfile.WHISPER_STEPS_01
+                && profile != SceneProfile.VISITATION_01;
+    }
+
     private static double bodyAge(ActiveScene current, float partialTick) {
         return Math.max(
                 0.0D,
@@ -1366,6 +1391,9 @@ public final class ClientSceneManager {
             return;
         }
         current.clearMotion();
+        if (current.descriptor.profile() == SceneProfile.VISITATION_01) {
+            OsScareDriver.instance().reset();
+        }
         active = null;
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player != null
