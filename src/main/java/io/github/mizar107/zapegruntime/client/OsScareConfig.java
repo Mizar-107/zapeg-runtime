@@ -4,11 +4,10 @@ import io.github.mizar107.zapegruntime.client.os.OsScareToggles;
 import net.minecraftforge.common.ForgeConfigSpec;
 
 /**
- * Client-side opt-out for the OS-level scare layer (the visitation_01
- * profile). All toggles default on for the friends-only server; any player
- * can disable any beat locally in {@code zapeg_runtime-client.toml} without
- * affecting anyone else. If the config is not loaded yet the beats default
- * to on, matching the shipped defaults.
+ * Explicit client-side opt-in for external OS effects in the visitation_01
+ * profile. The master switch defaults off; sub-toggles describe which beats
+ * become eligible only after the player enables that master switch. Missing,
+ * unloaded or unreadable configuration always fails closed.
  */
 public final class OsScareConfig {
 
@@ -27,8 +26,8 @@ public final class OsScareConfig {
                         "Master switch for the OS-level scare layer: the brief",
                         "face blink outside the game window, the wrong window",
                         "title, the small window pulse and the taskbar flash.",
-                        "When false, visitation scenes do nothing on this client.")
-                .define("enabled", true);
+                        "Defaults false: external OS effects require explicit opt-in.")
+                .define("enabled", false);
         FACE_POPUP = builder
                 .comment("The brief borderless always-on-top face blink.")
                 .define("facePopup", true);
@@ -47,12 +46,12 @@ public final class OsScareConfig {
     public static OsScareToggles toggles() {
         try {
             if (!SPEC.isLoaded()) {
-                return OsScareToggles.ALL_ON;
+                return OsScareToggles.ALL_OFF;
             }
             return new OsScareToggles(
                     MASTER.get(), FACE_POPUP.get(), WINDOW_WRONGNESS.get(), TASKBAR_FLASH.get());
         } catch (Throwable notLoadedYet) {
-            return OsScareToggles.ALL_ON;
+            return OsScareToggles.ALL_OFF;
         }
     }
 }

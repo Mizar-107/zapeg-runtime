@@ -405,7 +405,7 @@ public final class ClientSceneManager {
     /**
      * The visitation renders nothing in the world; its body ticks drive the
      * OS-level beats (face blink, wrong title, window pulse, taskbar flash)
-     * through the driver, gated by the client's own opt-out config.
+     * through the driver, gated by the client's explicit opt-in config.
      */
     private static void tickVisitation(ActiveScene current) {
         OsScareDriver driver = OsScareDriver.instance();
@@ -1160,7 +1160,7 @@ public final class ClientSceneManager {
             return releasePull();
         }
         if (!usesInGamePresentation(current.descriptor.profile())) {
-            // OS opt-out means literally no in-game residue, including a
+            // This profile has no in-game presentation in Batch 1, including a
             // decaying gaze offset inherited from an immediately prior scene.
             pullYawOffset = 0.0F;
             pullPitchOffset = 0.0F;

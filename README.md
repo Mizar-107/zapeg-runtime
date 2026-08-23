@@ -138,8 +138,8 @@ Profiles are deliberately distinct and bounded:
   HUD overlays and holds two oversized ember eyes on a 70-tick breathe.
   Never gaze-resolved. Public aliases (`light-fault`, `chroma-break`,
   `eclipse`, `unmoor`, `witness`) map onto these stages;
-- `visitation_01`: the optional OS-level scare. Nothing renders in-game; instead the
-  client briefly steps outside the game window. A borderless always-on-top
+- `visitation_01`: the optional, default-off OS-level scare. Nothing renders
+  in-game; instead the client briefly steps outside the game window. A borderless always-on-top
   window shows a bundled image (shipped at a deliberately boring asset path)
   for a faded blink of well under two seconds; the game window title
   momentarily reads as glitched block glyphs — never letters, words or a
@@ -150,8 +150,8 @@ Profiles are deliberately distinct and bounded:
   the captured origin, while a failed restore retains it for retry and is
   reported instead of silently discarded. Early cancel or logout requests
   popup disposal, the popup never steals keyboard or mouse focus, and no
-  state is persisted. The layer preflights its bundled PNG at client setup
-  and reports every effect through fixed non-sensitive status/reason enums.
+  state is persisted. When opted in, the layer preflights its bundled PNG at
+  client setup and reports every effect through fixed non-sensitive status/reason enums.
   The popup is `applied` only after the Swing EDT confirms it is showing with
   nonzero opacity (or showing in the opaque mode); window motion is `applied`
   only after position readback. GLFW's void title and taskbar calls remain
@@ -214,15 +214,16 @@ Discord behavior remain server-side in the Heraldor Director.
 
 ## Client configuration
 
-The OS-level scare layer (`visitation_01`) is governed by a per-client config
-at `config/zapeg_runtime-client.toml`, so any player can opt out locally
-without affecting anyone else. All toggles default to `true` on this
-friends-only server:
+The external OS-effect layer (`visitation_01`) is governed by a per-client
+config at `config/zapeg_runtime-client.toml`. Its master switch defaults to
+`false`: each player must explicitly opt in locally. Sub-toggles default to
+`true`, but have no effect while the master switch is off. Missing, unloaded
+or unreadable config also means off.
 
 ```toml
 [osScares]
-# Master switch; when false, visitation scenes do nothing on this client.
-enabled = true
+# Master switch; external OS effects require explicit opt-in.
+enabled = false
 # The brief borderless always-on-top face blink.
 facePopup = true
 # The glitched window title and the small window pulse.

@@ -65,6 +65,20 @@ final class PlatformOsScare implements OsScareHooks {
         }
     }
 
+    private record PopupPreparation(
+            CapabilityResult capability,
+            PopupPlacementPolicy.Rect minecraftWindow) {
+        static PopupPreparation ready(PopupPlacementPolicy.Rect minecraftWindow) {
+            return new PopupPreparation(
+                    new CapabilityResult(OsCapabilityState.READY, OsEffectReason.NONE),
+                    Objects.requireNonNull(minecraftWindow));
+        }
+
+        static PopupPreparation unavailable(CapabilityResult capability) {
+            return new PopupPreparation(Objects.requireNonNull(capability), null);
+        }
+    }
+
     private record UsableBounds(PopupPlacementPolicy.Rect bounds, boolean degraded) {}
 
     /** Mutable only on the EDT; the token is the cross-thread authority. */
@@ -120,35 +134,49 @@ final class PlatformOsScare implements OsScareHooks {
     }
 
     private CapabilityResult popupPreflight() {
+        return preparePopup().capability();
+    }
+
+    /** Called on the Minecraft client thread, before any EDT work is enqueued. */
+    private PopupPreparation preparePopup() {
         if (!OsScarePlatform.popupBeatsAllowed()) {
-            return new CapabilityResult(
-                    OsCapabilityState.UNSUPPORTED, OsEffectReason.PLATFORM_UNSUPPORTED);
+            return PopupPreparation.unavailable(new CapabilityResult(
+                    OsCapabilityState.UNSUPPORTED, OsEffectReason.PLATFORM_UNSUPPORTED));
         }
         if (POPUP_OWNERSHIP.ownerToken() != PopupOwnership.NO_OWNER) {
-            return capabilityFailed(OsEffect.EXTERNAL_POPUP, OsEffectReason.ALREADY_ACTIVE);
+            return PopupPreparation.unavailable(
+                    capabilityFailed(OsEffect.EXTERNAL_POPUP, OsEffectReason.ALREADY_ACTIVE));
         }
         try {
             if (GraphicsEnvironment.isHeadless()) {
-                return new CapabilityResult(
-                        OsCapabilityState.UNSUPPORTED, OsEffectReason.HEADLESS);
+                return PopupPreparation.unavailable(new CapabilityResult(
+                        OsCapabilityState.UNSUPPORTED, OsEffectReason.HEADLESS));
             }
         } catch (Throwable failure) {
-            return capabilityFailed(
-                    OsEffect.EXTERNAL_POPUP, OsEffectReason.TOOLKIT_FAILURE);
+            return PopupPreparation.unavailable(capabilityFailed(
+                    OsEffect.EXTERNAL_POPUP, OsEffectReason.TOOLKIT_FAILURE));
         }
         BufferedImage image = faceImage();
         if (image == null) {
-            return capabilityFailed(
+            return PopupPreparation.unavailable(capabilityFailed(
                     OsEffect.EXTERNAL_POPUP,
                     faceImageFailure == null
                             ? OsEffectReason.ASSET_INVALID
-                            : faceImageFailure);
+                            : faceImageFailure));
         }
-        PopupTargetProbe target = resolvePopupTarget(image);
+        // Minecraft and GLFW are client-thread-only. From this point onward,
+        // the EDT sees only this immutable integer rectangle.
+        PopupPlacementPolicy.Rect minecraftWindow = minecraftWindowBoundsOnClientThread();
+        if (minecraftWindow == null) {
+            return PopupPreparation.unavailable(capabilityFailed(
+                    OsEffect.EXTERNAL_POPUP, OsEffectReason.WINDOW_UNAVAILABLE));
+        }
+        PopupTargetProbe target = resolvePopupTarget(image, minecraftWindow);
         if (target.target() == null) {
-            return capabilityFailed(OsEffect.EXTERNAL_POPUP, target.failureReason());
+            return PopupPreparation.unavailable(capabilityFailed(
+                    OsEffect.EXTERNAL_POPUP, target.failureReason()));
         }
-        return new CapabilityResult(OsCapabilityState.READY, OsEffectReason.NONE);
+        return PopupPreparation.ready(minecraftWindow);
     }
 
     private CapabilityResult taskbarPreflight() {
@@ -164,7 +192,8 @@ final class PlatformOsScare implements OsScareHooks {
             int visibleMillis,
             int fadeMillis,
             Consumer<LifecycleUpdate> completion) {
-        CapabilityResult capability = popupPreflight();
+        PopupPreparation preparation = preparePopup();
+        CapabilityResult capability = preparation.capability();
         if (capability.state() != OsCapabilityState.READY) {
             PrimaryResult primary = capability.state() == OsCapabilityState.FAILED
                     ? primaryFailed(OsEffect.EXTERNAL_POPUP, capability.reason())
@@ -183,7 +212,12 @@ final class PlatformOsScare implements OsScareHooks {
         }
         try {
             SwingUtilities.invokeLater(
-                    () -> runPopup(token, visibleMillis, fadeMillis, completion));
+                    () -> runPopup(
+                            token,
+                            preparation.minecraftWindow(),
+                            visibleMillis,
+                            fadeMillis,
+                            completion));
         } catch (Throwable failure) {
             POPUP_OWNERSHIP.release(token);
             PrimaryResult primary = primaryFailed(
@@ -196,6 +230,7 @@ final class PlatformOsScare implements OsScareHooks {
 
     private static void runPopup(
             long token,
+            PopupPlacementPolicy.Rect minecraftWindow,
             int visibleMillis,
             int fadeMillis,
             Consumer<LifecycleUpdate> completion) {
@@ -212,7 +247,7 @@ final class PlatformOsScare implements OsScareHooks {
                                 : faceImageFailure);
                 return;
             }
-            PopupTargetProbe probe = resolvePopupTarget(image);
+            PopupTargetProbe probe = resolvePopupTarget(image, minecraftWindow);
             if (probe.target() == null) {
                 failPopupBeforeShow(token, completion, probe.failureReason());
                 return;
@@ -473,11 +508,9 @@ final class PlatformOsScare implements OsScareHooks {
                 && POPUP_OWNERSHIP.owns(session.token);
     }
 
-    private static PopupTargetProbe resolvePopupTarget(BufferedImage image) {
-        PopupPlacementPolicy.Rect minecraftWindow = minecraftWindowBounds();
-        if (minecraftWindow == null) {
-            return PopupTargetProbe.failed(OsEffectReason.WINDOW_UNAVAILABLE);
-        }
+    private static PopupTargetProbe resolvePopupTarget(
+            BufferedImage image, PopupPlacementPolicy.Rect minecraftWindow) {
+        Objects.requireNonNull(minecraftWindow, "minecraftWindow");
         try {
             GraphicsDevice[] devices = GraphicsEnvironment
                     .getLocalGraphicsEnvironment()
@@ -552,8 +585,20 @@ final class PlatformOsScare implements OsScareHooks {
         }
     }
 
-    private static PopupPlacementPolicy.Rect minecraftWindowBounds() {
-        long handle = windowHandle();
+    private static PopupPlacementPolicy.Rect minecraftWindowBoundsOnClientThread() {
+        Minecraft minecraft;
+        long handle;
+        try {
+            minecraft = Minecraft.getInstance();
+            if (minecraft == null
+                    || !minecraft.isSameThread()
+                    || minecraft.getWindow() == null) {
+                return null;
+            }
+            handle = minecraft.getWindow().getWindow();
+        } catch (Throwable failure) {
+            return null;
+        }
         if (handle == 0L) {
             return null;
         }

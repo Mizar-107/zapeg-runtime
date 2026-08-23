@@ -1,10 +1,9 @@
 package io.github.mizar107.zapegruntime.client.os;
 
 /**
- * Per-client opt-out for the OS-level scare layer. The master switch gates
- * everything; each sub-toggle gates one beat. Defaults are all on for the
- * friends-only server; any player can turn any of it off locally without
- * affecting anyone else.
+ * Per-client opt-in for external OS effects. The master switch gates
+ * everything and defaults off; each sub-toggle selects a beat only after the
+ * player opts in. {@link #ALL_OFF} is the fail-closed unloaded/error state.
  */
 public record OsScareToggles(
         boolean master, boolean facePopup, boolean windowWrongness, boolean taskbarFlash) {

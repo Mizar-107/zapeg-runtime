@@ -163,9 +163,9 @@ mid-session, so the handshake refuses the mismatch up front):
   The popup never steals keyboard or mouse focus, and unsupported platforms
   report a bounded capability result. Operator-only and manifestation-gated
   on the Director side; never gaze-resolved.
-- Per-client opt-out: the `osScares` client config (master switch plus
-  face-popup, window-wrongness and taskbar-flash sub-toggles) lets any
-  player disable the OS-level beats locally without affecting anyone else.
+- Per-client opt-in: the `osScares` client config master switch defaults off.
+  A player must enable it locally before the face-popup, window-wrongness or
+  taskbar-flash sub-toggles can request an external OS effect.
 
 ### Protocol 8 diagnostic hardening
 
@@ -191,9 +191,9 @@ mid-session, so the handshake refuses the mismatch up front):
 - Batch 1 has no in-game fallback, so the fixed fallback dimension reports
   `NOT_AVAILABLE:FALLBACK_NOT_IMPLEMENTED`. `visitation_01` also suppresses
   all in-game prelude, fog, camera, overlay and audio presentation so the
-  master opt-out's “does nothing” promise is literal.
-- Client setup validates the bundled PNG before a scene. Failures are logged
-  by enum code only and are visible to permission-level-2 operators through
+  external layer's disabled state has no hidden OS side effect.
+- When explicitly opted in, client setup validates the bundled PNG before a
+  scene. Failures are logged by enum code only and are visible to permission-level-2 operators through
   `/zapegscene diagnose <player>`. Title cleanup uses the terminal
   `PENDING:UNVERIFIED_API` observation because GLFW has no title readback;
   popup and motion cleanup retain state for bounded verified retries.

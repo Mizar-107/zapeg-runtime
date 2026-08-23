@@ -18,9 +18,17 @@ public final class ClientModEvents {
 
     @SubscribeEvent
     public static void onClientSetup(FMLClientSetupEvent event) {
-        event.enqueueWork(() -> ZapeGRuntime.LOGGER.info(
-                "OS effect preflight {}",
-                OsScareDriver.instance().preflight().compactString()));
+        event.enqueueWork(() -> {
+            var toggles = OsScareConfig.toggles();
+            if (!toggles.master()) {
+                ZapeGRuntime.LOGGER.info(
+                        "OS scare opt-in disabled; external effects will not be requested");
+                return;
+            }
+            ZapeGRuntime.LOGGER.info(
+                    "OS scare opt-in enabled; effect preflight {}",
+                    OsScareDriver.instance().preflight().compactString());
+        });
     }
 
     @SubscribeEvent
