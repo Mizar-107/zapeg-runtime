@@ -60,6 +60,13 @@ diagnostic reports each popup/title/motion/taskbar capability, primary result,
 in-game fallback and cleanup independently; packet receipt alone is not an
 `applied` result.
 
+## Batch 2 timeline foundation
+
+Strict datapack definitions drive UUID-scoped, restart-safe sessions and
+seeded target-private scene dispatch. Durable terminal barriers make start
+requests idempotent without claiming that packet delivery proves client
+presentation. See [`docs/HERALDOR-TIMELINES.md`](docs/HERALDOR-TIMELINES.md).
+
 ## v0.3 boundaries
 
 - exact-match protocol `6`; mixed v0.3.0/v0.3.1 clients fail the handshake

@@ -9,7 +9,10 @@ import io.github.mizar107.zapegruntime.scene.SceneAck;
 import io.github.mizar107.zapegruntime.scene.SceneDescriptor;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
 import io.github.mizar107.zapegruntime.scene.OsScareReport;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.server.MinecraftServer;
@@ -17,13 +20,21 @@ import net.minecraft.server.level.ServerPlayer;
 
 public final class SceneServerManager {
 
-    private static ActiveScene active;
+    private static final Map<UUID, ActiveScene> activeByTarget = new HashMap<>();
     private static final OsScareStatusLedger osScareStatuses =
             new OsScareStatusLedger();
 
     private SceneServerManager() {}
 
     public record DispatchResult(boolean success, String message, UUID eventId) {}
+
+    /** Stable result vocabulary used by the deterministic timeline adapter. */
+    public enum TimelineDispatchStatus {
+        APPLIED,
+        ALREADY_APPLIED,
+        RETRYABLE,
+        REJECTED
+    }
 
     private record ActiveScene(
             SceneDescriptor descriptor,
@@ -108,6 +119,65 @@ public final class SceneServerManager {
             Double hintX,
             Double hintZ,
             int stage) {
+        return dispatchInternal(
+                target,
+                eventId,
+                profile,
+                rehearsal,
+                ttlOverrideTicks,
+                hintX,
+                hintZ,
+                stage,
+                null);
+    }
+
+    /**
+     * Timeline-only entry point. Its stable event id and visual seed make a
+     * replay after restart deterministic without changing the legacy wire
+     * descriptor or command surface.
+     */
+    public static TimelineDispatchStatus dispatchTimeline(
+            ServerPlayer target,
+            UUID eventId,
+            SceneProfile profile,
+            int ttlTicks,
+            int stage,
+            long visualSeed) {
+        MinecraftServer server = target.getServer();
+        if (server != null && SceneLedgerData.get(server).contains(eventId)) {
+            return TimelineDispatchStatus.ALREADY_APPLIED;
+        }
+        DispatchResult result = dispatchInternal(
+                target,
+                eventId,
+                profile,
+                false,
+                ttlTicks,
+                null,
+                null,
+                stage,
+                visualSeed);
+        if (result.success()) {
+            return TimelineDispatchStatus.APPLIED;
+        }
+        return switch (result.message()) {
+            case "event id is already consumed" -> TimelineDispatchStatus.ALREADY_APPLIED;
+            case "target already has an active scene", "no valid loaded scene anchor" ->
+                    TimelineDispatchStatus.RETRYABLE;
+            default -> TimelineDispatchStatus.REJECTED;
+        };
+    }
+
+    private static DispatchResult dispatchInternal(
+            ServerPlayer target,
+            UUID eventId,
+            SceneProfile profile,
+            boolean rehearsal,
+            int ttlOverrideTicks,
+            Double hintX,
+            Double hintZ,
+            int stage,
+            Long visualSeed) {
         MinecraftServer server = target.getServer();
         if (server == null) {
             return failure("server unavailable", eventId);
@@ -117,8 +187,8 @@ public final class SceneServerManager {
                     "stage is not meaningful for " + profile.serializedName(), eventId);
         }
         int boundedStage = stage;
-        if (active != null) {
-            return failure("another scene is active", eventId);
+        if (activeByTarget.containsKey(target.getUUID())) {
+            return failure("target already has an active scene", eventId);
         }
         if (!target.isAlive() || target.isSpectator()) {
             return failure("target is not eligible", eventId);
@@ -141,7 +211,7 @@ public final class SceneServerManager {
                     placement.get().anchor(),
                     placement.get().yawDegrees(),
                     resolveTtlTicks(ttlOverrideTicks, profile),
-                    target.getRandom().nextLong(),
+                    visualSeed == null ? target.getRandom().nextLong() : visualSeed,
                     profile,
                     rehearsal,
                     boundedStage);
@@ -151,15 +221,15 @@ public final class SceneServerManager {
         if (!rehearsal && !SceneLedgerData.get(server).consume(eventId)) {
             return failure("event id is already consumed", eventId);
         }
-        // The slot stays occupied for the body TTL plus the full encore, so a
-        // false all-clear can never overlap a second scene even if the
-        // client's held terminal acknowledgement never arrives.
-        active = new ActiveScene(
+        // This target's slot stays occupied for the body TTL plus the full
+        // encore, so a false all-clear cannot overlap another private scene
+        // for the same player even if the terminal acknowledgement is lost.
+        activeByTarget.put(target.getUUID(), new ActiveScene(
                 descriptor,
                 server.getTickCount() + profile.occupancyTicks(descriptor.ttlTicks()),
                 null,
                 null,
-                -1);
+                -1));
         if (profile == SceneProfile.VISITATION_01) {
             // Preserve an older closing event until the new client actually
             // proves it accepted this visitation by sending status sequence
@@ -177,7 +247,7 @@ public final class SceneServerManager {
     }
 
     public static void handleAcknowledgement(ServerPlayer sender, SceneAckC2S message) {
-        ActiveScene current = active;
+        ActiveScene current = activeByTarget.get(sender.getUUID());
         if (current == null
                 || !current.descriptor.eventId().equals(message.eventId())
                 || !current.descriptor.targetId().equals(sender.getUUID())
@@ -194,7 +264,8 @@ public final class SceneServerManager {
                     sender.getGameProfile().getName());
             return;
         }
-        active = current.withAcknowledgement(message.acknowledgement());
+        activeByTarget.put(
+                sender.getUUID(), current.withAcknowledgement(message.acknowledgement()));
         ZapeGRuntime.LOGGER.info(
                 "Scene {} acknowledgement={} target={}",
                 message.eventId(),
@@ -205,12 +276,13 @@ public final class SceneServerManager {
                     && message.acknowledgement() == SceneAck.BUSY) {
                 osScareStatuses.onBusy(sender.getUUID(), message.eventId());
             }
-            active = null;
+            activeByTarget.remove(sender.getUUID(), current.withAcknowledgement(
+                    message.acknowledgement()));
         }
     }
 
     public static void handleOsScareStatus(ServerPlayer sender, OsScareStatusC2S message) {
-        ActiveScene current = active;
+        ActiveScene current = activeByTarget.get(sender.getUUID());
         if (!message.targetId().equals(sender.getUUID())) {
             return;
         }
@@ -228,7 +300,9 @@ public final class SceneServerManager {
             return;
         }
         if (activeMatch) {
-            active = current.withOsScareStatus(message.report(), message.sequence());
+            activeByTarget.put(
+                    sender.getUUID(),
+                    current.withOsScareStatus(message.report(), message.sequence()));
         }
         osScareStatuses.recordStatus(
                 sender.getUUID(),
@@ -244,55 +318,59 @@ public final class SceneServerManager {
     }
 
     public static void tick(MinecraftServer server) {
-        ActiveScene current = active;
-        if (current == null) {
-            return;
-        }
-        ServerPlayer target = server.getPlayerList().getPlayer(current.descriptor.targetId());
-        if (target == null) {
-            active = null;
-            return;
-        }
-        if (!target.isAlive()) {
-            cancel(CancelReason.DEATH);
-            return;
-        }
-        if (!target.level().dimension().location().equals(current.descriptor.dimension())) {
-            cancel(CancelReason.DIMENSION_CHANGE);
-            return;
-        }
-        if (server.getTickCount() >= current.expiresAtServerTick) {
-            cancel(CancelReason.EXPIRED);
+        for (ActiveScene current : new ArrayList<>(activeByTarget.values())) {
+            ServerPlayer target =
+                    server.getPlayerList().getPlayer(current.descriptor.targetId());
+            if (target == null) {
+                cancelOne(current.descriptor.targetId(), CancelReason.LOGOUT, server);
+            } else if (!target.isAlive()) {
+                cancelOne(current.descriptor.targetId(), CancelReason.DEATH, server);
+            } else if (!target.level().dimension().location()
+                    .equals(current.descriptor.dimension())) {
+                cancelOne(
+                        current.descriptor.targetId(),
+                        CancelReason.DIMENSION_CHANGE,
+                        server);
+            } else if (server.getTickCount() >= current.expiresAtServerTick) {
+                cancelOne(current.descriptor.targetId(), CancelReason.EXPIRED, server);
+            }
         }
     }
 
     public static void cancelForPlayer(UUID playerId, CancelReason reason) {
-        ActiveScene current = active;
-        if (current != null && current.descriptor.targetId().equals(playerId)) {
-            cancel(reason);
-        }
+        cancelOne(
+                playerId,
+                reason,
+                net.minecraftforge.server.ServerLifecycleHooks.getCurrentServer());
     }
 
     public static boolean cancel(CancelReason reason) {
-        ActiveScene current = active;
-        if (current == null) {
+        if (activeByTarget.isEmpty()) {
             return false;
         }
         MinecraftServer server = net.minecraftforge.server.ServerLifecycleHooks.getCurrentServer();
+        for (UUID targetId : new ArrayList<>(activeByTarget.keySet())) {
+            cancelOne(targetId, reason, server);
+        }
+        return true;
+    }
+
+    private static boolean cancelOne(
+            UUID targetId, CancelReason reason, MinecraftServer server) {
+        ActiveScene current = activeByTarget.remove(targetId);
+        if (current == null) {
+            return false;
+        }
         if (server != null) {
-            ServerPlayer target = server.getPlayerList().getPlayer(current.descriptor.targetId());
+            ServerPlayer target = server.getPlayerList().getPlayer(targetId);
             if (target != null) {
-                SceneNetwork.cancelFor(
-                        target,
-                        current.descriptor.eventId(),
-                        reason);
+                SceneNetwork.cancelFor(target, current.descriptor.eventId(), reason);
             }
         }
         ZapeGRuntime.LOGGER.info(
                 "Cancelled scene {} reason={}",
                 current.descriptor.eventId(),
                 reason.name().toLowerCase(Locale.ROOT));
-        active = null;
         return true;
     }
 
@@ -312,10 +390,13 @@ public final class SceneServerManager {
     }
 
     public static String status() {
-        ActiveScene current = active;
-        if (current == null) {
+        if (activeByTarget.isEmpty()) {
             return "active=0";
         }
+        if (activeByTarget.size() > 1) {
+            return "active=" + activeByTarget.size();
+        }
+        ActiveScene current = activeByTarget.values().iterator().next();
         return "active=1 event=" + current.descriptor.eventId()
                 + " target=" + current.descriptor.targetId()
                 + " profile=" + current.descriptor.profile().serializedName()
@@ -331,7 +412,7 @@ public final class SceneServerManager {
 
     /** Permission-gated operator view of the latest bounded client report. */
     public static String diagnose(ServerPlayer target) {
-        ActiveScene current = active;
+        ActiveScene current = activeByTarget.get(target.getUUID());
         if (current != null
                 && current.descriptor.targetId().equals(target.getUUID())
                 && current.descriptor.profile() == SceneProfile.VISITATION_01) {
@@ -359,8 +440,8 @@ public final class SceneServerManager {
 
     /** Target-scoped scene summary for the native Heraldor diagnostic tree. */
     public static String statusFor(UUID playerId) {
-        ActiveScene current = active;
-        if (current == null || !current.descriptor.targetId().equals(playerId)) {
+        ActiveScene current = activeByTarget.get(playerId);
+        if (current == null) {
             return "active=0";
         }
         return "active=1 event=" + current.descriptor.eventId()
@@ -385,7 +466,7 @@ public final class SceneServerManager {
     }
 
     static void resetForTests() {
-        active = null;
+        activeByTarget.clear();
         osScareStatuses.clear();
     }
 

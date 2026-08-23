@@ -1,0 +1,45 @@
+{
+  "format": 1,
+  "duration_ticks": 2400,
+  "policies": {
+    "disconnect": "pause",
+    "restart": "pause",
+    "dimension_change": "fail",
+    "death": "fail"
+  },
+  "actions": [
+    {
+      "id": "peripheral_witness",
+      "at_tick": 20,
+      "deadline_tick": 200,
+      "retry_interval_ticks": 20,
+      "required": true,
+      "type": "scene",
+      "profile": "peripheral_01",
+      "ttl_ticks": 140,
+      "stage": 0
+    },
+    {
+      "id": "closing_steps",
+      "at_tick": 760,
+      "deadline_tick": 1040,
+      "retry_interval_ticks": 20,
+      "required": true,
+      "type": "scene",
+      "profile": "footsteps_01",
+      "ttl_ticks": 160,
+      "stage": 1
+    },
+    {
+      "id": "threshold",
+      "at_tick": 1540,
+      "deadline_tick": 1900,
+      "retry_interval_ticks": 20,
+      "required": true,
+      "type": "scene",
+      "profile": "threshold_01",
+      "ttl_ticks": 160,
+      "stage": 0
+    }
+  ]
+}

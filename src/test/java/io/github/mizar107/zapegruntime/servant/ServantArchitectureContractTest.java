@@ -54,8 +54,8 @@ class ServantArchitectureContractTest {
                 runtimeRoot.resolve("server").resolve("SceneServerEvents.java"));
 
         assertTrue(mod.contains("ServantEntities.register(modBus)"));
-        assertTrue(events.contains(
-                "HeraldorCommands.register(event, ServantCommands::attach)"));
+        assertTrue(events.contains("HeraldorCommands.register(event, root ->"));
+        assertTrue(events.contains("ServantCommands.attach(root)"));
         assertFalse(events.contains("HeraldorCommands.register(event);"));
     }
 
