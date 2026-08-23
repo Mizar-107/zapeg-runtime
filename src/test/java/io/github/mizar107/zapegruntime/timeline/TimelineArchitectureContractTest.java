@@ -60,6 +60,9 @@ class TimelineArchitectureContractTest {
         assertTrue(Files.exists(Path.of(
                 "src", "main", "resources", "data", "zapeg_runtime",
                 "heraldor_timelines", "dread_approach_01.json")));
+        assertTrue(Files.exists(Path.of(
+                "src", "main", "resources", "data", "zapeg_runtime",
+                "heraldor_timelines", "breach_01.json")));
     }
 
     @Test
@@ -76,7 +79,7 @@ class TimelineArchitectureContractTest {
         assertTrue(events.contains("SceneCommands.register(event)"));
         assertTrue(events.contains("TimelineCommands.attach(root)"));
         assertEquals(1, occurrences(events, "HeraldorCommands.register("));
-        assertTrue(network.contains("public static final String PROTOCOL = \"8\""));
+        assertTrue(network.contains("public static final String PROTOCOL = \"9\""));
     }
 
     @Test

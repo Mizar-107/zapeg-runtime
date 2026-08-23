@@ -1,0 +1,23 @@
+{
+  "format": 1,
+  "duration_ticks": 260,
+  "policies": {
+    "disconnect": "pause",
+    "restart": "pause",
+    "dimension_change": "fail",
+    "death": "fail"
+  },
+  "actions": [
+    {
+      "id": "room_breach",
+      "at_tick": 1,
+      "deadline_tick": 100,
+      "retry_interval_ticks": 20,
+      "required": true,
+      "type": "scene",
+      "profile": "breach_01",
+      "ttl_ticks": 180,
+      "stage": 0
+    }
+  ]
+}

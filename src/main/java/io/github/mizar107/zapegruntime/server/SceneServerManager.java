@@ -467,7 +467,7 @@ public final class SceneServerManager {
      */
     public static void shutdown() {
         cancel(CancelReason.SERVER_STOP);
-        active = null;
+        activeByTarget.clear();
         osScareStatuses.clear();
     }
 

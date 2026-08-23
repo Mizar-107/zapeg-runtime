@@ -60,8 +60,8 @@ Operator commands are typed and inherit the native `/heraldor` trust policy:
 /heraldor timeline cancel <player>
 ```
 
-To add `breach_01`, register its `SceneProfile` and client presentation, then
-author one or more timeline actions that reference that profile. No timeline
-engine or persistence change is required. Additional non-scene action kinds
-must add a strictly validated model and a server adapter outcome; they must
-not smuggle arbitrary commands through JSON.
+The bundled `breach_01` definition dispatches the registered screen-space
+profile as one deterministic scene action; its authored sound choreography is
+part of that client profile, not a second timeline side effect. Additional
+non-scene action kinds must add a strictly validated model and a server adapter
+outcome; they must not smuggle arbitrary commands through JSON.
