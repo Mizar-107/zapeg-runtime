@@ -203,6 +203,23 @@ mid-session, so the handshake refuses the mismatch up front):
   publishes the distinct prerelease version `0.5.0-b1`; no protocol-8 bytes
   may be distributed under the old `0.4.0` filename.
 
+### Protocol 9 deterministic-horror hardening
+
+- `breach_01` adds wire ID 14 and supplies the complete target-private,
+  screen-space visitation fallback without a chunk, entity, shader or world
+  anchor dependency. A clipped nonzero-alpha GUI draw is the presentation
+  proof; packet receipt is not.
+- Seven deterministic, from-scratch OGG assets provide the fallback's knocks,
+  footsteps, whispers and manifestation beat. They are mod-owned and played
+  only on the selected client.
+- The optional Windows layer is monitor/DPI aware, owns and restores only its
+  own window state, and remains gated by explicit versioned client consent.
+- Data-authored server timelines bind replay identity to session, target UUID,
+  definition fingerprint, action and payload. Loaded-chunk-only placement and
+  fail-closed persisted state make restart retries deterministic.
+- Protocol 9 ships as `0.6.0-b2`; every server and client jar must be replaced
+  atomically.
+
 ## v0.4 — manifestation and combat
 
 Anything that damages, collides or can be attacked becomes server-authoritative:

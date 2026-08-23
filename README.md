@@ -4,7 +4,7 @@ Server-authoritative Forge 1.20.1 story, horror, and encounter mod for the
 ZapeG pack. The stable `zapeg_runtime` mod ID and archive stem are retained for
 world and deployment migration.
 
-## Batch 2 breach/audio slice (development)
+## Batch 2 (`0.6.0-b2`) deterministic-horror slice
 
 - exact-match protocol `9`; wire IDs 0–13 remain stable and `breach_01` is
   added at ID 14, so protocol-8 clients are refused during the handshake;
@@ -25,7 +25,7 @@ world and deployment migration.
 See [docs/BREACH-01.md](docs/BREACH-01.md) for the timing, resource hashes and
 integration contract.
 
-## Batch 1 (`0.5.0-b1`) boundaries
+## Batch 1 (`0.5.0-b1`) compatibility history
 
 - exact-match protocol `8`; mixed protocol 7 clients fail the handshake. v8
   adds a fixed four-effect visitation status packet. `RECEIVED` means only
@@ -159,8 +159,8 @@ Profiles are deliberately distinct and bounded:
   HUD overlays and holds two oversized ember eyes on a 70-tick breathe.
   Never gaze-resolved. Public aliases (`light-fault`, `chroma-break`,
   `eclipse`, `unmoor`, `witness`) map onto these stages;
-- `visitation_01`: the optional, default-off OS-level scare. Nothing renders
-  in-game; instead the client briefly steps outside the game window. A borderless always-on-top
+- `visitation_01`: a complete target-private `breach_01`-style in-game scare,
+  plus optional, default-off OS effects. A borderless always-on-top
   window shows a bundled image (shipped at a deliberately boring asset path)
   for a faded blink of well under two seconds; the game window title
   momentarily reads as glitched block glyphs — never letters, words or a
@@ -178,12 +178,14 @@ Profiles are deliberately distinct and bounded:
   only after position readback. GLFW's void title and taskbar calls remain
   `requested:unverified_api`, never `applied`; title cleanup likewise remains
   `pending:unverified_api` as a terminal observation because GLFW exposes no
-  title readback. The future in-game fallback is honestly
-  `not_available:fallback_not_implemented` in this batch. The face
+  title readback. Its in-game fallback is requested for every visitation and
+  becomes `applied` only after the selected render hook proves a nonempty,
+  nonzero-alpha clipped draw. The face
   popup and taskbar flash are Windows-only (reported unsupported elsewhere —
   a macOS AWT init under GLFW can hang the JVM); the title and window-pulse
   beats are plain GLFW and run everywhere. The scene never resolves by gaze
-  and suppresses every in-game prelude, fog, camera, overlay and audio beat.
+  and suppresses the generic world/fog prelude; its dedicated bounded breach
+  choreography and original target-local audio remain active.
   Physical async cleanup owns one bounded diagnostic session across a client
   level unload; another visitation is answered `BUSY` until that terminal
   cleanup report is sent. A true network logout requests local cleanup and
@@ -316,8 +318,8 @@ See [ROADMAP.md](ROADMAP.md) for the reality-distortion and later combat plan.
 .\gradlew.bat test build
 ```
 
-The reviewed Batch-1 artifact is
-`build/libs/zapeg-runtime-forge-1.20.1-0.5.0-b1.jar`. Protocol 8 is
+The Batch-2 artifact is
+`build/libs/zapeg-runtime-forge-1.20.1-0.6.0-b2.jar`. Protocol 9 is
 wire-incompatible: server, tracked
 `overrides/mods` jar and every client artifact must be replaced atomically
 with the same build.
