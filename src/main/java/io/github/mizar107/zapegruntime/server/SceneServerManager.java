@@ -164,6 +164,10 @@ public final class SceneServerManager {
                 null,
                 null,
                 -1);
+        if (profile == SceneProfile.VISITATION_01) {
+            rememberOsScareStatus(target.getUUID(), new LastOsScareStatus(
+                    eventId, -1, null));
+        }
         SceneNetwork.spawnFor(target, descriptor);
         ZapeGRuntime.LOGGER.info(
                 "Dispatched scene {} profile={} target={} rehearsal={}",
@@ -182,6 +186,16 @@ public final class SceneServerManager {
                 || !message.targetId().equals(sender.getUUID())) {
             return;
         }
+        if (!current.descriptor.profile()
+                .acceptsAcknowledgement(message.acknowledgement())) {
+            ZapeGRuntime.LOGGER.warn(
+                    "Ignored scene acknowledgement event={} profile={} ack={} target={}",
+                    message.eventId(),
+                    current.descriptor.profile().serializedName(),
+                    message.acknowledgement().name().toLowerCase(Locale.ROOT),
+                    sender.getGameProfile().getName());
+            return;
+        }
         active = current.withAcknowledgement(message.acknowledgement());
         ZapeGRuntime.LOGGER.info(
                 "Scene {} acknowledgement={} target={}",
@@ -195,15 +209,25 @@ public final class SceneServerManager {
 
     public static void handleOsScareStatus(ServerPlayer sender, OsScareStatusC2S message) {
         ActiveScene current = active;
-        if (current == null
-                || current.descriptor.profile() != SceneProfile.VISITATION_01
-                || !current.descriptor.eventId().equals(message.eventId())
-                || !current.descriptor.targetId().equals(sender.getUUID())
-                || !message.targetId().equals(sender.getUUID())
-                || message.sequence() <= current.osScareSequence) {
+        if (!message.targetId().equals(sender.getUUID())) {
             return;
         }
-        active = current.withOsScareStatus(message.report(), message.sequence());
+        boolean activeMatch = current != null
+                && current.descriptor.profile() == SceneProfile.VISITATION_01
+                && current.descriptor.eventId().equals(message.eventId())
+                && current.descriptor.targetId().equals(sender.getUUID());
+        LastOsScareStatus previous = lastOsScareStatuses.get(sender.getUUID());
+        boolean retainedMatch = previous != null
+                && previous.eventId.equals(message.eventId());
+        int previousSequence = retainedMatch ? previous.sequence : -1;
+        if ((!activeMatch && !retainedMatch)
+                || message.sequence() <= previousSequence
+                || (activeMatch && message.sequence() <= current.osScareSequence)) {
+            return;
+        }
+        if (activeMatch) {
+            active = current.withOsScareStatus(message.report(), message.sequence());
+        }
         rememberOsScareStatus(sender.getUUID(), new LastOsScareStatus(
                 message.eventId(), message.sequence(), message.report()));
         ZapeGRuntime.LOGGER.info(
@@ -308,7 +332,9 @@ public final class SceneServerManager {
                 + " protocol=" + SceneNetwork.PROTOCOL
                 + " active=0 last_event=" + previous.eventId
                 + " sequence=" + previous.sequence
-                + " os=" + previous.report.compactString();
+                + " os=" + (previous.report == null
+                        ? "awaiting"
+                        : previous.report.compactString());
     }
 
     /** Target-scoped scene summary for the native Heraldor diagnostic tree. */

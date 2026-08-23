@@ -8,9 +8,10 @@ faults without registering or saving a Minecraft entity.
 
 - exact-match protocol `8`; mixed protocol 7 clients fail the handshake. v8
   adds a fixed four-effect visitation status packet. `RECEIVED` means only
-  that the scene arrived; visitation never emits generic `VISIBLE`. Title,
-  motion, popup and taskbar outcomes are reported independently as ready,
-  pending, applied, disabled, unsupported or failed with bounded reason codes.
+  that the scene arrived; visitation rejects generic `VISIBLE` and `GAZE`
+  acknowledgements. Title, motion, popup and taskbar each report four fixed,
+  independent dimensions: capability, primary delivery, in-game fallback and
+  cleanup, all with bounded reason codes.
 
 ## v0.3 boundaries
 
@@ -119,16 +120,23 @@ Profiles are deliberately distinct and bounded:
   name; the window position shivers through a small decaying pulse; and an
   optional taskbar attention flash rides the blink (flashing the game
   window's own taskbar button, so it works even with the face popup opted
-  out). Everything restores exactly: the true title and geometry always come
-  back, an early cancel or logout disposes a shown popup immediately, the
-  popup never steals keyboard or mouse focus, and nothing persists. The
-  layer preflights its bundled PNG at client setup and reports every effect
-  through fixed non-sensitive status/reason enums; the popup is `applied`
-  only after the Swing EDT confirms its window is actually showing. The face popup
-  and taskbar flash are Windows-only (reported unsupported elsewhere — a macOS
-  AWT init under GLFW can hang the JVM); the title and window-pulse beats
-  are plain GLFW and run everywhere. The scene never resolves by gaze and
-  the game screen itself stays clean.
+  out). Cleanup is explicit and bounded: successful position readback clears
+  the captured origin, while a failed restore retains it for retry and is
+  reported instead of silently discarded. Early cancel or logout requests
+  popup disposal, the popup never steals keyboard or mouse focus, and no
+  state is persisted. The layer preflights its bundled PNG at client setup
+  and reports every effect through fixed non-sensitive status/reason enums.
+  The popup is `applied` only after the Swing EDT confirms it is showing with
+  nonzero opacity (or showing in the opaque mode); window motion is `applied`
+  only after position readback. GLFW's void title and taskbar calls remain
+  `requested:unverified_api`, never `applied`; title cleanup likewise remains
+  `pending:unverified_api` as a terminal observation because GLFW exposes no
+  title readback. The future in-game fallback is honestly
+  `not_available:fallback_not_implemented` in this batch. The face
+  popup and taskbar flash are Windows-only (reported unsupported elsewhere —
+  a macOS AWT init under GLFW can hang the JVM); the title and window-pulse
+  beats are plain GLFW and run everywhere. The scene never resolves by gaze
+  and suppresses every in-game prelude, fog, camera, overlay and audio beat.
 
 Figure presentation, direct-gaze progress and the light fault's spatial
 activation use the real target camera, frustum and block line of sight. The
@@ -137,10 +145,11 @@ scene has been witnessed, even while its anchor is briefly offscreen or
 occluded; gaze cannot advance then. Packets are sent only to the selected
 player and client history is discarded when the scene ends.
 
-Every scene opens with a short client-local prelude — a cave-sound swell with
-a subtle fog and brightness dip — before the body begins. The prelude is drawn
-through the fog viewport event with conservative caps so it yields to shader
-packs rather than fighting them. The camera-unease layer adds at most a
+Every in-game scene except `visitation_01` opens with a short client-local
+prelude — a cave-sound swell with a subtle fog and brightness dip — before the
+body begins. The prelude is drawn through the fog viewport event with
+conservative caps so it yields to shader packs rather than fighting them. The
+camera-unease layer adds at most a
 fraction of a degree of yaw/pitch jitter, rare brief shake pulses and a slow
 micro-roll while a scene is active; all magnitudes are hard-capped and decay
 to zero the moment the scene ends or the client cleans up. The colossus uses a
@@ -230,10 +239,11 @@ operator dispatch. Command blocks and functions cannot invoke the command
 tree.
 
 `diagnose` reports protocol, active/last visitation event and the four latest
-client outcomes. Example: `title=applied motion=unsupported:fullscreen
-popup=failed:asset_invalid taskbar=disabled:effect_disabled`. It exposes no
-paths, exception text, native handles or monitor names. `status` includes the
-same bounded report while a visitation is active. A normal scene
+client outcomes. Each compact outcome uses `c` (capability), `p` (primary),
+`f` (fallback), and `x` (cleanup), for example
+`window_title{c=ready,p=requested:unverified_api,f=not_available:fallback_not_implemented,x=pending:unverified_api}`.
+It exposes no paths, exception text, native handles or monitor names. `status`
+includes the same bounded report while a visitation is active. A normal scene
 acknowledgement is never presented as proof of an OS effect.
 
 See [ROADMAP.md](ROADMAP.md) for the reality-distortion and later combat plan.

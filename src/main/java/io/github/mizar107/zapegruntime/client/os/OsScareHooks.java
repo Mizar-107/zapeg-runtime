@@ -1,82 +1,91 @@
 package io.github.mizar107.zapegruntime.client.os;
 
+import io.github.mizar107.zapegruntime.scene.OsCapabilityState;
+import io.github.mizar107.zapegruntime.scene.OsCleanupState;
 import io.github.mizar107.zapegruntime.scene.OsEffect;
-import io.github.mizar107.zapegruntime.scene.OsEffectOutcome;
 import io.github.mizar107.zapegruntime.scene.OsEffectReason;
+import io.github.mizar107.zapegruntime.scene.OsPrimaryState;
 import java.util.function.Consumer;
 
-/**
- * Side-effecting boundary of the OS-level scare layer. Every attempted beat
- * returns a bounded outcome; implementations may not hide failures behind a
- * successful scene acknowledgement.
- */
+/** Side-effect boundary with independent capability, delivery and cleanup. */
 public interface OsScareHooks {
 
-    /** Probe one effect without applying it. This also validates popup assets. */
-    OsEffectOutcome preflight(OsEffect effect);
+    record CapabilityResult(OsCapabilityState state, OsEffectReason reason) {}
+    record PrimaryResult(OsPrimaryState state, OsEffectReason reason) {}
+    record CleanupResult(OsCleanupState state, OsEffectReason reason) {}
+    record LifecycleUpdate(PrimaryResult primary, CleanupResult cleanup) {}
 
-    /**
-     * Queue the popup. The callback must report APPLIED only after the EDT has
-     * confirmed that its window is actually showing; it reports one bounded
-     * failure/unsupported verdict otherwise.
-     */
+    CapabilityResult preflight(OsEffect effect);
+
+    /** Emits show/fade lifecycle updates; APPLIED requires visible nonzero opacity. */
     void showFacePopup(
             int visibleMillis,
             int fadeMillis,
-            Consumer<OsEffectOutcome> completion);
+            Consumer<LifecycleUpdate> completion);
 
-    /** Dispose a shown or pending popup immediately. */
-    void closePopup();
+    /** Queue/perform popup disposal and report its independently verified result. */
+    CleanupResult closePopup(Consumer<CleanupResult> completion);
 
-    /** Apply or restore the transient title beat. */
-    OsEffectOutcome applyTitle(boolean glitched, long seed, int step);
+    /** GLFW has no title getter: success means REQUESTED/UNVERIFIED, not APPLIED. */
+    PrimaryResult applyTitle(boolean glitched, long seed, int step);
 
-    /** Apply the position pulse; {0, 0} restores the captured geometry. */
-    OsEffectOutcome applyWindowPulse(int dx, int dy);
+    /** Motion may report APPLIED only after position readback matches. */
+    PrimaryResult applyWindowPulse(int dx, int dy);
 
-    /** Restore the original title and window geometry immediately. */
-    void restoreWindow();
+    /** Title restore is also an unverified void request. */
+    CleanupResult cleanupTitle();
 
-    /** Request attention for the game window's taskbar entry. */
-    OsEffectOutcome flashTaskbar();
+    /** Restore captured position; retain the origin until readback proves success. */
+    CleanupResult cleanupWindowMotion();
+
+    /** Attention is a void GLFW request and therefore remains unverified. */
+    PrimaryResult flashTaskbar();
 
     OsScareHooks NOOP = new OsScareHooks() {
         @Override
-        public OsEffectOutcome preflight(OsEffect effect) {
-            return OsEffectOutcome.unsupported(effect, OsEffectReason.PLATFORM_UNSUPPORTED);
+        public CapabilityResult preflight(OsEffect effect) {
+            return new CapabilityResult(
+                    OsCapabilityState.UNSUPPORTED, OsEffectReason.PLATFORM_UNSUPPORTED);
         }
 
         @Override
         public void showFacePopup(
                 int visibleMillis,
                 int fadeMillis,
-                Consumer<OsEffectOutcome> completion) {
-            completion.accept(OsEffectOutcome.unsupported(
-                    OsEffect.EXTERNAL_POPUP, OsEffectReason.PLATFORM_UNSUPPORTED));
+                Consumer<LifecycleUpdate> completion) {
+            completion.accept(new LifecycleUpdate(
+                    new PrimaryResult(OsPrimaryState.FAILED, OsEffectReason.TOOLKIT_FAILURE),
+                    new CleanupResult(OsCleanupState.NOT_REQUIRED, OsEffectReason.NONE)));
         }
 
         @Override
-        public void closePopup() {}
-
-        @Override
-        public OsEffectOutcome applyTitle(boolean glitched, long seed, int step) {
-            return OsEffectOutcome.unsupported(
-                    OsEffect.WINDOW_TITLE, OsEffectReason.PLATFORM_UNSUPPORTED);
+        public CleanupResult closePopup(Consumer<CleanupResult> completion) {
+            return new CleanupResult(OsCleanupState.NOT_REQUIRED, OsEffectReason.NONE);
         }
 
         @Override
-        public OsEffectOutcome applyWindowPulse(int dx, int dy) {
-            return OsEffectOutcome.unsupported(
-                    OsEffect.WINDOW_MOTION, OsEffectReason.PLATFORM_UNSUPPORTED);
+        public PrimaryResult applyTitle(boolean glitched, long seed, int step) {
+            return new PrimaryResult(OsPrimaryState.FAILED, OsEffectReason.GLFW_FAILURE);
         }
 
         @Override
-        public void restoreWindow() {}
+        public PrimaryResult applyWindowPulse(int dx, int dy) {
+            return new PrimaryResult(OsPrimaryState.FAILED, OsEffectReason.GLFW_FAILURE);
+        }
 
         @Override
-        public OsEffectOutcome flashTaskbar() {
-            return OsEffectOutcome.unsupported(
-                    OsEffect.TASKBAR, OsEffectReason.PLATFORM_UNSUPPORTED);
+        public CleanupResult cleanupTitle() {
+            return new CleanupResult(OsCleanupState.NOT_REQUIRED, OsEffectReason.NONE);
+        }
+
+        @Override
+        public CleanupResult cleanupWindowMotion() {
+            return new CleanupResult(OsCleanupState.NOT_REQUIRED, OsEffectReason.NONE);
+        }
+
+        @Override
+        public PrimaryResult flashTaskbar() {
+            return new PrimaryResult(OsPrimaryState.FAILED, OsEffectReason.GLFW_FAILURE);
         }
     };
 }

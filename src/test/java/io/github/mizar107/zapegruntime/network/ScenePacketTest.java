@@ -4,9 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.mizar107.zapegruntime.scene.CancelReason;
+import io.github.mizar107.zapegruntime.scene.OsCapabilityState;
+import io.github.mizar107.zapegruntime.scene.OsCleanupState;
 import io.github.mizar107.zapegruntime.scene.OsEffect;
 import io.github.mizar107.zapegruntime.scene.OsEffectOutcome;
 import io.github.mizar107.zapegruntime.scene.OsEffectReason;
+import io.github.mizar107.zapegruntime.scene.OsPrimaryState;
 import io.github.mizar107.zapegruntime.scene.OsScareReport;
 import io.github.mizar107.zapegruntime.scene.SceneAck;
 import io.github.mizar107.zapegruntime.scene.SceneDescriptor;
@@ -74,17 +77,35 @@ class ScenePacketTest {
         UUID eventId = UUID.randomUUID();
         UUID targetId = UUID.randomUUID();
         OsScareReport report = new OsScareReport(
-                OsEffectOutcome.applied(OsEffect.WINDOW_TITLE),
-                OsEffectOutcome.unsupported(
-                        OsEffect.WINDOW_MOTION, OsEffectReason.FULLSCREEN),
-                OsEffectOutcome.failed(
-                        OsEffect.EXTERNAL_POPUP, OsEffectReason.ASSET_INVALID),
-                OsEffectOutcome.disabled(
-                        OsEffect.TASKBAR, OsEffectReason.EFFECT_DISABLED));
+                OsEffectOutcome.initial(
+                                OsEffect.WINDOW_TITLE,
+                                OsCapabilityState.READY,
+                                OsEffectReason.NONE)
+                        .withPrimary(
+                                OsPrimaryState.REQUESTED, OsEffectReason.UNVERIFIED_API)
+                        .withCleanup(
+                                OsCleanupState.PENDING, OsEffectReason.UNVERIFIED_API),
+                OsEffectOutcome.initial(
+                        OsEffect.WINDOW_MOTION,
+                        OsCapabilityState.UNSUPPORTED,
+                        OsEffectReason.FULLSCREEN),
+                OsEffectOutcome.initial(
+                                OsEffect.EXTERNAL_POPUP,
+                                OsCapabilityState.READY,
+                                OsEffectReason.NONE)
+                        .withPrimary(
+                                OsPrimaryState.FAILED, OsEffectReason.TOOLKIT_FAILURE)
+                        .withCleanup(
+                                OsCleanupState.FAILED, OsEffectReason.CLEANUP_FAILED),
+                OsEffectOutcome.initial(
+                        OsEffect.TASKBAR,
+                        OsCapabilityState.DISABLED,
+                        OsEffectReason.EFFECT_DISABLED));
         OsScareStatusC2S message = new OsScareStatusC2S(eventId, targetId, 4, report);
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
         try {
             OsScareStatusC2S.encode(message, buffer);
+            assertEquals(65, buffer.readableBytes(), "fixed four-effect packet bound");
             assertEquals(message, OsScareStatusC2S.decode(buffer));
         } finally {
             buffer.release();

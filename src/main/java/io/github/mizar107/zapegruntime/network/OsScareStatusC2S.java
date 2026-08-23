@@ -3,7 +3,10 @@ package io.github.mizar107.zapegruntime.network;
 import io.github.mizar107.zapegruntime.scene.OsEffect;
 import io.github.mizar107.zapegruntime.scene.OsEffectOutcome;
 import io.github.mizar107.zapegruntime.scene.OsEffectReason;
-import io.github.mizar107.zapegruntime.scene.OsEffectState;
+import io.github.mizar107.zapegruntime.scene.OsCapabilityState;
+import io.github.mizar107.zapegruntime.scene.OsCleanupState;
+import io.github.mizar107.zapegruntime.scene.OsFallbackState;
+import io.github.mizar107.zapegruntime.scene.OsPrimaryState;
 import io.github.mizar107.zapegruntime.scene.OsScareReport;
 import io.github.mizar107.zapegruntime.server.SceneServerManager;
 import java.util.EnumMap;
@@ -38,8 +41,14 @@ public record OsScareStatusC2S(
         buffer.writeVarInt(message.sequence);
         for (OsEffect effect : OsEffect.values()) {
             OsEffectOutcome outcome = message.report.outcome(effect);
-            buffer.writeByte(outcome.state().wireId());
-            buffer.writeByte(outcome.reason().wireId());
+            buffer.writeByte(outcome.capability().wireId());
+            buffer.writeByte(outcome.capabilityReason().wireId());
+            buffer.writeByte(outcome.primary().wireId());
+            buffer.writeByte(outcome.primaryReason().wireId());
+            buffer.writeByte(outcome.fallback().wireId());
+            buffer.writeByte(outcome.fallbackReason().wireId());
+            buffer.writeByte(outcome.cleanup().wireId());
+            buffer.writeByte(outcome.cleanupReason().wireId());
         }
     }
 
@@ -51,7 +60,13 @@ public record OsScareStatusC2S(
         for (OsEffect effect : OsEffect.values()) {
             outcomes.put(effect, new OsEffectOutcome(
                     effect,
-                    OsEffectState.fromWireId(buffer.readUnsignedByte()),
+                    OsCapabilityState.fromWireId(buffer.readUnsignedByte()),
+                    OsEffectReason.fromWireId(buffer.readUnsignedByte()),
+                    OsPrimaryState.fromWireId(buffer.readUnsignedByte()),
+                    OsEffectReason.fromWireId(buffer.readUnsignedByte()),
+                    OsFallbackState.fromWireId(buffer.readUnsignedByte()),
+                    OsEffectReason.fromWireId(buffer.readUnsignedByte()),
+                    OsCleanupState.fromWireId(buffer.readUnsignedByte()),
                     OsEffectReason.fromWireId(buffer.readUnsignedByte())));
         }
         return new OsScareStatusC2S(

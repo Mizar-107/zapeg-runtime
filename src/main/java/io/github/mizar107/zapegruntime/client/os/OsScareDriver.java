@@ -1,18 +1,22 @@
 package io.github.mizar107.zapegruntime.client.os;
 
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
+import io.github.mizar107.zapegruntime.scene.OsCapabilityState;
+import io.github.mizar107.zapegruntime.scene.OsCleanupState;
 import io.github.mizar107.zapegruntime.scene.OsEffect;
 import io.github.mizar107.zapegruntime.scene.OsEffectOutcome;
 import io.github.mizar107.zapegruntime.scene.OsEffectReason;
-import io.github.mizar107.zapegruntime.scene.OsEffectState;
+import io.github.mizar107.zapegruntime.scene.OsPrimaryState;
 import io.github.mizar107.zapegruntime.scene.OsScareChoreography;
 import io.github.mizar107.zapegruntime.scene.OsScareReport;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
 import java.util.EnumMap;
 
-/** Drives visitation beats and retains a truthful, thread-safe effect report. */
+/** Drives visitation while preserving independent delivery and cleanup truth. */
 public final class OsScareDriver {
 
+    static final int MAX_CLEANUP_ATTEMPTS = 3;
+    static final int POPUP_CLEANUP_CALLBACK_TIMEOUT_TICKS = 20;
     private static final OsScareDriver INSTANCE =
             new OsScareDriver(PlatformOsScare.create());
 
@@ -23,10 +27,26 @@ public final class OsScareDriver {
     private long seed;
     private long generation;
     private boolean sceneActive;
-    private boolean popupRequested;
+    private boolean popupAttempted;
+    private boolean popupOutstanding;
+    private boolean popupCleanupDue;
+    private boolean popupCleanupQueued;
+    private long popupOwnerGeneration = -1L;
+    private long nextPopupCleanupToken;
+    private long activePopupCleanupToken;
+    private int popupCleanupPendingTicks;
     private boolean taskbarRequested;
+    private boolean titleRequested;
     private boolean titleActive;
+    private boolean titleCleanupDue;
+    private long titleOwnerGeneration = -1L;
+    private boolean motionRequested;
     private boolean pulseActive;
+    private boolean motionCleanupDue;
+    private long motionOwnerGeneration = -1L;
+    private int popupCleanupAttempts;
+    private int titleCleanupAttempts;
+    private int motionCleanupAttempts;
 
     public OsScareDriver(OsScareHooks hooks) {
         this.hooks = hooks == null ? OsScareHooks.NOOP : hooks;
@@ -37,33 +57,54 @@ public final class OsScareDriver {
         return INSTANCE;
     }
 
-    /** Validate all capabilities without applying an effect. */
     public synchronized OsScareReport preflight() {
         EnumMap<OsEffect, OsEffectOutcome> probed = new EnumMap<>(OsEffect.class);
         for (OsEffect effect : OsEffect.values()) {
-            probed.put(effect, safePreflight(effect));
+            probed.put(effect, initialFromCapability(effect, safePreflight(effect)));
         }
         return OsScareReport.from(probed);
     }
 
-    /** Begin a visitation and capture the client's current opt-outs. */
+    /** Begin after one final bounded cleanup attempt for the prior generation. */
     public synchronized void begin(long sceneSeed, OsScareToggles currentToggles) {
         reset();
         generation++;
         seed = sceneSeed;
         toggles = currentToggles == null ? OsScareToggles.ALL_OFF : currentToggles;
+        popupAttempted = false;
+        if (!popupOutstanding) {
+            popupCleanupDue = false;
+            popupCleanupQueued = false;
+            popupOwnerGeneration = -1L;
+            activePopupCleanupToken = 0L;
+            popupCleanupPendingTicks = 0;
+            popupCleanupAttempts = 0;
+        }
+        taskbarRequested = false;
+        titleActive = false;
+        if (!titleRequested) {
+            titleCleanupDue = false;
+            titleOwnerGeneration = -1L;
+            titleCleanupAttempts = 0;
+        }
+        if (!motionRequested) {
+            pulseActive = false;
+            motionCleanupDue = false;
+            motionOwnerGeneration = -1L;
+            motionCleanupAttempts = 0;
+        }
         for (OsEffect effect : OsEffect.values()) {
             outcomes.put(effect, initialOutcome(effect));
         }
         sceneActive = true;
     }
 
-    /** Advance the active visitation choreography to this body age. */
     public synchronized void tick(SceneProfile profile, int bodyAgeTicks) {
         if (profile != SceneProfile.VISITATION_01) {
             reset();
             return;
         }
+        retryCleanup();
         if (!sceneActive) {
             return;
         }
@@ -71,32 +112,44 @@ public final class OsScareDriver {
             tickWindowWrongness(bodyAgeTicks);
         }
         if (toggles.facePopupEnabled()
-                && !popupRequested
+                && !popupAttempted
                 && bodyAgeTicks >= OsScareChoreography.POPUP_START_TICK
-                && isAttemptable(OsEffect.EXTERNAL_POPUP)) {
-            popupRequested = true;
-            outcomes.put(
+                && capabilityReady(OsEffect.EXTERNAL_POPUP)) {
+            popupAttempted = true;
+            popupOutstanding = true;
+            popupCleanupDue = false;
+            popupOwnerGeneration = generation;
+            popupCleanupAttempts = 0;
+            setPrimary(
                     OsEffect.EXTERNAL_POPUP,
-                    OsEffectOutcome.pending(OsEffect.EXTERNAL_POPUP));
+                    OsPrimaryState.REQUESTED,
+                    OsEffectReason.NONE);
+            setCleanup(
+                    OsEffect.EXTERNAL_POPUP,
+                    OsCleanupState.PENDING,
+                    OsEffectReason.NONE);
             long requestGeneration = generation;
             try {
                 hooks.showFacePopup(
                         OsScareChoreography.popupTotalMillis(),
                         OsScareChoreography.POPUP_FADE_IN_TICKS * 50,
-                        result -> acceptPopupOutcome(requestGeneration, result));
+                        update -> acceptPopupLifecycle(requestGeneration, update));
             } catch (Throwable failure) {
-                outcomes.put(
+                setPrimaryFailure(
+                        OsEffect.EXTERNAL_POPUP, OsEffectReason.EDT_UNAVAILABLE);
+                popupCleanupDue = true;
+                setCleanup(
                         OsEffect.EXTERNAL_POPUP,
-                        internalFailure(
-                                OsEffect.EXTERNAL_POPUP, OsEffectReason.EDT_UNAVAILABLE));
+                        OsCleanupState.FAILED,
+                        OsEffectReason.CLEANUP_FAILED);
             }
         }
         if (toggles.taskbarFlashEnabled()
                 && !taskbarRequested
                 && bodyAgeTicks >= OsScareChoreography.taskbarFlashTick()
-                && isAttemptable(OsEffect.TASKBAR)) {
+                && capabilityReady(OsEffect.TASKBAR)) {
             taskbarRequested = true;
-            outcomes.put(OsEffect.TASKBAR, safeTaskbar());
+            applyPrimary(OsEffect.TASKBAR, safeTaskbar());
         }
     }
 
@@ -107,11 +160,17 @@ public final class OsScareDriver {
     private void tickWindowWrongness(int bodyAgeTicks) {
         int titleEnd = OsScareChoreography.TITLE_FLICKER_START_TICK
                 + OsScareChoreography.TITLE_FLICKER_TICKS;
-        if (bodyAgeTicks < titleEnd && isAttemptable(OsEffect.WINDOW_TITLE)) {
+        if (bodyAgeTicks < titleEnd && capabilityReady(OsEffect.WINDOW_TITLE)) {
             boolean glitched = OsScareChoreography.titleIsGlitched(bodyAgeTicks);
             if (glitched || titleActive) {
+                if (!titleRequested) {
+                    titleOwnerGeneration = generation;
+                    titleCleanupAttempts = 0;
+                }
+                titleRequested = true;
                 titleActive = true;
-                retainApplied(OsEffect.WINDOW_TITLE, safeTitle(
+                titleCleanupDue = false;
+                applyPrimary(OsEffect.WINDOW_TITLE, safeTitle(
                         glitched,
                         seed,
                         Math.max(0, bodyAgeTicks
@@ -119,118 +178,465 @@ public final class OsScareDriver {
             }
         } else if (titleActive) {
             titleActive = false;
-            restoreWindowSafely();
+            titleCleanupDue = true;
+            cleanupTitle();
         }
 
         int pulseEnd = OsScareChoreography.WINDOW_PULSE_START_TICK
                 + OsScareChoreography.WINDOW_PULSE_TICKS;
         if (bodyAgeTicks >= OsScareChoreography.WINDOW_PULSE_START_TICK
                 && bodyAgeTicks < pulseEnd
-                && isAttemptable(OsEffect.WINDOW_MOTION)) {
+                && capabilityReady(OsEffect.WINDOW_MOTION)) {
             int[] offset = OsScareChoreography.windowPulseOffset(bodyAgeTicks, seed);
+            if (!motionRequested) {
+                motionOwnerGeneration = generation;
+                motionCleanupAttempts = 0;
+            }
+            motionRequested = true;
             pulseActive = true;
-            retainApplied(
+            motionCleanupDue = false;
+            applyPrimary(
                     OsEffect.WINDOW_MOTION,
                     safeWindowPulse(offset[0], offset[1]));
         } else if (pulseActive) {
-            pulseActive = false;
-            safeWindowPulse(0, 0);
+            cleanupMotion();
         }
     }
 
-    private synchronized void acceptPopupOutcome(
-            long requestGeneration, OsEffectOutcome outcome) {
-        if (requestGeneration != generation
-                || !sceneActive
-                || outcome == null
-                || outcome.effect() != OsEffect.EXTERNAL_POPUP) {
+    private synchronized void acceptPopupLifecycle(
+            long requestGeneration, OsScareHooks.LifecycleUpdate update) {
+        if (requestGeneration != popupOwnerGeneration || update == null) {
             return;
         }
-        if (outcome.state() == OsEffectState.APPLIED
-                || outcome.state() == OsEffectState.FAILED
-                || outcome.state() == OsEffectState.UNSUPPORTED) {
-            outcomes.put(OsEffect.EXTERNAL_POPUP, outcome);
-        } else {
-            outcomes.put(
-                    OsEffect.EXTERNAL_POPUP,
-                    internalFailure(
-                            OsEffect.EXTERNAL_POPUP, OsEffectReason.POPUP_NOT_SHOWING));
+        OsScareHooks.PrimaryResult primary = checkedPrimary(
+                OsEffect.EXTERNAL_POPUP,
+                update.primary(),
+                OsEffectReason.TOOLKIT_FAILURE);
+        OsScareHooks.CleanupResult cleanup = checkedCleanup(
+                OsEffect.EXTERNAL_POPUP,
+                update.cleanup(),
+                OsEffectReason.CLEANUP_FAILED);
+        if (cleanup.state() == OsCleanupState.FAILED
+                && primary.state() == OsPrimaryState.APPLIED) {
+            // A timer/show lifecycle failure supersedes an earlier visible proof.
+            primary = new OsScareHooks.PrimaryResult(
+                    OsPrimaryState.FAILED, OsEffectReason.CLEANUP_FAILED);
         }
+        if (requestGeneration == generation) {
+            applyPrimary(OsEffect.EXTERNAL_POPUP, primary);
+            applyCleanup(OsEffect.EXTERNAL_POPUP, cleanup);
+        }
+        if (cleanup.state() != OsCleanupState.PENDING) {
+            handlePopupCleanupResult(requestGeneration, cleanup);
+        }
+    }
+
+    private synchronized void acceptPopupCleanup(
+            long ownerGeneration,
+            long cleanupToken,
+            OsScareHooks.CleanupResult result) {
+        if (ownerGeneration != popupOwnerGeneration
+                || cleanupToken != activePopupCleanupToken) {
+            return;
+        }
+        OsScareHooks.CleanupResult cleanup = checkedCleanup(
+                OsEffect.EXTERNAL_POPUP,
+                result,
+                OsEffectReason.CLEANUP_FAILED);
+        if (cleanup.state() == OsCleanupState.PENDING) {
+            cleanup = cleanupFailure(
+                    OsEffect.EXTERNAL_POPUP, OsEffectReason.CLEANUP_FAILED);
+        }
+        activePopupCleanupToken = 0L;
+        popupCleanupQueued = false;
+        popupCleanupPendingTicks = 0;
+        if (ownerGeneration == generation) {
+            applyCleanup(OsEffect.EXTERNAL_POPUP, cleanup);
+        }
+        handlePopupCleanupResult(ownerGeneration, cleanup);
+    }
+
+    /** Retry only state-retaining cleanup, never more than the fixed bound. */
+    public synchronized void retryCleanup() {
+        tickPopupCleanupWatchdog();
+        if (titleRequested
+                && titleCleanupDue
+                && titleCleanupAttempts < MAX_CLEANUP_ATTEMPTS) {
+            cleanupTitle();
+        }
+        if (motionRequested
+                && !pulseActive
+                && motionCleanupDue
+                && motionCleanupAttempts < MAX_CLEANUP_ATTEMPTS) {
+            cleanupMotion();
+        }
+        if (popupOutstanding
+                && popupCleanupDue
+                && !popupCleanupQueued
+                && popupCleanupAttempts < MAX_CLEANUP_ATTEMPTS) {
+            cleanupPopup();
+        }
+    }
+
+    private void cleanupTitle() {
+        if (!titleRequested) {
+            return;
+        }
+        long ownerGeneration = titleOwnerGeneration;
+        OsScareHooks.CleanupResult result = safeTitleCleanup();
+        if (result.state() == OsCleanupState.PENDING
+                && result.reason() != OsEffectReason.UNVERIFIED_API) {
+            result = cleanupFailure(
+                    OsEffect.WINDOW_TITLE, OsEffectReason.CLEANUP_FAILED);
+        }
+        if (ownerGeneration == generation) {
+            applyCleanup(OsEffect.WINDOW_TITLE, result);
+        }
+        if (result.state() == OsCleanupState.APPLIED
+                || result.state() == OsCleanupState.NOT_REQUIRED
+                || (result.state() == OsCleanupState.PENDING
+                        && result.reason() == OsEffectReason.UNVERIFIED_API)) {
+            clearTitleCleanupTracking();
+        } else if (result.state() == OsCleanupState.FAILED) {
+            titleCleanupAttempts++;
+            markExhaustedIfOwned(
+                    OsEffect.WINDOW_TITLE, titleCleanupAttempts, ownerGeneration);
+        }
+    }
+
+    private void cleanupMotion() {
+        if (!motionRequested) {
+            return;
+        }
+        long ownerGeneration = motionOwnerGeneration;
+        motionCleanupDue = true;
+        OsScareHooks.CleanupResult result = safeMotionCleanup();
+        if (result.state() == OsCleanupState.PENDING) {
+            result = cleanupFailure(
+                    OsEffect.WINDOW_MOTION, OsEffectReason.CLEANUP_FAILED);
+        }
+        if (ownerGeneration == generation) {
+            applyCleanup(OsEffect.WINDOW_MOTION, result);
+        }
+        if (result.state() == OsCleanupState.APPLIED
+                || result.state() == OsCleanupState.NOT_REQUIRED) {
+            clearMotionCleanupTracking();
+        } else if (result.state() == OsCleanupState.FAILED) {
+            // The hook deliberately retains its origin for the next bounded retry.
+            pulseActive = false;
+            motionCleanupAttempts++;
+            markExhaustedIfOwned(
+                    OsEffect.WINDOW_MOTION, motionCleanupAttempts, ownerGeneration);
+        }
+    }
+
+    private void cleanupPopup() {
+        if (!popupOutstanding || !popupCleanupDue || popupCleanupQueued) {
+            return;
+        }
+        long ownerGeneration = popupOwnerGeneration;
+        long cleanupToken = ++nextPopupCleanupToken;
+        activePopupCleanupToken = cleanupToken;
+        popupCleanupQueued = true;
+        popupCleanupPendingTicks = 0;
+        try {
+            OsScareHooks.CleanupResult immediate = hooks.closePopup(
+                    result -> acceptPopupCleanup(ownerGeneration, cleanupToken, result));
+            if (ownerGeneration != popupOwnerGeneration
+                    || cleanupToken != activePopupCleanupToken) {
+                // A synchronous callback already settled this operation.
+                return;
+            }
+            immediate = checkedCleanup(
+                    OsEffect.EXTERNAL_POPUP,
+                    immediate,
+                    OsEffectReason.CLEANUP_FAILED);
+            if (ownerGeneration == generation) {
+                applyCleanup(OsEffect.EXTERNAL_POPUP, immediate);
+            }
+            if (immediate.state() != OsCleanupState.PENDING) {
+                activePopupCleanupToken = 0L;
+                popupCleanupQueued = false;
+                popupCleanupPendingTicks = 0;
+                handlePopupCleanupResult(ownerGeneration, immediate);
+            }
+        } catch (Throwable failure) {
+            if (ownerGeneration == popupOwnerGeneration
+                    && cleanupToken == activePopupCleanupToken) {
+                activePopupCleanupToken = 0L;
+                popupCleanupQueued = false;
+                popupCleanupPendingTicks = 0;
+                OsScareHooks.CleanupResult cleanup = cleanupFailure(
+                        OsEffect.EXTERNAL_POPUP, OsEffectReason.CLEANUP_FAILED);
+                if (ownerGeneration == generation) {
+                    applyCleanup(OsEffect.EXTERNAL_POPUP, cleanup);
+                }
+                handlePopupCleanupResult(ownerGeneration, cleanup);
+            }
+        }
+    }
+
+    private void tickPopupCleanupWatchdog() {
+        if (!popupCleanupQueued || activePopupCleanupToken == 0L) {
+            return;
+        }
+        popupCleanupPendingTicks++;
+        if (popupCleanupPendingTicks < POPUP_CLEANUP_CALLBACK_TIMEOUT_TICKS) {
+            return;
+        }
+        long ownerGeneration = popupOwnerGeneration;
+        activePopupCleanupToken = 0L;
+        popupCleanupQueued = false;
+        popupCleanupPendingTicks = 0;
+        OsScareHooks.CleanupResult failure = cleanupFailure(
+                OsEffect.EXTERNAL_POPUP, OsEffectReason.EDT_UNAVAILABLE);
+        if (ownerGeneration == generation) {
+            applyCleanup(OsEffect.EXTERNAL_POPUP, failure);
+        }
+        handlePopupCleanupResult(ownerGeneration, failure);
+    }
+
+    private void handlePopupCleanupResult(
+            long ownerGeneration, OsScareHooks.CleanupResult cleanup) {
+        if (ownerGeneration != popupOwnerGeneration) {
+            return;
+        }
+        if (cleanup.state() == OsCleanupState.APPLIED
+                || cleanup.state() == OsCleanupState.NOT_REQUIRED) {
+            clearPopupCleanupTracking();
+        } else if (cleanup.state() == OsCleanupState.FAILED) {
+            popupCleanupDue = true;
+            popupCleanupQueued = false;
+            activePopupCleanupToken = 0L;
+            popupCleanupPendingTicks = 0;
+            popupCleanupAttempts++;
+            markExhaustedIfOwned(
+                    OsEffect.EXTERNAL_POPUP, popupCleanupAttempts, ownerGeneration);
+        }
+    }
+
+    private void markExhaustedIfOwned(
+            OsEffect effect, int attempts, long ownerGeneration) {
+        if (attempts >= MAX_CLEANUP_ATTEMPTS && ownerGeneration == generation) {
+            setCleanup(
+                    effect,
+                    OsCleanupState.FAILED,
+                    OsEffectReason.CLEANUP_RETRY_EXHAUSTED);
+        } else if (attempts >= MAX_CLEANUP_ATTEMPTS) {
+            logFailure(effect, "cleanup", OsEffectReason.CLEANUP_RETRY_EXHAUSTED);
+        }
+    }
+
+    private void clearPopupCleanupTracking() {
+        popupOutstanding = false;
+        popupCleanupDue = false;
+        popupCleanupQueued = false;
+        popupOwnerGeneration = -1L;
+        activePopupCleanupToken = 0L;
+        popupCleanupPendingTicks = 0;
+        popupCleanupAttempts = 0;
+    }
+
+    private void clearTitleCleanupTracking() {
+        titleRequested = false;
+        titleActive = false;
+        titleCleanupDue = false;
+        titleOwnerGeneration = -1L;
+        titleCleanupAttempts = 0;
+    }
+
+    private void clearMotionCleanupTracking() {
+        pulseActive = false;
+        motionRequested = false;
+        motionCleanupDue = false;
+        motionOwnerGeneration = -1L;
+        motionCleanupAttempts = 0;
     }
 
     private OsEffectOutcome initialOutcome(OsEffect effect) {
         if (!toggles.master()) {
-            return OsEffectOutcome.disabled(effect, OsEffectReason.MASTER_DISABLED);
+            return OsEffectOutcome.initial(
+                    effect, OsCapabilityState.DISABLED, OsEffectReason.MASTER_DISABLED);
         }
         boolean enabled = switch (effect) {
             case WINDOW_TITLE, WINDOW_MOTION -> toggles.windowWrongness();
             case EXTERNAL_POPUP -> toggles.facePopup();
             case TASKBAR -> toggles.taskbarFlash();
         };
-        return enabled
-                ? safePreflight(effect)
-                : OsEffectOutcome.disabled(effect, OsEffectReason.EFFECT_DISABLED);
-    }
-
-    private boolean isAttemptable(OsEffect effect) {
-        OsEffectState state = outcomes.get(effect).state();
-        return state == OsEffectState.READY || state == OsEffectState.APPLIED;
-    }
-
-    private void retainApplied(OsEffect effect, OsEffectOutcome next) {
-        OsEffectOutcome previous = outcomes.get(effect);
-        if (previous.state() != OsEffectState.APPLIED) {
-            outcomes.put(effect, next);
+        if (!enabled) {
+            return OsEffectOutcome.initial(
+                    effect, OsCapabilityState.DISABLED, OsEffectReason.EFFECT_DISABLED);
         }
+        if ((effect == OsEffect.WINDOW_TITLE && titleRequested)
+                || (effect == OsEffect.WINDOW_MOTION && motionRequested)) {
+            return OsEffectOutcome.initial(
+                    effect, OsCapabilityState.FAILED, OsEffectReason.CLEANUP_FAILED);
+        }
+        return initialFromCapability(effect, safePreflight(effect));
     }
 
-    private OsEffectOutcome safePreflight(OsEffect effect) {
+    private static OsEffectOutcome initialFromCapability(
+            OsEffect effect, OsScareHooks.CapabilityResult capability) {
+        return OsEffectOutcome.initial(effect, capability.state(), capability.reason());
+    }
+
+    private boolean capabilityReady(OsEffect effect) {
+        return outcomes.get(effect).capability() == OsCapabilityState.READY;
+    }
+
+    private OsScareHooks.CapabilityResult safePreflight(OsEffect effect) {
         try {
-            OsEffectOutcome result = hooks.preflight(effect);
-            if (result == null
-                    || result.effect() != effect
-                    || (result.state() != OsEffectState.READY
-                            && result.state() != OsEffectState.UNSUPPORTED
-                            && result.state() != OsEffectState.FAILED)) {
-                return internalFailure(effect, failureReason(effect));
+            OsScareHooks.CapabilityResult result = hooks.preflight(effect);
+            if (result == null) {
+                throw new IllegalArgumentException("null capability");
             }
+            // Constructor validation is the common fail-closed policy.
+            OsEffectOutcome.initial(effect, result.state(), result.reason());
             return result;
         } catch (Throwable failure) {
-            return internalFailure(effect, failureReason(effect));
+            return capabilityFailure(effect, failureReason(effect));
         }
     }
 
-    private OsEffectOutcome safeTitle(boolean glitched, long value, int step) {
+    private OsScareHooks.PrimaryResult safeTitle(boolean glitched, long value, int step) {
         try {
-            return checkedAttempt(
+            return checkedPrimary(
                     OsEffect.WINDOW_TITLE,
                     hooks.applyTitle(glitched, value, step),
                     OsEffectReason.GLFW_FAILURE);
         } catch (Throwable failure) {
-            return internalFailure(OsEffect.WINDOW_TITLE, OsEffectReason.GLFW_FAILURE);
+            return primaryFailure(OsEffect.WINDOW_TITLE, OsEffectReason.GLFW_FAILURE);
         }
     }
 
-    private OsEffectOutcome safeWindowPulse(int dx, int dy) {
+    private OsScareHooks.PrimaryResult safeWindowPulse(int dx, int dy) {
         try {
-            return checkedAttempt(
+            return checkedPrimary(
                     OsEffect.WINDOW_MOTION,
                     hooks.applyWindowPulse(dx, dy),
                     OsEffectReason.GLFW_FAILURE);
         } catch (Throwable failure) {
-            return internalFailure(OsEffect.WINDOW_MOTION, OsEffectReason.GLFW_FAILURE);
+            return primaryFailure(OsEffect.WINDOW_MOTION, OsEffectReason.GLFW_FAILURE);
         }
     }
 
-    private OsEffectOutcome safeTaskbar() {
+    private OsScareHooks.PrimaryResult safeTaskbar() {
         try {
-            return checkedAttempt(
+            return checkedPrimary(
                     OsEffect.TASKBAR,
                     hooks.flashTaskbar(),
                     OsEffectReason.GLFW_FAILURE);
         } catch (Throwable failure) {
-            return internalFailure(OsEffect.TASKBAR, OsEffectReason.GLFW_FAILURE);
+            return primaryFailure(OsEffect.TASKBAR, OsEffectReason.GLFW_FAILURE);
         }
+    }
+
+    private OsScareHooks.CleanupResult safeTitleCleanup() {
+        try {
+            return checkedCleanup(
+                    OsEffect.WINDOW_TITLE,
+                    hooks.cleanupTitle(),
+                    OsEffectReason.GLFW_FAILURE);
+        } catch (Throwable failure) {
+            return cleanupFailure(OsEffect.WINDOW_TITLE, OsEffectReason.GLFW_FAILURE);
+        }
+    }
+
+    private OsScareHooks.CleanupResult safeMotionCleanup() {
+        try {
+            return checkedCleanup(
+                    OsEffect.WINDOW_MOTION,
+                    hooks.cleanupWindowMotion(),
+                    OsEffectReason.CLEANUP_FAILED);
+        } catch (Throwable failure) {
+            return cleanupFailure(OsEffect.WINDOW_MOTION, OsEffectReason.CLEANUP_FAILED);
+        }
+    }
+
+    private static OsScareHooks.PrimaryResult checkedPrimary(
+            OsEffect effect,
+            OsScareHooks.PrimaryResult result,
+            OsEffectReason failureReason) {
+        if (result == null) {
+            return primaryFailure(effect, failureReason);
+        }
+        try {
+            OsEffectOutcome.initial(effect, OsCapabilityState.READY, OsEffectReason.NONE)
+                    .withPrimary(result.state(), result.reason());
+            return result;
+        } catch (Throwable invalid) {
+            return primaryFailure(effect, failureReason);
+        }
+    }
+
+    private static OsScareHooks.CleanupResult checkedCleanup(
+            OsEffect effect,
+            OsScareHooks.CleanupResult result,
+            OsEffectReason failureReason) {
+        if (result == null) {
+            return cleanupFailure(effect, failureReason);
+        }
+        try {
+            OsEffectOutcome.initial(effect, OsCapabilityState.READY, OsEffectReason.NONE)
+                    .withCleanup(result.state(), result.reason());
+            return result;
+        } catch (Throwable invalid) {
+            return cleanupFailure(effect, failureReason);
+        }
+    }
+
+    private void applyPrimary(OsEffect effect, OsScareHooks.PrimaryResult result) {
+        if (result != null) {
+            try {
+                setPrimary(effect, result.state(), result.reason());
+            } catch (Throwable invalid) {
+                setPrimaryFailure(effect, failureReason(effect));
+            }
+        }
+    }
+
+    private void applyCleanup(OsEffect effect, OsScareHooks.CleanupResult result) {
+        if (result != null) {
+            try {
+                setCleanup(effect, result.state(), result.reason());
+            } catch (Throwable invalid) {
+                setCleanup(effect, OsCleanupState.FAILED, OsEffectReason.CLEANUP_FAILED);
+            }
+        }
+    }
+
+    private void setPrimary(OsEffect effect, OsPrimaryState state, OsEffectReason reason) {
+        outcomes.put(effect, outcomes.get(effect).withPrimary(state, reason));
+    }
+
+    private void setPrimaryFailure(OsEffect effect, OsEffectReason reason) {
+        logFailure(effect, "primary", reason);
+        setPrimary(effect, OsPrimaryState.FAILED, reason);
+    }
+
+    private void setCleanup(OsEffect effect, OsCleanupState state, OsEffectReason reason) {
+        outcomes.put(effect, outcomes.get(effect).withCleanup(state, reason));
+        if (state == OsCleanupState.FAILED) {
+            logFailure(effect, "cleanup", reason);
+        }
+    }
+
+    private static OsScareHooks.CapabilityResult capabilityFailure(
+            OsEffect effect, OsEffectReason reason) {
+        logFailure(effect, "capability", reason);
+        return new OsScareHooks.CapabilityResult(OsCapabilityState.FAILED, reason);
+    }
+
+    private static OsScareHooks.PrimaryResult primaryFailure(
+            OsEffect effect, OsEffectReason reason) {
+        logFailure(effect, "primary", reason);
+        return new OsScareHooks.PrimaryResult(OsPrimaryState.FAILED, reason);
+    }
+
+    private static OsScareHooks.CleanupResult cleanupFailure(
+            OsEffect effect, OsEffectReason reason) {
+        logFailure(effect, "cleanup", reason);
+        return new OsScareHooks.CleanupResult(OsCleanupState.FAILED, reason);
     }
 
     private static OsEffectReason failureReason(OsEffect effect) {
@@ -239,67 +645,42 @@ public final class OsScareDriver {
                 : OsEffectReason.GLFW_FAILURE;
     }
 
-    private static OsEffectOutcome checkedAttempt(
-            OsEffect effect,
-            OsEffectOutcome outcome,
-            OsEffectReason invalidReason) {
-        if (outcome == null
-                || outcome.effect() != effect
-                || (outcome.state() != OsEffectState.APPLIED
-                        && outcome.state() != OsEffectState.UNSUPPORTED
-                        && outcome.state() != OsEffectState.FAILED)) {
-            return internalFailure(effect, invalidReason);
-        }
-        return outcome;
-    }
-
-    private static OsEffectOutcome internalFailure(
-            OsEffect effect, OsEffectReason reason) {
+    private static void logFailure(
+            OsEffect effect, String stage, OsEffectReason reason) {
         ZapeGRuntime.LOGGER.warn(
-                "OS effect outcome effect={} state=failed reason={}",
+                "OS effect outcome effect={} stage={} state=failed reason={}",
                 effect.serializedName(),
+                stage,
                 reason.serializedName());
-        return OsEffectOutcome.failed(effect, reason);
     }
 
-    private void restoreWindowSafely() {
-        try {
-            hooks.restoreWindow();
-        } catch (Throwable failure) {
-            internalFailure(OsEffect.WINDOW_MOTION, OsEffectReason.GLFW_FAILURE);
-        }
-    }
-
-    private void closePopupSafely() {
-        try {
-            hooks.closePopup();
-        } catch (Throwable failure) {
-            internalFailure(OsEffect.EXTERNAL_POPUP, OsEffectReason.TOOLKIT_FAILURE);
-        }
-    }
-
-    /** Restore window state and invalidate any queued EDT callback. */
+    /** Initiate cleanup but retain the generation until callbacks settle. */
     public synchronized void reset() {
-        if (sceneActive || popupRequested || titleActive || pulseActive) {
-            generation++;
+        sceneActive = false;
+        if (titleRequested
+                && titleCleanupAttempts < MAX_CLEANUP_ATTEMPTS) {
+            titleCleanupDue = true;
+            cleanupTitle();
         }
-        if (titleActive || pulseActive) {
-            restoreWindowSafely();
+        if (motionRequested && motionCleanupAttempts < MAX_CLEANUP_ATTEMPTS) {
+            motionCleanupDue = true;
+            cleanupMotion();
         }
-        if (popupRequested) {
-            closePopupSafely();
+        if (popupOutstanding
+                && !popupCleanupQueued
+                && popupCleanupAttempts < MAX_CLEANUP_ATTEMPTS) {
+            popupCleanupDue = true;
+            cleanupPopup();
         }
         titleActive = false;
-        pulseActive = false;
-        popupRequested = false;
-        taskbarRequested = false;
-        sceneActive = false;
     }
 
     private void initialiseUnsupported() {
         for (OsEffect effect : OsEffect.values()) {
-            outcomes.put(effect, OsEffectOutcome.unsupported(
-                    effect, OsEffectReason.PLATFORM_UNSUPPORTED));
+            outcomes.put(effect, OsEffectOutcome.initial(
+                    effect,
+                    OsCapabilityState.UNSUPPORTED,
+                    OsEffectReason.PLATFORM_UNSUPPORTED));
         }
     }
 }

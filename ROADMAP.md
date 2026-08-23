@@ -158,10 +158,11 @@ mid-session, so the handshake refuses the mismatch up front):
   momentarily reads as
   glitched block glyphs (never letters, never words, never a name), a small
   decaying window-position pulse, and an optional taskbar attention flash.
-  Everything restores exactly: the original title and geometry always come
-  back, the popup never steals keyboard or mouse focus, and the layer fails
-  silent on headless or unsupported platforms. Operator-only and
-  manifestation-gated on the Director side; never gaze-resolved.
+  Cleanup is bounded and observable: successful geometry readback clears the
+  saved origin, while a failed restore retains it for retry and is reported.
+  The popup never steals keyboard or mouse focus, and unsupported platforms
+  report a bounded capability result. Operator-only and manifestation-gated
+  on the Director side; never gaze-resolved.
 - Per-client opt-out: the `osScares` client config (master switch plus
   face-popup, window-wrongness and taskbar-flash sub-toggles) lets any
   player disable the OS-level beats locally without affecting anyone else.
@@ -169,15 +170,29 @@ mid-session, so the handshake refuses the mismatch up front):
 ### Protocol 8 diagnostic hardening
 
 - Visitation no longer emits the render pipeline's generic `VISIBLE`
-  acknowledgement. Delivery (`RECEIVED`) and terminal lifecycle remain on the
-  scene acknowledgement channel; presentation truth lives in a separate,
-  fixed-size four-effect report.
-- Window title, window motion, external popup and taskbar each report a
-  bounded capability/application state and non-sensitive reason code. The
-  popup cannot become `APPLIED` until the Swing EDT verifies `isShowing()`.
+  acknowledgement, and the server profile allowlist rejects forged
+  `VISIBLE`/`GAZE` acknowledgements for this profile. Delivery (`RECEIVED`)
+  and terminal lifecycle remain on the scene acknowledgement channel;
+  presentation truth lives in a separate, fixed-size four-effect report.
+- Window title, window motion, external popup and taskbar each report four
+  bounded, independent dimensions: capability, primary delivery, fallback
+  delivery and cleanup. Title and taskbar remain `REQUESTED` because their
+  GLFW APIs provide no proof; motion becomes `APPLIED` only after position
+  readback. The popup cannot become `APPLIED` until the Swing EDT verifies
+  `isShowing()` plus nonzero opacity, or verifies the deliberately opaque mode
+  when opacity is unsupported. Timer/show failures supersede earlier success.
+- Popup and window cleanup return explicit outcomes. Failed position cleanup
+  retains the origin for a bounded retry; a new successful visit captures the
+  window's then-current position rather than snapping to stale coordinates.
+- Batch 1 has no in-game fallback, so the fixed fallback dimension reports
+  `NOT_AVAILABLE:FALLBACK_NOT_IMPLEMENTED`. `visitation_01` also suppresses
+  all in-game prelude, fog, camera, overlay and audio presentation so the
+  master opt-out's “does nothing” promise is literal.
 - Client setup validates the bundled PNG before a scene. Failures are logged
   by enum code only and are visible to permission-level-2 operators through
-  `/zapegscene diagnose <player>`; all opt-outs and cleanup guarantees remain.
+  `/zapegscene diagnose <player>`. Title cleanup uses the terminal
+  `PENDING:UNVERIFIED_API` observation because GLFW has no title readback;
+  popup and motion cleanup retain state for bounded verified retries.
 - Protocol 8 requires an atomic client/server jar update. The parallel batch
   intentionally leaves `mod_version` unchanged; release integration must bump
   it before publishing.

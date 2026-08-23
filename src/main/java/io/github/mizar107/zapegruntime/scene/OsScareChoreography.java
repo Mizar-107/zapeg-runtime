@@ -6,8 +6,8 @@ package io.github.mizar107.zapegruntime.scene;
  * wrong, a small window-position pulse, and an optional taskbar flash.
  *
  * <p>Pure and display-free so every bound is unit-testable: the face is
- * visible well under two seconds, the title always comes back, the window
- * pulse decays to exactly zero, and the glitched titles are built from a
+ * visible well under two seconds, the title restore is always requested, the
+ * window pulse decays to exactly zero, and the glitched titles are built from a
  * fixed pool of block characters — never letters, never words, never a
  * name.
  */

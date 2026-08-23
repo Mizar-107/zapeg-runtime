@@ -21,7 +21,13 @@ public enum OsEffectReason {
     EDT_UNAVAILABLE(10, "edt_unavailable"),
     POPUP_NOT_SHOWING(11, "popup_not_showing"),
     TOOLKIT_FAILURE(12, "toolkit_failure"),
-    GLFW_FAILURE(13, "glfw_failure");
+    GLFW_FAILURE(13, "glfw_failure"),
+    FALLBACK_NOT_IMPLEMENTED(14, "fallback_not_implemented"),
+    UNVERIFIED_API(15, "unverified_api"),
+    CLEANUP_FAILED(16, "cleanup_failed"),
+    CLEANUP_PENDING(17, "cleanup_pending"),
+    READBACK_MISMATCH(18, "readback_mismatch"),
+    CLEANUP_RETRY_EXHAUSTED(19, "cleanup_retry_exhausted");
 
     private final int wireId;
     private final String serializedName;

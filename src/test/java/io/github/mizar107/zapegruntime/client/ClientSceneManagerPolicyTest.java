@@ -1,6 +1,7 @@
 package io.github.mizar107.zapegruntime.client;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
@@ -15,5 +16,13 @@ class ClientSceneManagerPolicyTest {
         assertFalse(ClientSceneManager.usesRenderObservation(SceneProfile.WHISPER_STEPS_01));
         assertTrue(ClientSceneManager.usesRenderObservation(SceneProfile.ECHO_01));
         assertTrue(ClientSceneManager.usesRenderObservation(SceneProfile.RIFT_01));
+    }
+
+    @Test
+    void visitationHasNoInGamePreludeFogOverlayOrCameraPolicy() {
+        assertFalse(ClientSceneManager.usesInGamePresentation(SceneProfile.VISITATION_01));
+        assertEquals(0, SceneProfile.VISITATION_01.preludeTicks());
+        assertEquals(0, SceneProfile.VISITATION_01.uneaseLevel());
+        assertTrue(ClientSceneManager.usesInGamePresentation(SceneProfile.ECHO_01));
     }
 }

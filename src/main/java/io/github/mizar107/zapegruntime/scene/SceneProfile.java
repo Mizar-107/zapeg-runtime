@@ -74,7 +74,7 @@ public enum SceneProfile {
     // gaze-resolved, and the screen itself stays clean.
     VISITATION_01(
             12, "visitation_01", 70, 360.0D, 60_000, false,
-            ScenePlacementMode.PLAYER_RELATIVE, 15, 2, 0),
+            ScenePlacementMode.PLAYER_RELATIVE, 0, 0, 0),
     // Manifestation rift: target-private overlay family. Wire stage picks
     // eclipse (near-black), tear (chroma), unmoor (slow acid warp) or
     // witness (HUD gone, fullscreen eyes). Never gaze-resolved.
@@ -200,6 +200,29 @@ public enum SceneProfile {
             occupancy += encoreDelayTicks + ENCORE_BEAT_TICKS;
         }
         return occupancy;
+    }
+
+    /**
+     * Server-side acknowledgement allowlist. In particular, visitation has
+     * no in-game visibility or gaze resolution, so a forged VISIBLE cannot
+     * claim presentation and a forged terminal GAZE cannot clear its slot.
+     */
+    public boolean acceptsAcknowledgement(SceneAck acknowledgement) {
+        return switch (acknowledgement) {
+            case VISIBLE -> this != VISITATION_01;
+            case GAZE -> switch (this) {
+                case ECHO_01,
+                        THRESHOLD_01,
+                        MOTION_ECHO_01,
+                        LIGHT_FAULT_01,
+                        PERIPHERAL_01,
+                        SKY_MARK_01,
+                        FALSE_PASSAGE_01,
+                        NEAR_MISS_01 -> true;
+                default -> false;
+            };
+            default -> true;
+        };
     }
 
     public static SceneProfile fromWireId(int wireId) {
