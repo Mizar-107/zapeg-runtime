@@ -157,6 +157,25 @@ public final class OsScareDriver {
         return OsScareReport.from(outcomes);
     }
 
+    /**
+     * True only while retained physical cleanup can still settle or retry.
+     * Terminal title PENDING/UNVERIFIED is already settled, and an exhausted
+     * FAILED cleanup is terminal even though platform state remains fail-closed.
+     */
+    public synchronized boolean hasPendingPhysicalCleanup() {
+        boolean popupPending = popupOutstanding
+                && popupCleanupDue
+                && (popupCleanupQueued
+                        || popupCleanupAttempts < MAX_CLEANUP_ATTEMPTS);
+        boolean titlePending = titleRequested
+                && titleCleanupDue
+                && titleCleanupAttempts < MAX_CLEANUP_ATTEMPTS;
+        boolean motionPending = motionRequested
+                && motionCleanupDue
+                && motionCleanupAttempts < MAX_CLEANUP_ATTEMPTS;
+        return popupPending || titlePending || motionPending;
+    }
+
     private void tickWindowWrongness(int bodyAgeTicks) {
         int titleEnd = OsScareChoreography.TITLE_FLICKER_START_TICK
                 + OsScareChoreography.TITLE_FLICKER_TICKS;
@@ -468,7 +487,8 @@ public final class OsScareDriver {
                     effect, OsCapabilityState.DISABLED, OsEffectReason.EFFECT_DISABLED);
         }
         if ((effect == OsEffect.WINDOW_TITLE && titleRequested)
-                || (effect == OsEffect.WINDOW_MOTION && motionRequested)) {
+                || (effect == OsEffect.WINDOW_MOTION && motionRequested)
+                || (effect == OsEffect.EXTERNAL_POPUP && popupOutstanding)) {
             return OsEffectOutcome.initial(
                     effect, OsCapabilityState.FAILED, OsEffectReason.CLEANUP_FAILED);
         }

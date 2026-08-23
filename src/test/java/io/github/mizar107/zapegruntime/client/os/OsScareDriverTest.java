@@ -1,6 +1,7 @@
 package io.github.mizar107.zapegruntime.client.os;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -241,8 +242,10 @@ class OsScareDriverTest {
 
         driver.reset();
         assertEquals(OsCleanupState.PENDING, driver.report().externalPopup().cleanup());
+        assertTrue(driver.hasPendingPhysicalCleanup());
         hooks.popupCleanupApplied();
         assertEquals(OsCleanupState.APPLIED, driver.report().externalPopup().cleanup());
+        assertFalse(driver.hasPendingPhysicalCleanup());
 
         driver.begin(999L, OsScareToggles.ALL_ON);
         oldLifecycle.accept(new OsScareHooks.LifecycleUpdate(
@@ -285,11 +288,12 @@ class OsScareDriverTest {
         driver.begin(222L, popupOnly);
         assertEquals(OsCapabilityState.FAILED,
                 driver.report().externalPopup().capability());
-        assertEquals(OsEffectReason.ALREADY_ACTIVE,
+        assertEquals(OsEffectReason.CLEANUP_FAILED,
                 driver.report().externalPopup().capabilityReason());
 
         oldCleanup.accept(new OsScareHooks.CleanupResult(
                 OsCleanupState.FAILED, OsEffectReason.CLEANUP_FAILED));
+        assertTrue(driver.hasPendingPhysicalCleanup());
         assertEquals(OsCleanupState.NOT_REQUIRED,
                 driver.report().externalPopup().cleanup(),
                 "an old cleanup failure must not rewrite the later scene report");
@@ -309,8 +313,8 @@ class OsScareDriverTest {
     @Test
     void missingPopupCleanupCallbackTimesOutIntoThreeBoundedAttempts() {
         RecordingHooks hooks = new RecordingHooks();
-        OsScareDriver driver = driven(
-                hooks, new OsScareToggles(true, true, false, false));
+        OsScareToggles popupOnly = new OsScareToggles(true, true, false, false);
+        OsScareDriver driver = driven(hooks, popupOnly);
         runBody(driver, OsScareChoreography.POPUP_START_TICK);
         hooks.popupApplied();
         driver.reset();
@@ -326,6 +330,17 @@ class OsScareDriverTest {
         assertEquals(OsCleanupState.FAILED, driver.report().externalPopup().cleanup());
         assertEquals(OsEffectReason.CLEANUP_RETRY_EXHAUSTED,
                 driver.report().externalPopup().cleanupReason());
+        assertFalse(driver.hasPendingPhysicalCleanup());
+
+        long popupRequests = hooks.count("popup:");
+        driver.begin(9876L, popupOnly);
+        assertEquals(OsCapabilityState.FAILED,
+                driver.report().externalPopup().capability());
+        assertEquals(OsEffectReason.CLEANUP_FAILED,
+                driver.report().externalPopup().capabilityReason());
+        runBody(driver, OsScareChoreography.POPUP_START_TICK);
+        assertEquals(popupRequests, hooks.count("popup:"),
+                "exhausted cleanup ownership must fail closed without a second popup");
     }
 
     @Test
@@ -340,6 +355,8 @@ class OsScareDriverTest {
         assertEquals(OsEffectReason.UNVERIFIED_API,
                 driver.report().windowTitle().cleanupReason());
         assertEquals(1, hooks.count("title-cleanup"));
+        assertFalse(driver.hasPendingPhysicalCleanup(),
+                "terminal PENDING/UNVERIFIED is not asynchronous physical work");
 
         driver.reset();
         driver.retryCleanup();
@@ -383,6 +400,8 @@ class OsScareDriverTest {
         assertEquals(OsCleanupState.FAILED, driver.report().windowMotion().cleanup());
         assertEquals(OsEffectReason.CLEANUP_RETRY_EXHAUSTED,
                 driver.report().windowMotion().cleanupReason());
+        assertFalse(driver.hasPendingPhysicalCleanup(),
+                "exhausted cleanup is terminal and the next preflight fails closed");
         assertEquals(100, hooks.capturedOrigin);
 
         driver.begin(222L, new OsScareToggles(true, false, true, false));

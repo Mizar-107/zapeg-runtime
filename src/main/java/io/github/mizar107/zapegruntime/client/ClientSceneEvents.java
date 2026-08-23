@@ -494,13 +494,13 @@ public final class ClientSceneEvents {
 
     @SubscribeEvent
     public static void onLogout(ClientPlayerNetworkEvent.LoggingOut event) {
-        ClientSceneManager.clearWithoutAcknowledgement();
+        ClientSceneManager.clearForNetworkLogout();
     }
 
     @SubscribeEvent
     public static void onLevelUnload(LevelEvent.Unload event) {
         if (event.getLevel() instanceof ClientLevel) {
-            ClientSceneManager.clearWithoutAcknowledgement();
+            ClientSceneManager.clearForLevelUnload();
         }
     }
 

@@ -9,9 +9,7 @@ import io.github.mizar107.zapegruntime.scene.SceneAck;
 import io.github.mizar107.zapegruntime.scene.SceneDescriptor;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
 import io.github.mizar107.zapegruntime.scene.OsScareReport;
-import java.util.HashMap;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.server.MinecraftServer;
@@ -20,8 +18,8 @@ import net.minecraft.server.level.ServerPlayer;
 public final class SceneServerManager {
 
     private static ActiveScene active;
-    private static final int MAX_DIAGNOSTIC_PLAYERS = 64;
-    private static final Map<UUID, LastOsScareStatus> lastOsScareStatuses = new HashMap<>();
+    private static final OsScareStatusLedger osScareStatuses =
+            new OsScareStatusLedger();
 
     private SceneServerManager() {}
 
@@ -52,8 +50,6 @@ public final class SceneServerManager {
                     sequence);
         }
     }
-
-    private record LastOsScareStatus(UUID eventId, int sequence, OsScareReport report) {}
 
     /** Hard bound for Director-requested TTL overrides (60 seconds). */
     public static final int MAX_TTL_TICKS = SceneDescriptor.MAX_TTL_TICKS;
@@ -165,8 +161,10 @@ public final class SceneServerManager {
                 null,
                 -1);
         if (profile == SceneProfile.VISITATION_01) {
-            rememberOsScareStatus(target.getUUID(), new LastOsScareStatus(
-                    eventId, -1, null));
+            // Preserve an older closing event until the new client actually
+            // proves it accepted this visitation by sending status sequence
+            // zero. A BUSY acknowledgement must not orphan old cleanup.
+            osScareStatuses.onDispatch(target.getUUID(), eventId);
         }
         SceneNetwork.spawnFor(target, descriptor);
         ZapeGRuntime.LOGGER.info(
@@ -203,6 +201,10 @@ public final class SceneServerManager {
                 message.acknowledgement().name().toLowerCase(Locale.ROOT),
                 sender.getGameProfile().getName());
         if (message.acknowledgement().terminal()) {
+            if (current.descriptor.profile() == SceneProfile.VISITATION_01
+                    && message.acknowledgement() == SceneAck.BUSY) {
+                osScareStatuses.onBusy(sender.getUUID(), message.eventId());
+            }
             active = null;
         }
     }
@@ -216,20 +218,23 @@ public final class SceneServerManager {
                 && current.descriptor.profile() == SceneProfile.VISITATION_01
                 && current.descriptor.eventId().equals(message.eventId())
                 && current.descriptor.targetId().equals(sender.getUUID());
-        LastOsScareStatus previous = lastOsScareStatuses.get(sender.getUUID());
-        boolean retainedMatch = previous != null
-                && previous.eventId.equals(message.eventId());
-        int previousSequence = retainedMatch ? previous.sequence : -1;
-        if ((!activeMatch && !retainedMatch)
-                || message.sequence() <= previousSequence
-                || (activeMatch && message.sequence() <= current.osScareSequence)) {
+        int activeSequence = activeMatch ? current.osScareSequence : -1;
+        if (!osScareStatuses.acceptsStatus(
+                sender.getUUID(),
+                message.eventId(),
+                message.sequence(),
+                activeMatch,
+                activeSequence)) {
             return;
         }
         if (activeMatch) {
             active = current.withOsScareStatus(message.report(), message.sequence());
         }
-        rememberOsScareStatus(sender.getUUID(), new LastOsScareStatus(
-                message.eventId(), message.sequence(), message.report()));
+        osScareStatuses.recordStatus(
+                sender.getUUID(),
+                message.eventId(),
+                message.sequence(),
+                message.report());
         ZapeGRuntime.LOGGER.info(
                 "Scene {} OS status sequence={} target={} {}",
                 message.eventId(),
@@ -322,7 +327,7 @@ public final class SceneServerManager {
                             ? "awaiting"
                             : current.osScareReport.compactString());
         }
-        LastOsScareStatus previous = lastOsScareStatuses.get(target.getUUID());
+        OsScareStatusLedger.Entry previous = osScareStatuses.get(target.getUUID());
         if (previous == null) {
             return "target=" + target.getGameProfile().getName()
                     + " protocol=" + SceneNetwork.PROTOCOL
@@ -330,11 +335,11 @@ public final class SceneServerManager {
         }
         return "target=" + target.getGameProfile().getName()
                 + " protocol=" + SceneNetwork.PROTOCOL
-                + " active=0 last_event=" + previous.eventId
-                + " sequence=" + previous.sequence
-                + " os=" + (previous.report == null
+                + " active=0 last_event=" + previous.eventId()
+                + " sequence=" + previous.sequence()
+                + " os=" + (previous.report() == null
                         ? "awaiting"
-                        : previous.report.compactString());
+                        : previous.report().compactString());
     }
 
     /** Target-scoped scene summary for the native Heraldor diagnostic tree. */
@@ -366,16 +371,7 @@ public final class SceneServerManager {
 
     static void resetForTests() {
         active = null;
-        lastOsScareStatuses.clear();
-    }
-
-    private static void rememberOsScareStatus(UUID playerId, LastOsScareStatus status) {
-        if (!lastOsScareStatuses.containsKey(playerId)
-                && lastOsScareStatuses.size() >= MAX_DIAGNOSTIC_PLAYERS) {
-            UUID oldestArbitraryKey = lastOsScareStatuses.keySet().iterator().next();
-            lastOsScareStatuses.remove(oldestArbitraryKey);
-        }
-        lastOsScareStatuses.put(playerId, status);
+        osScareStatuses.clear();
     }
 
     private static DispatchResult failure(String message, UUID eventId) {

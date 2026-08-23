@@ -1,7 +1,6 @@
 package io.github.mizar107.zapegruntime.client;
 
 import io.github.mizar107.zapegruntime.client.os.OsScareDriver;
-import io.github.mizar107.zapegruntime.network.OsScareStatusC2S;
 import io.github.mizar107.zapegruntime.network.SceneNetwork;
 import io.github.mizar107.zapegruntime.scene.CameraUnease;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
@@ -9,7 +8,6 @@ import io.github.mizar107.zapegruntime.scene.ColossusChoreography;
 import io.github.mizar107.zapegruntime.scene.GazePull;
 import io.github.mizar107.zapegruntime.scene.HauntChoreography;
 import io.github.mizar107.zapegruntime.scene.MotionHistory;
-import io.github.mizar107.zapegruntime.scene.OsScareReport;
 import io.github.mizar107.zapegruntime.scene.PendingSceneHold;
 import io.github.mizar107.zapegruntime.scene.PresentedGazeTracker;
 import io.github.mizar107.zapegruntime.scene.RiftChoreography;
@@ -63,7 +61,8 @@ public final class ClientSceneManager {
     private static final int PASSAGE_COLLAPSE_TICKS = 18;
     private static final double SKY_MARK_DISTANCE = 512.0D;
     private static ActiveScene active;
-    private static OsStatusSession osStatusSession;
+    private static final OsScareStatusTracker osStatusTracker =
+            new OsScareStatusTracker();
     // A scene delivered while any screen was open waits here instead of
     // burning: choreography (and the presented TTL) starts when the screen
     // closes. The server-side occupancy expiry bounds the wait.
@@ -95,18 +94,6 @@ public final class ClientSceneManager {
             float effectProgress) {}
 
     private record MotionSample(Vec3 anchor, float yawDegrees) {}
-
-    private static final class OsStatusSession {
-        private final UUID eventId;
-        private final UUID targetId;
-        private OsScareReport lastReport;
-        private int sequence;
-
-        private OsStatusSession(UUID eventId, UUID targetId) {
-            this.eventId = eventId;
-            this.targetId = targetId;
-        }
-    }
 
     private static final class ActiveScene {
         private final SceneDescriptor descriptor;
@@ -208,6 +195,19 @@ public final class ClientSceneManager {
             }
             return;
         }
+        if (descriptor.profile() == SceneProfile.VISITATION_01) {
+            // Give an already-settled session one final chance to send and
+            // evict. Physical async work (or an unsent terminal report) owns
+            // the single status slot, so a new visitation must fail BUSY
+            // instead of stealing the prior event id.
+            OsScareDriver.instance().retryCleanup();
+            flushOsStatus();
+            if (osStatusTracker.gateNewVisitation() == SceneAck.BUSY) {
+                SceneNetwork.acknowledge(
+                        descriptor.eventId(), localPlayerId, SceneAck.BUSY);
+                return;
+            }
+        }
         // A scene that arrives while any screen is open is held, never
         // aborted: the acknowledgement still confirms delivery exactly as
         // before, but the choreography waits for the screen to close so the
@@ -235,6 +235,7 @@ public final class ClientSceneManager {
             current.clearMotion();
             if (current.descriptor.profile() == SceneProfile.VISITATION_01) {
                 OsScareDriver.instance().reset();
+                osStatusTracker.markSceneClosing();
                 flushOsStatus();
             }
             active = null;
@@ -409,12 +410,13 @@ public final class ClientSceneManager {
     private static void tickVisitation(ActiveScene current) {
         OsScareDriver driver = OsScareDriver.instance();
         if (!current.visitationBegun) {
+            if (!osStatusTracker.open(
+                    current.descriptor.eventId(), current.descriptor.targetId())) {
+                finish(SceneAck.BUSY);
+                return;
+            }
             current.visitationBegun = true;
-            driver.reset();
-            flushOsStatus();
             driver.begin(current.descriptor.visualSeed(), OsScareConfig.toggles());
-            osStatusSession = new OsStatusSession(
-                    current.descriptor.eventId(), current.descriptor.targetId());
         }
         driver.tick(
                 SceneProfile.VISITATION_01,
@@ -1295,7 +1297,22 @@ public final class ClientSceneManager {
         return Math.max(-cap, Math.min(cap, value));
     }
 
-    public static void clearWithoutAcknowledgement() {
+    /** Level replacement keeps the network session alive for final cleanup truth. */
+    public static void clearForLevelUnload() {
+        clearLocalSceneState();
+        OsScareDriver.instance().reset();
+        osStatusTracker.retainForLevelUnload();
+        flushOsStatus();
+    }
+
+    /** A true disconnect can only request local cleanup; no server remains to report to. */
+    public static void clearForNetworkLogout() {
+        clearLocalSceneState();
+        OsScareDriver.instance().reset();
+        osStatusTracker.dropForLogout();
+    }
+
+    private static void clearLocalSceneState() {
         ActiveScene current = active;
         if (current != null) {
             current.clearMotion();
@@ -1307,11 +1324,6 @@ public final class ClientSceneManager {
         // player has been; it must not survive logout or a dimension change.
         ambientTrace = null;
         ambientTraceCountdown = 0;
-        // Request OS cleanup; verified and unverified outcomes are retained
-        // long enough for the bounded post-terminal diagnostic session.
-        OsScareDriver.instance().reset();
-        flushOsStatus();
-        osStatusSession = null;
     }
 
     static boolean hasActiveScene() {
@@ -1331,26 +1343,20 @@ public final class ClientSceneManager {
     }
 
     private static void flushOsStatus() {
-        OsStatusSession session = osStatusSession;
-        if (session == null || session.sequence > OsScareStatusC2S.MAX_SEQUENCE) {
+        if (!osStatusTracker.hasSession()) {
             return;
         }
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null
                 || minecraft.getConnection() == null
-                || !session.targetId.equals(minecraft.player.getUUID())) {
+                || !osStatusTracker.targetId().equals(minecraft.player.getUUID())) {
             return;
         }
-        OsScareReport report = OsScareDriver.instance().report();
-        if (report.equals(session.lastReport)) {
-            return;
-        }
-        SceneNetwork.reportOsScare(
-                session.eventId,
-                session.targetId,
-                session.sequence++,
-                report);
-        session.lastReport = report;
+        OsScareDriver driver = OsScareDriver.instance();
+        osStatusTracker.poll(
+                driver.report(),
+                driver.hasPendingPhysicalCleanup(),
+                SceneNetwork::reportOsScare);
     }
 
     private static double bodyAge(ActiveScene current, float partialTick) {
@@ -1449,6 +1455,7 @@ public final class ClientSceneManager {
         current.clearMotion();
         if (current.descriptor.profile() == SceneProfile.VISITATION_01) {
             OsScareDriver.instance().reset();
+            osStatusTracker.markSceneClosing();
             flushOsStatus();
         }
         active = null;

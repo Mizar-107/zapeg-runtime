@@ -184,6 +184,10 @@ mid-session, so the handshake refuses the mismatch up front):
 - Popup and window cleanup return explicit outcomes. Failed position cleanup
   retains the origin for a bounded retry; a new successful visit captures the
   window's then-current position rather than snapping to stale coordinates.
+- The single diagnostic session survives dimension-level unload and reserves
+  its final sequence value for terminal cleanup truth. A new visitation gets
+  `BUSY` while physical cleanup is pending; unrelated scenes may continue.
+  True network logout drops the session only after requesting local cleanup.
 - Batch 1 has no in-game fallback, so the fixed fallback dimension reports
   `NOT_AVAILABLE:FALLBACK_NOT_IMPLEMENTED`. `visitation_01` also suppresses
   all in-game prelude, fog, camera, overlay and audio presentation so the

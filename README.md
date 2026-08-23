@@ -137,6 +137,11 @@ Profiles are deliberately distinct and bounded:
   a macOS AWT init under GLFW can hang the JVM); the title and window-pulse
   beats are plain GLFW and run everywhere. The scene never resolves by gaze
   and suppresses every in-game prelude, fog, camera, overlay and audio beat.
+  Physical async cleanup owns one bounded diagnostic session across a client
+  level unload; another visitation is answered `BUSY` until that terminal
+  cleanup report is sent. A true network logout requests local cleanup and
+  drops the now-unsendable session immediately. Non-visitation scenes remain
+  free to run while cleanup settles.
 
 Figure presentation, direct-gaze progress and the light fault's spatial
 activation use the real target camera, frustum and block line of sight. The
