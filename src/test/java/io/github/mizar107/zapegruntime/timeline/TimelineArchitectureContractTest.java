@@ -23,17 +23,20 @@ class TimelineArchitectureContractTest {
         String data = Files.readString(TIMELINE_ROOT.resolve("TimelineSessionData.java"));
         String scene = Files.readString(
                 RUNTIME_ROOT.resolve("server").resolve("SceneServerManager.java"));
+        String loadedQueries = Files.readString(
+                RUNTIME_ROOT.resolve("server").resolve("LoadedSceneQueries.java"));
 
         assertTrue(manager.contains("getPlayer(session.targetId())"));
         assertTrue(data.contains("MAX_ACTIVE_SESSIONS = 256"));
         assertTrue(data.contains("MAX_TERMINAL_RESULTS = 4_096"));
         assertTrue(scene.contains("activeByTarget"));
-        for (String source : java.util.List.of(manager, data, scene)) {
+        for (String source : java.util.List.of(manager, data, scene, loadedQueries)) {
             assertFalse(source.contains("getAllEntities("));
             assertFalse(source.contains("getAllLevels("));
             assertFalse(source.contains(".getChunk("));
             assertFalse(source.contains("forceChunk"));
         }
+        assertTrue(loadedQueries.contains("getChunkSource().hasChunk("));
     }
 
     @Test
@@ -84,10 +87,46 @@ class TimelineArchitectureContractTest {
                 RUNTIME_ROOT.resolve("network").resolve("SceneNetwork.java"));
 
         assertTrue(sceneManager.contains("dispatchTimeline("));
+        assertTrue(sceneManager.contains("replayData.claimForDispatch("));
+        assertFalse(sceneManager.contains("replayData.reserve(replayIdentity)"));
+        assertTrue(sceneManager.contains("DispatchClaim.ALREADY_APPLIED"));
+        assertTrue(sceneManager.contains("replayData.rollbackReservation(replayIdentity)"));
+        assertTrue(sceneManager.contains("replayData.claimExternalForDispatch("));
+        assertTrue(sceneManager.contains("replayData.markExternalApplied("));
+        assertTrue(sceneManager.contains("replayData.isReserved(replayIdentity)"));
         assertTrue(sceneManager.contains("SceneLedgerData.get(server).contains(eventId)"));
         assertTrue(sceneManager.contains("visualSeed == null"));
+        assertTrue(sceneManager.contains("ScenePlacement.findSeeded("));
         assertTrue(network.contains("PacketDistributor.PLAYER"));
         assertFalse(network.contains("PacketDistributor.ALL"));
+    }
+
+    @Test
+    void definitionValidationPrecedesLifecycleAndDispatch() throws IOException {
+        String engine = Files.readString(TIMELINE_ROOT.resolve("TimelineEngine.java"));
+        String session = Files.readString(TIMELINE_ROOT.resolve("TimelineSession.java"));
+        String determinism = Files.readString(
+                TIMELINE_ROOT.resolve("TimelineDeterminism.java"));
+        int validation = engine.indexOf("input.validationFailure(definition)");
+        int lifecycle = engine.indexOf("policies.disconnect()");
+        int execute = engine.indexOf("executor.execute(");
+
+        assertTrue(validation >= 0 && validation < lifecycle && validation < execute);
+        assertTrue(session.contains("TimelineDeterminism.sessionSeed("));
+        assertTrue(session.contains("CURSOR_OUTSIDE_DEFINITION"));
+        assertTrue(determinism.contains("requireUuid(targetId)"));
+        assertTrue(determinism.contains("\":placement:\""));
+    }
+
+    @Test
+    void schemaOnePersistenceQuarantinesInsteadOfSkippingRecords() throws IOException {
+        String data = Files.readString(TIMELINE_ROOT.resolve("TimelineSessionData.java"));
+
+        assertTrue(data.contains("requireCompoundList(root, TERMINAL)"));
+        assertTrue(data.contains("requireExactFields(encoded, TERMINAL_FIELDS"));
+        assertTrue(data.contains("DataHealth.CORRUPT"));
+        assertFalse(data.contains("Corrupt siblings do not erase"));
+        assertFalse(data.contains("Math.min(encodedTerminal.size()"));
     }
 
     @Test

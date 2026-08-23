@@ -42,17 +42,48 @@ public final class TimelineSessionData extends SavedData {
     private static final String RETRY_AT = "RetryAt";
     private static final String STATUS = "Status";
     private static final String REASON = "Reason";
+    private static final Set<String> ROOT_FIELDS =
+            Set.of(SCHEMA_VERSION, ACTIVE, TERMINAL);
+    private static final Set<String> ACTIVE_FIELDS = Set.of(
+            SESSION_ID,
+            TARGET_ID,
+            TIMELINE_ID,
+            FINGERPRINT,
+            DIMENSION,
+            SEED,
+            ELAPSED,
+            NEXT_ACTION,
+            ATTEMPTS,
+            RETRY_AT,
+            STATUS);
+    private static final Set<String> TERMINAL_FIELDS = Set.of(
+            SESSION_ID,
+            TARGET_ID,
+            TIMELINE_ID,
+            FINGERPRINT,
+            STATUS,
+            REASON);
 
     private final Map<UUID, TimelineSession> activeByTarget = new HashMap<>();
     private final Map<UUID, TerminalResult> terminalBySession = new HashMap<>();
-    private final CompoundTag unsupportedRoot;
+    private final DataHealth health;
+    private final CompoundTag preservedRoot;
+    private final String dataIssue;
 
     public TimelineSessionData() {
-        unsupportedRoot = null;
+        health = DataHealth.HEALTHY;
+        preservedRoot = null;
+        dataIssue = "none";
     }
 
-    private TimelineSessionData(CompoundTag unsupportedRoot) {
-        this.unsupportedRoot = unsupportedRoot.copy();
+    private TimelineSessionData(
+            DataHealth health, CompoundTag preservedRoot, String dataIssue) {
+        if (health == DataHealth.HEALTHY) {
+            throw new IllegalArgumentException("healthy data cannot be quarantined");
+        }
+        this.health = health;
+        this.preservedRoot = preservedRoot.copy();
+        this.dataIssue = Objects.requireNonNull(dataIssue, "dataIssue");
     }
 
     public static TimelineSessionData get(MinecraftServer server) {
@@ -63,55 +94,97 @@ public final class TimelineSessionData extends SavedData {
     }
 
     public static TimelineSessionData load(CompoundTag root) {
-        if (!root.contains(SCHEMA_VERSION, Tag.TAG_INT)
-                || root.getInt(SCHEMA_VERSION) != CURRENT_SCHEMA_VERSION) {
-            return new TimelineSessionData(root);
+        Objects.requireNonNull(root, "root");
+        Tag schemaTag = root.get(SCHEMA_VERSION);
+        if (schemaTag == null) {
+            return quarantined(DataHealth.UNSUPPORTED, root, "schema_missing");
+        }
+        if (schemaTag.getId() != Tag.TAG_INT) {
+            return quarantined(DataHealth.CORRUPT, root, "schema_type");
+        }
+        int schemaVersion = root.getInt(SCHEMA_VERSION);
+        if (schemaVersion != CURRENT_SCHEMA_VERSION) {
+            return quarantined(
+                    DataHealth.UNSUPPORTED,
+                    root,
+                    "schema_" + schemaVersion);
         }
 
-        TimelineSessionData data = new TimelineSessionData();
-        ListTag encodedTerminal = root.getList(TERMINAL, Tag.TAG_COMPOUND);
-        int terminalLimit = Math.min(encodedTerminal.size(), MAX_TERMINAL_RESULTS);
-        for (int index = 0; index < terminalLimit; index++) {
-            try {
-                TerminalResult result = readTerminal(encodedTerminal.getCompound(index));
-                data.terminalBySession.putIfAbsent(result.sessionId(), result);
-            } catch (IllegalArgumentException ignored) {
-                // Corrupt siblings do not erase valid replay barriers.
+        try {
+            requireExactFields(root, ROOT_FIELDS, "root");
+            ListTag encodedTerminal = requireCompoundList(root, TERMINAL);
+            ListTag encodedActive = requireCompoundList(root, ACTIVE);
+            if (encodedTerminal.size() > MAX_TERMINAL_RESULTS) {
+                throw corrupt("terminal_capacity");
             }
-        }
+            if (encodedActive.size() > MAX_ACTIVE_SESSIONS) {
+                throw corrupt("active_capacity");
+            }
+            if ((long) encodedTerminal.size() + encodedActive.size()
+                    > MAX_TERMINAL_RESULTS) {
+                throw corrupt("reserved_capacity");
+            }
 
-        ListTag encodedActive = root.getList(ACTIVE, Tag.TAG_COMPOUND);
-        int activeLimit = Math.min(encodedActive.size(), MAX_ACTIVE_SESSIONS);
-        Set<UUID> activeSessionIds = new HashSet<>();
-        for (int index = 0; index < activeLimit; index++) {
-            try {
+            TimelineSessionData data = new TimelineSessionData();
+            for (int index = 0; index < encodedTerminal.size(); index++) {
+                CompoundTag encoded = encodedTerminal.getCompound(index);
+                requireExactFields(encoded, TERMINAL_FIELDS, "terminal[" + index + "]");
+                requireTerminalTypes(encoded, index);
+                TerminalResult result = readTerminal(encoded);
+                if (data.terminalBySession.putIfAbsent(result.sessionId(), result) != null) {
+                    throw corrupt("duplicate_terminal_session");
+                }
+            }
+
+            Set<UUID> activeSessionIds = new HashSet<>();
+            for (int index = 0; index < encodedActive.size(); index++) {
+                CompoundTag encoded = encodedActive.getCompound(index);
+                requireExactFields(encoded, ACTIVE_FIELDS, "active[" + index + "]");
+                requireActiveTypes(encoded, index);
                 TimelineSession loaded = readSession(encodedActive.getCompound(index));
-                if (data.terminalBySession.containsKey(loaded.sessionId())
-                        || data.activeByTarget.containsKey(loaded.targetId())
-                        || !activeSessionIds.add(loaded.sessionId())
-                        || data.reservedTerminalSlots() >= MAX_TERMINAL_RESULTS) {
-                    continue;
+                if (data.terminalBySession.containsKey(loaded.sessionId())) {
+                    throw corrupt("active_terminal_session_conflict");
+                }
+                if (data.activeByTarget.containsKey(loaded.targetId())) {
+                    throw corrupt("duplicate_active_target");
+                }
+                if (!activeSessionIds.add(loaded.sessionId())) {
+                    throw corrupt("duplicate_active_session");
                 }
                 data.activeByTarget.put(
                         loaded.targetId(), TimelineEngine.pauseForRestart(loaded));
-            } catch (IllegalArgumentException ignored) {
-                // Invalid active work fails closed; valid independent players survive.
             }
+            if (!data.activeByTarget.isEmpty()) {
+                data.setDirty();
+            }
+            return data;
+        } catch (StructuralCorruption invalid) {
+            return quarantined(DataHealth.CORRUPT, root, invalid.getMessage());
+        } catch (IllegalArgumentException invalid) {
+            return quarantined(
+                    DataHealth.CORRUPT,
+                    root,
+                    "record_invalid:" + invalid.getMessage());
         }
-        if (!data.activeByTarget.isEmpty()) {
-            data.setDirty();
-        }
-        return data;
     }
 
     public boolean supportsCurrentSchema() {
-        return unsupportedRoot == null;
+        return health == DataHealth.HEALTHY;
+    }
+
+    public DataDiagnostic dataDiagnostic() {
+        return new DataDiagnostic(health, dataIssue);
     }
 
     public BeginResult begin(TimelineSession proposed) {
         Objects.requireNonNull(proposed, "proposed");
         if (!supportsCurrentSchema()) {
-            return new BeginResult(BeginStatus.UNSUPPORTED_SCHEMA, null, null);
+            return new BeginResult(
+                    health == DataHealth.CORRUPT
+                            ? BeginStatus.CORRUPT_DATA
+                            : BeginStatus.UNSUPPORTED_SCHEMA,
+                    null,
+                    null);
         }
         TerminalResult terminal = terminalBySession.get(proposed.sessionId());
         if (terminal != null) {
@@ -125,7 +198,7 @@ public final class TimelineSessionData extends SavedData {
         if (sameSession.isPresent()) {
             TimelineSession existing = sameSession.get();
             return new BeginResult(
-                    existing.sameIdentity(proposed)
+                    existing.sameStartRequest(proposed)
                             ? BeginStatus.IDEMPOTENT_ACTIVE
                             : BeginStatus.SESSION_ID_CONFLICT,
                     existing,
@@ -172,7 +245,9 @@ public final class TimelineSessionData extends SavedData {
         Objects.requireNonNull(targetId, "targetId");
         Objects.requireNonNull(terminal, "terminal");
         if (!supportsCurrentSchema()) {
-            return FinishStatus.UNSUPPORTED_SCHEMA;
+            return health == DataHealth.CORRUPT
+                    ? FinishStatus.CORRUPT_DATA
+                    : FinishStatus.UNSUPPORTED_SCHEMA;
         }
         if (terminalBySession.containsKey(sessionId)) {
             return FinishStatus.ALREADY_TERMINAL;
@@ -198,7 +273,9 @@ public final class TimelineSessionData extends SavedData {
         if (active == null) {
             return supportsCurrentSchema()
                     ? FinishStatus.NOT_ACTIVE
-                    : FinishStatus.UNSUPPORTED_SCHEMA;
+                    : health == DataHealth.CORRUPT
+                            ? FinishStatus.CORRUPT_DATA
+                            : FinishStatus.UNSUPPORTED_SCHEMA;
         }
         return finish(
                 active.sessionId(),
@@ -268,7 +345,7 @@ public final class TimelineSessionData extends SavedData {
     @Override
     public CompoundTag save(CompoundTag root) {
         if (!supportsCurrentSchema()) {
-            return unsupportedRoot.copy();
+            return preservedRoot.copy();
         }
         root.putInt(SCHEMA_VERSION, CURRENT_SCHEMA_VERSION);
 
@@ -282,6 +359,74 @@ public final class TimelineSessionData extends SavedData {
                 .forEach(result -> terminal.add(writeTerminal(result)));
         root.put(TERMINAL, terminal);
         return root;
+    }
+
+    private static TimelineSessionData quarantined(
+            DataHealth health, CompoundTag root, String issue) {
+        return new TimelineSessionData(health, root, issue);
+    }
+
+    private static ListTag requireCompoundList(CompoundTag root, String field) {
+        Tag raw = root.get(field);
+        if (!(raw instanceof ListTag list)) {
+            throw corrupt(field + "_list_type");
+        }
+        if (!list.isEmpty() && list.getElementType() != Tag.TAG_COMPOUND) {
+            throw corrupt(field + "_element_type");
+        }
+        return list;
+    }
+
+    private static void requireExactFields(
+            CompoundTag encoded, Set<String> expected, String context) {
+        if (!encoded.getAllKeys().equals(expected)) {
+            throw corrupt(context + "_fields");
+        }
+    }
+
+    private static void requireActiveTypes(CompoundTag encoded, int index) {
+        String context = "active[" + index + ']';
+        requireUuid(encoded, SESSION_ID, context);
+        requireUuid(encoded, TARGET_ID, context);
+        requireType(encoded, TIMELINE_ID, Tag.TAG_STRING, context);
+        requireType(encoded, FINGERPRINT, Tag.TAG_STRING, context);
+        requireType(encoded, DIMENSION, Tag.TAG_STRING, context);
+        requireType(encoded, SEED, Tag.TAG_LONG, context);
+        requireType(encoded, ELAPSED, Tag.TAG_INT, context);
+        requireType(encoded, NEXT_ACTION, Tag.TAG_INT, context);
+        requireType(encoded, ATTEMPTS, Tag.TAG_INT, context);
+        requireType(encoded, RETRY_AT, Tag.TAG_INT, context);
+        requireType(encoded, STATUS, Tag.TAG_STRING, context);
+    }
+
+    private static void requireTerminalTypes(CompoundTag encoded, int index) {
+        String context = "terminal[" + index + ']';
+        requireUuid(encoded, SESSION_ID, context);
+        requireUuid(encoded, TARGET_ID, context);
+        requireType(encoded, TIMELINE_ID, Tag.TAG_STRING, context);
+        requireType(encoded, FINGERPRINT, Tag.TAG_STRING, context);
+        requireType(encoded, STATUS, Tag.TAG_STRING, context);
+        requireType(encoded, REASON, Tag.TAG_STRING, context);
+    }
+
+    private static void requireUuid(
+            CompoundTag encoded, String field, String context) {
+        requireType(encoded, field, Tag.TAG_INT_ARRAY, context);
+        if (!encoded.hasUUID(field)) {
+            throw corrupt(context + '_' + field + "_uuid");
+        }
+    }
+
+    private static void requireType(
+            CompoundTag encoded, String field, int expectedType, String context) {
+        Tag value = encoded.get(field);
+        if (value == null || value.getId() != expectedType) {
+            throw corrupt(context + '_' + field + "_type");
+        }
+    }
+
+    private static StructuralCorruption corrupt(String issue) {
+        return new StructuralCorruption(issue);
     }
 
     private static CompoundTag writeSession(TimelineSession session) {
@@ -373,6 +518,7 @@ public final class TimelineSessionData extends SavedData {
         SESSION_ID_CONFLICT,
         ACTIVE_CAPACITY_EXHAUSTED,
         RESULT_CAPACITY_EXHAUSTED,
+        CORRUPT_DATA,
         UNSUPPORTED_SCHEMA
     }
 
@@ -385,7 +531,29 @@ public final class TimelineSessionData extends SavedData {
         RECORDED,
         ALREADY_TERMINAL,
         NOT_ACTIVE,
+        CORRUPT_DATA,
         UNSUPPORTED_SCHEMA
+    }
+
+    public enum DataHealth {
+        HEALTHY,
+        CORRUPT,
+        UNSUPPORTED
+    }
+
+    public record DataDiagnostic(DataHealth health, String issue) {
+
+        public DataDiagnostic {
+            Objects.requireNonNull(health, "health");
+            Objects.requireNonNull(issue, "issue");
+        }
+    }
+
+    private static final class StructuralCorruption extends IllegalArgumentException {
+
+        private StructuralCorruption(String message) {
+            super(message);
+        }
     }
 
     public record TerminalResult(

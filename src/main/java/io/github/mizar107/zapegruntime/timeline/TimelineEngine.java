@@ -27,6 +27,9 @@ public final class TimelineEngine {
         if (!input.hasDefinition(definition)) {
             return terminal(TerminalStatus.FAILED, TerminalReason.DEFINITION_CHANGED);
         }
+        if (input.validationFailure(definition).isPresent()) {
+            return terminal(TerminalStatus.FAILED, TerminalReason.STATE_CORRUPTION);
+        }
         TimelinePolicies policies = definition.policies();
         if (input.status() == TimelineSession.Status.PAUSED_RESTART
                 && policies.restart() == TimelinePolicies.Restart.FAIL) {
@@ -64,7 +67,7 @@ public final class TimelineEngine {
                 input.actionAttempts(),
                 input.retryAtElapsedTick());
         if (running.nextActionIndex() >= definition.actions().size()) {
-            return terminal(TerminalStatus.SUCCEEDED, TerminalReason.COMPLETED);
+            return terminal(TerminalStatus.FAILED, TerminalReason.STATE_CORRUPTION);
         }
 
         TimelineAction action = definition.actions().get(running.nextActionIndex());
@@ -79,16 +82,20 @@ public final class TimelineEngine {
                     : active(running);
         }
 
-        UUID eventId = TimelineDeterminism.actionEventId(
-                running.sessionId(), definition, action);
+        TimelineReplayIdentity replayIdentity = TimelineReplayIdentity.create(
+                running.sessionId(), running.targetId(), definition, action);
         long visualSeed = TimelineDeterminism.actionSeed(
+                running.seed(), definition, action);
+        long placementSeed = TimelineDeterminism.placementSeed(
                 running.seed(), definition, action);
         ActionOutcome outcome = Objects.requireNonNull(
                 executor.execute(new ActionInvocation(
                         running.sessionId(),
                         running.targetId(),
-                        eventId,
+                        replayIdentity.eventId(),
                         visualSeed,
+                        placementSeed,
+                        replayIdentity,
                         action)),
                 "action outcome");
         return switch (outcome) {
@@ -170,13 +177,21 @@ public final class TimelineEngine {
             UUID targetId,
             UUID eventId,
             long visualSeed,
+            long placementSeed,
+            TimelineReplayIdentity replayIdentity,
             TimelineAction action) {
 
         public ActionInvocation {
             Objects.requireNonNull(sessionId, "sessionId");
             Objects.requireNonNull(targetId, "targetId");
             Objects.requireNonNull(eventId, "eventId");
+            Objects.requireNonNull(replayIdentity, "replayIdentity");
             Objects.requireNonNull(action, "action");
+            if (!eventId.equals(replayIdentity.eventId())
+                    || !sessionId.equals(replayIdentity.sessionId())
+                    || !targetId.equals(replayIdentity.targetId())) {
+                throw new IllegalArgumentException("timeline invocation identity mismatch");
+            }
         }
     }
 
@@ -229,6 +244,7 @@ public final class TimelineEngine {
         COMPLETED,
         DEFINITION_UNAVAILABLE,
         DEFINITION_CHANGED,
+        STATE_CORRUPTION,
         SERVER_RESTART,
         DISCONNECTED,
         DIMENSION_CHANGED,

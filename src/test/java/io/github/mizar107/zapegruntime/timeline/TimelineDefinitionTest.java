@@ -85,15 +85,25 @@ class TimelineDefinitionTest {
                 TimelineDeterminism.sessionSeed(
                         session, java.util.UUID.randomUUID(), definition));
         assertEquals(
-                TimelineDeterminism.actionEventId(session, definition, first),
-                TimelineDeterminism.actionEventId(session, definition, first));
+                TimelineDeterminism.actionEventId(session, target, definition, first),
+                TimelineDeterminism.actionEventId(session, target, definition, first));
         assertNotEquals(
-                TimelineDeterminism.actionEventId(session, definition, first),
-                TimelineDeterminism.actionEventId(session, definition, second));
+                TimelineDeterminism.actionEventId(session, target, definition, first),
+                TimelineDeterminism.actionEventId(session, target, definition, second));
+        assertNotEquals(
+                TimelineDeterminism.actionEventId(session, target, definition, first),
+                TimelineDeterminism.actionEventId(
+                        session, java.util.UUID.randomUUID(), definition, first));
         assertNotEquals(
                 TimelineDeterminism.actionSeed(seed, definition, first),
                 TimelineDeterminism.actionSeed(seed, definition, second));
-        assertTrue(TimelineDeterminism.actionEventId(session, definition, first)
+        assertNotEquals(
+                TimelineDeterminism.actionSeed(seed, definition, first),
+                TimelineDeterminism.placementSeed(seed, definition, first));
+        assertEquals(
+                TimelineDeterminism.placementSeed(seed, definition, first),
+                TimelineDeterminism.placementSeed(seed, definition, first));
+        assertTrue(TimelineDeterminism.actionEventId(session, target, definition, first)
                 .version() == 3);
     }
 

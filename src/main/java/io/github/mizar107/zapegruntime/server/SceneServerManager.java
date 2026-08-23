@@ -9,6 +9,8 @@ import io.github.mizar107.zapegruntime.scene.SceneAck;
 import io.github.mizar107.zapegruntime.scene.SceneDescriptor;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
 import io.github.mizar107.zapegruntime.scene.OsScareReport;
+import io.github.mizar107.zapegruntime.timeline.TimelineReplayData;
+import io.github.mizar107.zapegruntime.timeline.TimelineReplayIdentity;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
@@ -128,6 +130,8 @@ public final class SceneServerManager {
                 hintX,
                 hintZ,
                 stage,
+                null,
+                null,
                 null);
     }
 
@@ -142,10 +146,24 @@ public final class SceneServerManager {
             SceneProfile profile,
             int ttlTicks,
             int stage,
-            long visualSeed) {
+            long visualSeed,
+            long placementSeed,
+            TimelineReplayIdentity replayIdentity) {
         MinecraftServer server = target.getServer();
-        if (server != null && SceneLedgerData.get(server).contains(eventId)) {
+        if (server == null
+                || replayIdentity == null
+                || !eventId.equals(replayIdentity.eventId())
+                || !target.getUUID().equals(replayIdentity.targetId())) {
+            return TimelineDispatchStatus.REJECTED;
+        }
+        TimelineReplayData replayData = TimelineReplayData.get(server);
+        TimelineReplayData.DispatchClaim claim = replayData.claimForDispatch(
+                replayIdentity, SceneLedgerData.get(server).contains(eventId));
+        if (claim == TimelineReplayData.DispatchClaim.ALREADY_APPLIED) {
             return TimelineDispatchStatus.ALREADY_APPLIED;
+        }
+        if (!claim.mayDispatch()) {
+            return TimelineDispatchStatus.REJECTED;
         }
         DispatchResult result = dispatchInternal(
                 target,
@@ -156,12 +174,16 @@ public final class SceneServerManager {
                 null,
                 null,
                 stage,
-                visualSeed);
+                visualSeed,
+                placementSeed,
+                replayIdentity);
         if (result.success()) {
-            return TimelineDispatchStatus.APPLIED;
+            return replayData.markApplied(replayIdentity)
+                    ? TimelineDispatchStatus.APPLIED
+                    : TimelineDispatchStatus.REJECTED;
         }
+        replayData.rollbackReservation(replayIdentity);
         return switch (result.message()) {
-            case "event id is already consumed" -> TimelineDispatchStatus.ALREADY_APPLIED;
             case "target already has an active scene", "no valid loaded scene anchor" ->
                     TimelineDispatchStatus.RETRYABLE;
             default -> TimelineDispatchStatus.REJECTED;
@@ -177,7 +199,9 @@ public final class SceneServerManager {
             Double hintX,
             Double hintZ,
             int stage,
-            Long visualSeed) {
+            Long visualSeed,
+            Long placementSeed,
+            TimelineReplayIdentity replayIdentity) {
         MinecraftServer server = target.getServer();
         if (server == null) {
             return failure("server unavailable", eventId);
@@ -186,6 +210,19 @@ public final class SceneServerManager {
             return failure(
                     "stage is not meaningful for " + profile.serializedName(), eventId);
         }
+        TimelineReplayData replayData = null;
+        if (!rehearsal) {
+            replayData = TimelineReplayData.get(server);
+            if (!replayData.supportsCurrentSchema()) {
+                return failure("timeline replay data is unavailable", eventId);
+            }
+            if (replayIdentity != null
+                    && (!eventId.equals(replayIdentity.eventId())
+                            || !target.getUUID().equals(replayIdentity.targetId())
+                            || !replayData.isReserved(replayIdentity))) {
+                return failure("timeline replay identity is not reserved", eventId);
+            }
+        }
         int boundedStage = stage;
         if (activeByTarget.containsKey(target.getUUID())) {
             return failure("target already has an active scene", eventId);
@@ -193,9 +230,41 @@ public final class SceneServerManager {
         if (!target.isAlive() || target.isSpectator()) {
             return failure("target is not eligible", eventId);
         }
-        Optional<ScenePlacement.Placement> placement =
-                ScenePlacement.find(target, profile, hintX, hintZ, boundedStage);
+        int resolvedTtlTicks = resolveTtlTicks(ttlOverrideTicks, profile);
+        TimelineReplayData.ExternalSceneIdentity externalIdentity = null;
+        if (!rehearsal && replayIdentity == null) {
+            try {
+                externalIdentity = TimelineReplayData.ExternalSceneIdentity.create(
+                        eventId,
+                        target.getUUID(),
+                        profile.serializedName(),
+                        resolvedTtlTicks,
+                        boundedStage);
+            } catch (IllegalArgumentException invalid) {
+                return failure(invalid.getMessage(), eventId);
+            }
+            TimelineReplayData.ExternalDispatchClaim claim =
+                    replayData.claimExternalForDispatch(
+                            externalIdentity,
+                            SceneLedgerData.get(server).contains(eventId));
+            if (claim == TimelineReplayData.ExternalDispatchClaim.ALREADY_APPLIED) {
+                return failure("event id is already consumed", eventId);
+            }
+            if (!claim.mayDispatch()) {
+                return failure("event replay identity is rejected", eventId);
+            }
+        }
+        Optional<ScenePlacement.Placement> placement = placementSeed == null
+                ? ScenePlacement.find(target, profile, hintX, hintZ, boundedStage)
+                : ScenePlacement.findSeeded(
+                        target,
+                        profile,
+                        hintX,
+                        hintZ,
+                        boundedStage,
+                        placementSeed);
         if (placement.isEmpty()) {
+            rollbackExternalReservation(replayData, externalIdentity);
             return failure("no valid loaded scene anchor", eventId);
         }
         // Build (and thereby validate) the full wire descriptor BEFORE the
@@ -210,16 +279,21 @@ public final class SceneServerManager {
                     target.level().dimension().location(),
                     placement.get().anchor(),
                     placement.get().yawDegrees(),
-                    resolveTtlTicks(ttlOverrideTicks, profile),
+                    resolvedTtlTicks,
                     visualSeed == null ? target.getRandom().nextLong() : visualSeed,
                     profile,
                     rehearsal,
                     boundedStage);
         } catch (IllegalArgumentException invalid) {
+            rollbackExternalReservation(replayData, externalIdentity);
             return failure(invalid.getMessage(), eventId);
         }
         if (!rehearsal && !SceneLedgerData.get(server).consume(eventId)) {
             return failure("event id is already consumed", eventId);
+        }
+        if (externalIdentity != null
+                && !replayData.markExternalApplied(externalIdentity)) {
+            return failure("event replay identity could not be committed", eventId);
         }
         // This target's slot stays occupied for the body TTL plus the full
         // encore, so a false all-clear cannot overlap another private scene
@@ -244,6 +318,14 @@ public final class SceneServerManager {
                 target.getGameProfile().getName(),
                 rehearsal);
         return new DispatchResult(true, "scene dispatched", eventId);
+    }
+
+    private static void rollbackExternalReservation(
+            TimelineReplayData replayData,
+            TimelineReplayData.ExternalSceneIdentity externalIdentity) {
+        if (replayData != null && externalIdentity != null) {
+            replayData.rollbackExternalReservation(externalIdentity);
+        }
     }
 
     public static void handleAcknowledgement(ServerPlayer sender, SceneAckC2S message) {

@@ -4,11 +4,12 @@ import io.github.mizar107.zapegruntime.scene.ColossusChoreography;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.DoubleSupplier;
+import java.util.function.IntSupplier;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
-import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.BlockHitResult;
@@ -44,6 +45,9 @@ public final class ScenePlacement {
     private static final double CAMERA_FOCUS_DISTANCE = 8.0D;
     private static final double CAMERA_FOCUS_PADDING = 0.35D;
     private static final double MIN_CAMERA_FOCUS_DISTANCE = 0.75D;
+    /** Local domains keep the two placement decisions decorrelated. */
+    private static final long CANDIDATE_ORDER_DOMAIN = 0x47A4D3C2B1908E6FL;
+    private static final long HORIZON_AZIMUTH_DOMAIN = 0xC6BC279692B5CC83L;
     /**
      * A Director anchor hint is only honoured within this horizontal range of
      * the target; anything farther is treated as stale or bogus and ignored.
@@ -74,15 +78,41 @@ public final class ScenePlacement {
             Double hintX,
             Double hintZ,
             int stage) {
+        return findInternal(player, profile, hintX, hintZ, stage, null);
+    }
+
+    /**
+     * Timeline-only placement path. The supplied seed must already be
+     * domain-separated from the action's visual seed. Unlike the legacy
+     * overload, this path never consumes the player's random source.
+     */
+    public static Optional<Placement> findSeeded(
+            ServerPlayer player,
+            SceneProfile profile,
+            Double hintX,
+            Double hintZ,
+            int stage,
+            long placementSeed) {
+        return findInternal(player, profile, hintX, hintZ, stage, placementSeed);
+    }
+
+    private static Optional<Placement> findInternal(
+            ServerPlayer player,
+            SceneProfile profile,
+            Double hintX,
+            Double hintZ,
+            int stage,
+            Long placementSeed) {
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(profile, "profile");
         Vec3 hint = sanitizeHint(player, hintX, hintZ);
         return switch (profile.placementMode()) {
-            case DISTANT_SAFE_GROUND -> findDistantSafeGround(player, profile, hint);
+            case DISTANT_SAFE_GROUND ->
+                    findDistantSafeGround(player, profile, hint, placementSeed);
             case CLIENT_MOTION_HISTORY -> findClientMotionAnchor(player);
             case LOCAL_CAMERA_FOCUS -> findLocalCameraFocus(player);
             case PLAYER_RELATIVE -> findClientMotionAnchor(player);
-            case HORIZON -> findHorizon(player, stage);
+            case HORIZON -> findHorizon(player, stage, placementSeed);
         };
     }
 
@@ -91,14 +121,30 @@ public final class ScenePlacement {
      * scan: a seeded azimuth at the stage's distance, feet pinned to the
      * target's own height. Fog swallows the implied ground line.
      */
-    private static Optional<Placement> findHorizon(ServerPlayer player, int stage) {
-        double azimuth = player.getRandom().nextDouble() * 360.0D;
+    private static Optional<Placement> findHorizon(
+            ServerPlayer player, int stage, Long placementSeed) {
+        double azimuth = horizonAzimuth(
+                placementSeed, () -> player.getRandom().nextDouble());
         return Optional.of(horizonPlacement(
                 player.getX(),
                 player.getY(),
                 player.getZ(),
                 azimuth,
                 ColossusChoreography.stageDistance(stage)));
+    }
+
+    /** Stable [0, 360) horizon choice with a placement-specific sub-domain. */
+    static double seededHorizonAzimuth(long placementSeed) {
+        long mixed = mix64(placementSeed ^ HORIZON_AZIMUTH_DOMAIN);
+        return (mixed >>> 11) * 0x1.0p-53D * 360.0D;
+    }
+
+    static double horizonAzimuth(
+            Long placementSeed, DoubleSupplier legacyRandomUnit) {
+        Objects.requireNonNull(legacyRandomUnit, "legacyRandomUnit");
+        return placementSeed == null
+                ? legacyRandomUnit.getAsDouble() * 360.0D
+                : seededHorizonAzimuth(placementSeed);
     }
 
     /** Pure so the horizon anchor contract is unit-testable without a level. */
@@ -219,8 +265,48 @@ public final class ScenePlacement {
         return order;
     }
 
+    /** Pure seeded rotation of the authored plan; no RandomSource involved. */
+    static int[] seededCandidateOrder(int planLength, long placementSeed) {
+        if (planLength <= 0) {
+            throw new IllegalArgumentException("planLength must be positive");
+        }
+        int offset = (int) Math.floorMod(
+                mix64(placementSeed ^ CANDIDATE_ORDER_DOMAIN), (long) planLength);
+        return rotatedCandidateOrder(planLength, offset);
+    }
+
+    static int[] candidateOrder(
+            int planLength, Long placementSeed, IntSupplier legacyOffset) {
+        Objects.requireNonNull(legacyOffset, "legacyOffset");
+        if (planLength <= 0) {
+            throw new IllegalArgumentException("planLength must be positive");
+        }
+        return placementSeed == null
+                ? rotatedCandidateOrder(
+                        planLength, Math.floorMod(legacyOffset.getAsInt(), planLength))
+                : seededCandidateOrder(planLength, placementSeed);
+    }
+
+    private static int[] rotatedCandidateOrder(int planLength, int offset) {
+        int[] order = new int[planLength];
+        for (int index = 0; index < planLength; index++) {
+            order[index] = (index + offset) % planLength;
+        }
+        return order;
+    }
+
+    /** SplitMix64 finalizer: stable across JVMs and cheap enough for placement. */
+    private static long mix64(long value) {
+        value = (value ^ (value >>> 30)) * 0xBF58476D1CE4E5B9L;
+        value = (value ^ (value >>> 27)) * 0x94D049BB133111EBL;
+        return value ^ (value >>> 31);
+    }
+
     private static Optional<Placement> findDistantSafeGround(
-            ServerPlayer player, SceneProfile profile, Vec3 hint) {
+            ServerPlayer player,
+            SceneProfile profile,
+            Vec3 hint,
+            Long placementSeed) {
         // Prefer an anchor with a clear block line of sight so the figure can
         // be noticed at once. Indoors or in dense terrain that requirement
         // fails for every candidate, so fall back to any safe anchor rather
@@ -228,10 +314,11 @@ public final class ScenePlacement {
         double[][] plan = planFor(profile);
         boolean localColumn = profile == SceneProfile.ECHO_01;
         Optional<Placement> clear = scanDistantSafeGround(
-                player, true, hint, plan, localColumn);
+                player, true, hint, plan, localColumn, placementSeed);
         return clear.isPresent()
                 ? clear
-                : scanDistantSafeGround(player, false, hint, plan, localColumn);
+                : scanDistantSafeGround(
+                        player, false, hint, plan, localColumn, placementSeed);
     }
 
     private static double[][] planFor(SceneProfile profile) {
@@ -243,22 +330,31 @@ public final class ScenePlacement {
             boolean requireClearLine,
             Vec3 hint,
             double[][] plan,
-            boolean localColumn) {
+            boolean localColumn,
+            Long placementSeed) {
         ServerLevel level = player.serverLevel();
         Vec3 look = player.getLookAngle();
         double baseAngle = Math.atan2(look.z, look.x);
-        int offset = player.getRandom().nextInt(plan.length);
         // A stalking-memory hint replaces the random rotation with a
         // deterministic closest-first ordering toward the remembered place.
-        int[] order = hint == null
-                ? null
-                : hintOrder(
-                        baseAngle, player.getX(), player.getZ(), hint.x, hint.z, plan);
+        int[] order;
+        if (hint != null) {
+            order = hintOrder(
+                    baseAngle, player.getX(), player.getZ(), hint.x, hint.z, plan);
+        } else if (placementSeed != null) {
+            order = candidateOrder(
+                    plan.length,
+                    placementSeed,
+                    () -> player.getRandom().nextInt(plan.length));
+        } else {
+            order = candidateOrder(
+                    plan.length,
+                    null,
+                    () -> player.getRandom().nextInt(plan.length));
+        }
 
         for (int index = 0; index < plan.length; index++) {
-            int candidateIndex = order != null
-                    ? order[index]
-                    : (index + offset) % plan.length;
+            int candidateIndex = order[index];
             double[] candidate = plan[candidateIndex];
             double angle = baseAngle + Math.toRadians(candidate[0]);
             double distance = candidate[1];
@@ -291,7 +387,7 @@ public final class ScenePlacement {
                     anchor.x + 0.35D,
                     anchor.y + 1.9D,
                     anchor.z + 0.35D);
-            if (!level.noCollision(bodyBounds)) {
+            if (!LoadedSceneQueries.noCollision(level, bodyBounds)) {
                 continue;
             }
             Vec3 chest = anchor.add(0.0D, 1.35D, 0.0D);
@@ -343,12 +439,12 @@ public final class ScenePlacement {
         look = look.normalize();
         Vec3 eye = player.getEyePosition();
         Vec3 farFocus = eye.add(look.scale(CAMERA_FOCUS_DISTANCE));
-        BlockHitResult hit = level.clip(new ClipContext(
-                eye,
-                farFocus,
-                ClipContext.Block.COLLIDER,
-                ClipContext.Fluid.NONE,
-                player));
+        Optional<BlockHitResult> loadedHit = LoadedSceneQueries.clip(
+                level, eye, farFocus, player);
+        if (loadedHit.isEmpty()) {
+            return Optional.empty();
+        }
+        BlockHitResult hit = loadedHit.get();
         double distance = CAMERA_FOCUS_DISTANCE;
         if (hit.getType() != HitResult.Type.MISS) {
             distance = eye.distanceTo(hit.getLocation()) - CAMERA_FOCUS_PADDING;
@@ -385,12 +481,8 @@ public final class ScenePlacement {
             Vec3 start,
             Vec3 end,
             ServerPlayer player) {
-        BlockHitResult hit = level.clip(new ClipContext(
-                start,
-                end,
-                ClipContext.Block.COLLIDER,
-                ClipContext.Fluid.NONE,
-                player));
-        return hit.getType() == HitResult.Type.MISS;
+        return LoadedSceneQueries.clip(level, start, end, player)
+                .map(hit -> hit.getType() == HitResult.Type.MISS)
+                .orElse(false);
     }
 }

@@ -1,6 +1,7 @@
 package io.github.mizar107.zapegruntime.timeline;
 
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import net.minecraft.resources.ResourceLocation;
@@ -84,6 +85,55 @@ public record TimelineSession(
                 && seed == other.seed;
     }
 
+    /**
+     * Identity supplied by an operator start request. Bound dimension and
+     * progress are captured state, not command arguments, so they must not
+     * turn an otherwise identical retry into a conflict.
+     */
+    public boolean sameStartRequest(TimelineSession other) {
+        return sessionId.equals(other.sessionId)
+                && targetId.equals(other.targetId)
+                && timelineId.equals(other.timelineId)
+                && definitionFingerprint.equals(other.definitionFingerprint);
+    }
+
+    /** Definition-relative invariants checked before any lifecycle or action. */
+    public Optional<ValidationFailure> validationFailure(
+            TimelineDefinition definition) {
+        Objects.requireNonNull(definition, "definition");
+        if (seed != TimelineDeterminism.sessionSeed(sessionId, targetId, definition)) {
+            return Optional.of(ValidationFailure.SEED_MISMATCH);
+        }
+        if (elapsedTicks > definition.durationTicks()) {
+            return Optional.of(ValidationFailure.ELAPSED_OUTSIDE_DEFINITION);
+        }
+        if (nextActionIndex >= definition.actions().size()) {
+            return Optional.of(ValidationFailure.CURSOR_OUTSIDE_DEFINITION);
+        }
+        for (int index = 0; index < nextActionIndex; index++) {
+            if (elapsedTicks < definition.actions().get(index).atTick()) {
+                return Optional.of(ValidationFailure.PROGRESS_INCONSISTENT);
+            }
+        }
+        TimelineAction current = definition.actions().get(nextActionIndex);
+        if (actionAttempts == 0) {
+            if (retryAtElapsedTick > elapsedTicks) {
+                return Optional.of(ValidationFailure.PROGRESS_INCONSISTENT);
+            }
+        } else {
+            if (actionAttempts >= TimelineEngine.MAX_ACTION_ATTEMPTS
+                    || elapsedTicks < current.atTick()
+                    || elapsedTicks > current.deadlineTick()
+                    || retryAtElapsedTick <= elapsedTicks
+                    || retryAtElapsedTick > definition.durationTicks()
+                    || retryAtElapsedTick - elapsedTicks
+                            > current.retryIntervalTicks()) {
+                return Optional.of(ValidationFailure.PROGRESS_INCONSISTENT);
+            }
+        }
+        return Optional.empty();
+    }
+
     public TimelineSession withStatus(Status nextStatus) {
         if (status == nextStatus) {
             return this;
@@ -126,5 +176,12 @@ public record TimelineSession(
         PAUSED_DISCONNECT,
         PAUSED_RESTART,
         PAUSED_DIMENSION
+    }
+
+    public enum ValidationFailure {
+        SEED_MISMATCH,
+        ELAPSED_OUTSIDE_DEFINITION,
+        CURSOR_OUTSIDE_DEFINITION,
+        PROGRESS_INCONSISTENT
     }
 }

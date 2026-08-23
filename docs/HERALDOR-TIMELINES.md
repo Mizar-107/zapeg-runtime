@@ -17,10 +17,19 @@ Every definition declares:
   are `ttl_ticks`, `stage`, `retry_interval_ticks`, and `required`.
 
 Actions are canonically ordered by `(at_tick, id)`. A session UUID, target
-UUID, definition fingerprint, and action id derive the action event UUID and
-visual seed. Player names and server RNG never affect replay. One active
-timeline is allowed per target; active work and terminal results are bounded,
-and terminal replay barriers never evict.
+UUID, definition fingerprint, and action id derive the action event UUID.
+Visual and placement seeds use separate deterministic domains. Player names,
+player RNG, and server RNG never affect timeline replay or placement. One
+active timeline is allowed per target; active work and terminal results are
+bounded, and terminal replay barriers never evict.
+
+Every timeline scene claim is also stored with its session, target,
+definition fingerprint, action id, and payload hash. Direct scene claims use
+the same bounded, non-evicting event-id namespace, so an old direct UUID still
+cannot impersonate a timeline action after the legacy 256-entry UUID cache
+turns over. Exact reserved claims resume after restart; a reserved claim whose
+legacy UUID was already consumed is promoted to applied without dispatching a
+second scene. Identity or payload collisions fail closed.
 
 `APPLIED` in the timeline engine means the server validated, consumed, and
 privately dispatched that scene request. It is deliberately not proof that a
@@ -35,8 +44,12 @@ Lifecycle behavior is durable:
 - dimension changes and death follow the authored policy;
 - a changed or missing definition fails the pinned session closed;
 - retryable placement/busy failures obey per-action intervals and deadlines;
-- unknown saved-data schemas are preserved without mutation;
-- no timeline performs entity scans or forces chunk loads.
+- unknown saved-data schemas and structurally corrupt schema-1 roots are
+  distinguished, quarantined, and preserved without mutation;
+- definition-relative seed, duration, cursor, and retry corruption becomes a
+  durable `FAILED/STATE_CORRUPTION` result before lifecycle or dispatch;
+- no timeline performs entity scans or forces chunk loads; every ray and
+  collision footprint is bounded and preflighted against loaded chunks.
 
 Operator commands are typed and inherit the native `/heraldor` trust policy:
 

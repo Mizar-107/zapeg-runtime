@@ -48,7 +48,7 @@ class TimelineEngineTest {
         assertEquals(TARGET, invocation.targetId());
         assertEquals(
                 TimelineDeterminism.actionEventId(
-                        SESSION, definition, definition.actions().get(0)),
+                        SESSION, TARGET, definition, definition.actions().get(0)),
                 invocation.eventId());
         assertEquals(
                 TimelineDeterminism.actionSeed(
@@ -80,6 +80,7 @@ class TimelineEngineTest {
         assertEquals(1, step.active().actionAttempts());
         assertEquals(6, step.active().retryAtElapsedTick());
         for (int tick = 2; tick <= 5; tick++) {
+            assertTrue(step.active().validationFailure(definition).isEmpty());
             step = TimelineEngine.tick(
                     step.active(),
                     definition,
@@ -88,6 +89,10 @@ class TimelineEngineTest {
                         invoked.add(invocation.action().id());
                         return TimelineEngine.ActionOutcome.APPLIED;
                     });
+            assertFalse(step.finished());
+            assertEquals(tick, step.active().elapsedTicks());
+            assertEquals(6, step.active().retryAtElapsedTick());
+            assertEquals(1, step.active().actionAttempts());
         }
         assertEquals(List.of("first"), invoked);
         step = TimelineEngine.tick(
@@ -110,6 +115,81 @@ class TimelineEngineTest {
                 });
         assertTrue(step.finished());
         assertEquals(List.of("first", "first", "second"), invoked);
+    }
+
+    @Test
+    void lateOverlappingNextActionUsesAuthoredDeadlinePolicy() {
+        TimelineDefinition required = definition(
+                TimelineDefinitionTest.policies(),
+                action("first", 1, 10, true),
+                action("late", 2, 3, true));
+        TimelineSession requiredLate = TimelineSession.start(
+                        SESSION, TARGET, required, OVERWORLD)
+                .withProgress(6, 1, 0, 6);
+        assertTrue(requiredLate.validationFailure(required).isEmpty());
+        int[] dispatches = {0};
+        TimelineEngine.Step failed = TimelineEngine.tick(
+                requiredLate,
+                required,
+                online(OVERWORLD),
+                invocation -> {
+                    dispatches[0]++;
+                    return TimelineEngine.ActionOutcome.APPLIED;
+                });
+        assertEquals(0, dispatches[0]);
+        assertEquals(TimelineEngine.TerminalStatus.FAILED, failed.terminal().status());
+        assertEquals(TimelineEngine.TerminalReason.ACTION_DEADLINE, failed.terminal().reason());
+
+        TimelineDefinition optional = definition(
+                TimelineDefinitionTest.policies(),
+                action("first", 1, 10, true),
+                action("late", 2, 3, false));
+        TimelineSession optionalLate = TimelineSession.start(
+                        SESSION, TARGET, optional, OVERWORLD)
+                .withProgress(6, 1, 0, 6);
+        assertTrue(optionalLate.validationFailure(optional).isEmpty());
+        TimelineEngine.Step skipped = TimelineEngine.tick(
+                optionalLate,
+                optional,
+                online(OVERWORLD),
+                invocation -> {
+                    dispatches[0]++;
+                    return TimelineEngine.ActionOutcome.APPLIED;
+                });
+        assertEquals(0, dispatches[0]);
+        assertEquals(TimelineEngine.TerminalStatus.SUCCEEDED, skipped.terminal().status());
+        assertEquals(TimelineEngine.TerminalReason.COMPLETED, skipped.terminal().reason());
+    }
+
+    @Test
+    void retryMayCrossInclusiveActionDeadlineBeforeDeadlinePolicyWins() {
+        TimelineDefinition definition = definition(
+                TimelineDefinitionTest.policies(),
+                new TimelineAction(
+                        "cue", 1, 3, 5, true, SceneProfile.ECHO_01, 200, 0));
+        TimelineSession session = TimelineSession.start(
+                SESSION, TARGET, definition, OVERWORLD);
+        int[] dispatches = {0};
+        TimelineEngine.ActionExecutor retrying = invocation -> {
+            dispatches[0]++;
+            return TimelineEngine.ActionOutcome.RETRYABLE;
+        };
+
+        TimelineEngine.Step step = TimelineEngine.tick(
+                session, definition, online(OVERWORLD), retrying);
+        assertEquals(6, step.active().retryAtElapsedTick());
+        assertTrue(step.active().validationFailure(definition).isEmpty());
+        step = TimelineEngine.tick(step.active(), definition, online(OVERWORLD), retrying);
+        assertEquals(2, step.active().elapsedTicks());
+        assertTrue(step.active().validationFailure(definition).isEmpty());
+        step = TimelineEngine.tick(step.active(), definition, online(OVERWORLD), retrying);
+        assertEquals(3, step.active().elapsedTicks());
+        assertTrue(step.active().validationFailure(definition).isEmpty());
+        step = TimelineEngine.tick(step.active(), definition, online(OVERWORLD), retrying);
+
+        assertEquals(1, dispatches[0]);
+        assertEquals(TimelineEngine.TerminalStatus.FAILED, step.terminal().status());
+        assertEquals(TimelineEngine.TerminalReason.ACTION_DEADLINE, step.terminal().reason());
     }
 
     @Test

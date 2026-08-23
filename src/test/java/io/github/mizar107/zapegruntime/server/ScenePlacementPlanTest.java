@@ -1,10 +1,12 @@
 package io.github.mizar107.zapegruntime.server;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.mizar107.zapegruntime.scene.GazePull;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class ScenePlacementPlanTest {
@@ -82,6 +84,53 @@ class ScenePlacementPlanTest {
             double dot = facingX * (-dx / 220.0D) + facingZ * (-dz / 220.0D);
             assertTrue(dot > 0.9999D, "horizon figure must face the target");
         }
+    }
+
+    @Test
+    void timelineSeedFixesCandidateOrderWithoutUsingPlayerRng() {
+        long placementSeed = 0x1020304050607080L;
+        int[] expected = {8, 9, 10, 11, 12, 0, 1, 2, 3, 4, 5, 6, 7};
+        AtomicInteger legacyRngCalls = new AtomicInteger();
+        assertArrayEquals(
+                expected,
+                ScenePlacement.candidateOrder(
+                        ScenePlacement.candidatePlan().length,
+                        placementSeed,
+                        () -> legacyRngCalls.incrementAndGet()));
+        assertEquals(0, legacyRngCalls.get());
+        for (int repeat = 0; repeat < 32; repeat++) {
+            assertArrayEquals(
+                    expected,
+                    ScenePlacement.seededCandidateOrder(
+                            ScenePlacement.candidatePlan().length, placementSeed));
+        }
+    }
+
+    @Test
+    void timelineSeedFixesHorizonSelectionWithoutUsingPlayerRng() {
+        long placementSeed = 0x1020304050607080L;
+        AtomicInteger legacyRngCalls = new AtomicInteger();
+        double azimuth = ScenePlacement.horizonAzimuth(
+                placementSeed,
+                () -> {
+                    legacyRngCalls.incrementAndGet();
+                    return 0.5D;
+                });
+        assertEquals(271.88025965899834D, azimuth, 1.0E-12D);
+        assertEquals(azimuth, ScenePlacement.seededHorizonAzimuth(placementSeed));
+        assertTrue(azimuth >= 0.0D && azimuth < 360.0D);
+        assertEquals(0, legacyRngCalls.get());
+
+        ScenePlacement.Placement first =
+                ScenePlacement.horizonPlacement(10.0D, 70.0D, -5.0D, azimuth, 220.0D);
+        ScenePlacement.Placement replay =
+                ScenePlacement.horizonPlacement(
+                        10.0D,
+                        70.0D,
+                        -5.0D,
+                        ScenePlacement.seededHorizonAzimuth(placementSeed),
+                        220.0D);
+        assertEquals(first, replay);
     }
 
     @Test

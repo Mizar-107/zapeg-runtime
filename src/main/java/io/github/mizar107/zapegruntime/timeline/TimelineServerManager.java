@@ -28,6 +28,14 @@ public final class TimelineServerManager {
         if (!target.isAlive() || target.isSpectator()) {
             return new StartResult(false, "target is not eligible", sessionId);
         }
+        TimelineReplayData replayData = TimelineReplayData.get(server);
+        if (!replayData.supportsCurrentSchema()) {
+            return new StartResult(
+                    false,
+                    "timeline replay schema is "
+                            + replayData.dataHealth().name().toLowerCase(Locale.ROOT),
+                    sessionId);
+        }
         TimelineSession proposed = TimelineSession.start(
                 sessionId,
                 target.getUUID(),
@@ -125,7 +133,12 @@ public final class TimelineServerManager {
     public static String statusFor(MinecraftServer server, UUID targetId) {
         TimelineSessionData data = TimelineSessionData.get(server);
         if (!data.supportsCurrentSchema()) {
-            return "schema=unsupported";
+            return schemaDiagnostic(data);
+        }
+        TimelineReplayData replayData = TimelineReplayData.get(server);
+        if (!replayData.supportsCurrentSchema()) {
+            return "replay_schema="
+                    + replayData.dataHealth().name().toLowerCase(Locale.ROOT);
         }
         return data.activeFor(targetId)
                 .map(session -> "active=1 session=" + session.sessionId()
@@ -140,7 +153,12 @@ public final class TimelineServerManager {
     public static String resultFor(MinecraftServer server, UUID sessionId) {
         TimelineSessionData data = TimelineSessionData.get(server);
         if (!data.supportsCurrentSchema()) {
-            return "schema=unsupported";
+            return schemaDiagnostic(data);
+        }
+        TimelineReplayData replayData = TimelineReplayData.get(server);
+        if (!replayData.supportsCurrentSchema()) {
+            return "replay_schema="
+                    + replayData.dataHealth().name().toLowerCase(Locale.ROOT);
         }
         Optional<TimelineSession> active = data.findBySession(sessionId);
         if (active.isPresent()) {
@@ -157,6 +175,12 @@ public final class TimelineServerManager {
                         + " status=" + result.status().name().toLowerCase(Locale.ROOT)
                         + " reason=" + result.reason().name().toLowerCase(Locale.ROOT))
                 .orElse("session=unknown");
+    }
+
+    private static String schemaDiagnostic(TimelineSessionData data) {
+        TimelineSessionData.DataDiagnostic diagnostic = data.dataDiagnostic();
+        return "schema=" + diagnostic.health().name().toLowerCase(Locale.ROOT)
+                + " issue=" + diagnostic.issue();
     }
 
     private static void applyLifecycle(
@@ -196,7 +220,9 @@ public final class TimelineServerManager {
                         invocation.action().profile(),
                         invocation.action().ttlTicks(),
                         invocation.action().stage(),
-                        invocation.visualSeed());
+                        invocation.visualSeed(),
+                        invocation.placementSeed(),
+                        invocation.replayIdentity());
         return TimelineEngine.ActionOutcome.valueOf(result.name());
     }
 
