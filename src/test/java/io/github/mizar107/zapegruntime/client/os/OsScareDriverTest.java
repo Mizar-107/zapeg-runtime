@@ -178,9 +178,9 @@ class OsScareDriverTest {
         assertEquals(OsEffectReason.UNVERIFIED_API,
                 driver.report().taskbar().primaryReason());
         for (OsEffect effect : OsEffect.values()) {
-            assertEquals(OsFallbackState.NOT_AVAILABLE,
+            assertEquals(OsFallbackState.AVAILABLE,
                     driver.report().outcome(effect).fallback());
-            assertEquals(OsEffectReason.FALLBACK_NOT_IMPLEMENTED,
+            assertEquals(OsEffectReason.NONE,
                     driver.report().outcome(effect).fallbackReason());
         }
 
@@ -216,6 +216,33 @@ class OsScareDriverTest {
         assertEquals(OsCapabilityState.DISABLED, faceOnly.report().windowTitle().capability());
         assertEquals(OsEffectReason.EFFECT_DISABLED,
                 faceOnly.report().windowTitle().capabilityReason());
+    }
+
+    @Test
+    void disabledOsStillGetsFallbackButOnlyAfterRenderProof() {
+        RecordingHooks hooks = new RecordingHooks();
+        OsScareDriver driver = driven(hooks, OsScareToggles.ALL_OFF);
+
+        driver.markInGameFallbackRequested();
+        runBody(driver, 56);
+        for (OsEffect effect : OsEffect.values()) {
+            assertEquals(OsCapabilityState.DISABLED,
+                    driver.report().outcome(effect).capability());
+            assertEquals(OsPrimaryState.NOT_REQUESTED,
+                    driver.report().outcome(effect).primary());
+            assertEquals(OsFallbackState.REQUESTED,
+                    driver.report().outcome(effect).fallback(),
+                    "elapsed ticks are not render proof");
+        }
+
+        driver.markInGameFallbackApplied();
+        for (OsEffect effect : OsEffect.values()) {
+            assertEquals(OsFallbackState.APPLIED,
+                    driver.report().outcome(effect).fallback());
+            assertEquals(OsEffectReason.NONE,
+                    driver.report().outcome(effect).fallbackReason());
+        }
+        assertTrue(hooks.calls.isEmpty(), "fallback cannot invoke an OS hook");
     }
 
     @Test

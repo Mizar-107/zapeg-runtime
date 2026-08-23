@@ -7,7 +7,9 @@ public enum OsFallbackState {
     NOT_NEEDED(1, "not_needed"),
     REQUESTED(2, "requested"),
     APPLIED(3, "applied"),
-    FAILED(4, "failed");
+    FAILED(4, "failed"),
+    /** Implemented and ready, but no visitation presentation is active. */
+    AVAILABLE(5, "available");
 
     private final int wireId;
     private final String serializedName;

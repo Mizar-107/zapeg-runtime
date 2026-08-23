@@ -12,6 +12,7 @@ class ClientSceneManagerPolicyTest {
     @Test
     void visitationCannotClaimGenericRenderVisibility() {
         assertFalse(ClientSceneManager.usesRenderObservation(SceneProfile.VISITATION_01));
+        assertFalse(ClientSceneManager.usesRenderObservation(SceneProfile.BREACH_01));
         assertFalse(ClientSceneManager.usesRenderObservation(SceneProfile.FOOTSTEPS_01));
         assertFalse(ClientSceneManager.usesRenderObservation(SceneProfile.WHISPER_STEPS_01));
         assertTrue(ClientSceneManager.usesRenderObservation(SceneProfile.ECHO_01));
@@ -19,8 +20,12 @@ class ClientSceneManagerPolicyTest {
     }
 
     @Test
-    void visitationHasNoInGamePreludeFogOverlayOrCameraPolicy() {
-        assertFalse(ClientSceneManager.usesInGamePresentation(SceneProfile.VISITATION_01));
+    void visitationAndBreachOwnTheGuaranteedScreenSpacePresentation() {
+        assertTrue(ClientSceneManager.usesInGamePresentation(SceneProfile.VISITATION_01));
+        assertTrue(ClientSceneManager.usesInGamePresentation(SceneProfile.BREACH_01));
+        assertTrue(ClientSceneManager.usesBreachPresentation(SceneProfile.VISITATION_01));
+        assertTrue(ClientSceneManager.usesBreachPresentation(SceneProfile.BREACH_01));
+        assertFalse(ClientSceneManager.usesBreachPresentation(SceneProfile.ECHO_01));
         assertEquals(0, SceneProfile.VISITATION_01.preludeTicks());
         assertEquals(0, SceneProfile.VISITATION_01.uneaseLevel());
         assertTrue(ClientSceneManager.usesInGamePresentation(SceneProfile.ECHO_01));

@@ -4,6 +4,27 @@ Server-authoritative Forge 1.20.1 story, horror, and encounter mod for the
 ZapeG pack. The stable `zapeg_runtime` mod ID and archive stem are retained for
 world and deployment migration.
 
+## Batch 2 breach/audio slice (development)
+
+- exact-match protocol `9`; wire IDs 0–13 remain stable and `breach_01` is
+  added at ID 14, so protocol-8 clients are refused during the handshake;
+- `breach_01` is target-private screen-space choreography with target-local
+  sound. It does not inspect a ground anchor, load a chunk, raycast, spawn an
+  entity, require a shader or send a sound to observers;
+- `visitation_01` always runs the same complete in-game sequence. Its optional
+  title/motion/popup/taskbar effects may augment it, but disabling them or
+  running on an unsupported platform cannot suppress the fallback;
+- fallback status is `requested` when scheduled and becomes `applied` only
+  after the GUI hook emits a non-zero frame. Receipt and elapsed ticks remain
+  insufficient evidence;
+- whispers, knocks, footsteps and manifestation use seven deterministic,
+  from-scratch OGG assets registered by the mod. Playback and metadata gain
+  are bounded, subtitles ship in English and Turkish, and no recorded or
+  remote media enters the generator.
+
+See [docs/BREACH-01.md](docs/BREACH-01.md) for the timing, resource hashes and
+integration contract.
+
 ## Batch 1 (`0.5.0-b1`) boundaries
 
 - exact-match protocol `8`; mixed protocol 7 clients fail the handshake. v8
@@ -176,7 +197,7 @@ scene has been witnessed, even while its anchor is briefly offscreen or
 occluded; gaze cannot advance then. Packets are sent only to the selected
 player and client history is discarded when the scene ends.
 
-Every in-game scene except `visitation_01` opens with a short client-local
+World-rendered scenes with a configured prelude open with a short client-local
 prelude — a cave-sound swell with a subtle fog and brightness dip — before the
 body begins. The prelude is drawn through the fog viewport event with
 conservative caps so it yields to shader packs rather than fighting them. The
@@ -202,9 +223,10 @@ so no asset is shipped — unfogged, unlit and steady, with a soft oversized hal
 behind each bright core. They never flash or strobe, they dim as the camera
 leaves the figure's front hemisphere instead of shining through the head, and
 on the colossus they hold at full strength while the body fades, so the eyes
-are always the last thing visible. Scene audio is a small
-allowlist of vanilla sound events played client-locally on the target's client
-only — no custom, remote or server-broadcast audio — on the ambient sound
+are always the last thing visible. Existing scene audio uses a small allowlist
+of vanilla events, while breach uses registered mod-owned synthesis for its
+whispers, knocks, footsteps and manifestation. Both paths play client-locally
+on the target only — never remotely or server-broadcast — on the ambient sound
 channel, which players do not mute the way grinders mute hostiles. Each scene plays an arrival
 beat, one faint seeded mid-scene beat, and a resolve beat; sound volume is
 range-compensated so distant anchors arrive faint instead of silent.
@@ -229,7 +251,8 @@ the mod enables external effects.
 [osScares]
 # Deprecated 0.4.x key. Ignored; never grants consent.
 enabled = false
-# The only external-effect consent authority. Defaults off.
+# The only external-effect consent authority. Defaults off; the in-game
+# visitation fallback always remains available.
 externalEffectsOptInV2 = false
 # The brief borderless always-on-top face blink.
 facePopup = true
@@ -258,7 +281,7 @@ Permission-level-2 in-game operators and authenticated RCON may use:
 `profile` is one of `echo_01`, `threshold_01`, `motion_echo_01`,
 `light_fault_01`, `peripheral_01`, `footsteps_01`, `sky_mark_01`,
 `false_passage_01`, `chroma_break_01`, `near_miss_01`, `whisper_steps_01`,
-`colossus_01`, or `visitation_01`. Arbitrary shader names, asset paths and
+`colossus_01`, `visitation_01`, `rift_01`, or `breach_01`. Arbitrary shader names, asset paths and
 URLs are rejected.
 
 `rehearse` is a manual, non-consuming scene at the profile's default length;
@@ -280,7 +303,7 @@ tree.
 `diagnose` reports protocol, active/last visitation event and the four latest
 client outcomes. Each compact outcome uses `c` (capability), `p` (primary),
 `f` (fallback), and `x` (cleanup), for example
-`window_title{c=ready,p=requested:unverified_api,f=not_available:fallback_not_implemented,x=pending:unverified_api}`.
+`window_title{c=ready,p=requested:unverified_api,f=applied,x=pending:unverified_api}`.
 It exposes no paths, exception text, native handles or monitor names. `status`
 includes the same bounded report while a visitation is active. A normal scene
 acknowledgement is never presented as proof of an OS effect.

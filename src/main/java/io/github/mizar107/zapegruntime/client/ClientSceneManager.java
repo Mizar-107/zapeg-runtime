@@ -2,6 +2,7 @@ package io.github.mizar107.zapegruntime.client;
 
 import io.github.mizar107.zapegruntime.client.os.OsScareDriver;
 import io.github.mizar107.zapegruntime.network.SceneNetwork;
+import io.github.mizar107.zapegruntime.scene.BreachChoreography;
 import io.github.mizar107.zapegruntime.scene.CameraUnease;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
 import io.github.mizar107.zapegruntime.scene.ColossusChoreography;
@@ -287,7 +288,8 @@ public final class ClientSceneManager {
                     case WHISPER_STEPS_01 -> tickWhisperSteps(current, minecraft);
                     case NEAR_MISS_01 -> tickNearMiss(current, minecraft);
                     case COLOSSUS_01 -> tickColossus(current, minecraft);
-                    case VISITATION_01 -> tickVisitation(current);
+                    case VISITATION_01 -> tickVisitation(current, minecraft);
+                    case BREACH_01 -> tickBreach(current, minecraft);
                     case RIFT_01 -> tickRift(current);
                     case FALSE_PASSAGE_01 -> {
                         tickFalsePassage(current, minecraft);
@@ -403,11 +405,10 @@ public final class ClientSceneManager {
     }
 
     /**
-     * The visitation renders nothing in the world; its body ticks drive the
-     * OS-level beats (face blink, wrong title, window pulse, taskbar flash)
-     * through the driver, gated by the client's explicit opt-in config.
+     * Visitation always drives the complete in-game breach. Optional OS beats
+     * augment it only after versioned client consent; they never gate the fallback.
      */
-    private static void tickVisitation(ActiveScene current) {
+    private static void tickVisitation(ActiveScene current, Minecraft minecraft) {
         OsScareDriver driver = OsScareDriver.instance();
         if (!current.visitationBegun) {
             if (!osStatusTracker.open(
@@ -417,11 +418,31 @@ public final class ClientSceneManager {
             }
             current.visitationBegun = true;
             driver.begin(current.descriptor.visualSeed(), OsScareConfig.toggles());
+            driver.markInGameFallbackRequested();
         }
+        tickBreach(current, minecraft);
         driver.tick(
                 SceneProfile.VISITATION_01,
                 current.ageTicks - current.descriptor.profile().preludeTicks());
         flushOsStatus();
+    }
+
+    /**
+     * One-shot target-local audio cues. Position is derived from the target's
+     * current pose, never the descriptor anchor or any loaded ground column.
+     */
+    private static void tickBreach(ActiveScene current, Minecraft minecraft) {
+        int bodyAge = current.ageTicks - current.descriptor.profile().preludeTicks();
+        int bodyTicks = bodyTicks(current);
+        for (BreachChoreography.Cue cue : BreachChoreography.Cue.values()) {
+            if (bodyAge == BreachChoreography.cueTick(cue, bodyTicks)) {
+                SceneSounds.playBreachCue(
+                        current.descriptor,
+                        cue,
+                        minecraft.player.position(),
+                        minecraft.player.getYRot());
+            }
+        }
     }
 
     /**
@@ -968,6 +989,11 @@ public final class ClientSceneManager {
         if (!usesInGamePresentation(current.descriptor.profile())) {
             return 0.0F;
         }
+        if (usesBreachPresentation(current.descriptor.profile())) {
+            // BreachRenderer owns this family and reports proof only after it
+            // emits a real non-zero frame.
+            return 0.0F;
+        }
         ScenePhase phase = current.phase();
         if (phase == ScenePhase.PRELUDE) {
             return (float) (0.14D * preludeDim(current, partialTick));
@@ -1046,6 +1072,7 @@ public final class ClientSceneManager {
             case COLOSSUS_01 -> 53.0D;
             case VISITATION_01 -> 41.0D;
             case RIFT_01 -> RiftChoreography.pulseTicks(current.descriptor.stage());
+            case BREACH_01 -> 61.0D;
         };
         double pulse = SceneMath.easedPulse(bodyAge(current, partialTick), period);
         double scale = switch (current.descriptor.profile()) {
@@ -1065,6 +1092,7 @@ public final class ClientSceneManager {
             // screen itself stays clean.
             case VISITATION_01 -> 0.0D;
             case RIFT_01 -> RiftChoreography.washScale(current.descriptor.stage());
+            case BREACH_01 -> 0.0D;
         };
         double envelope = SceneMath.lifeEnvelope(
                 bodyAge(current, partialTick),
@@ -1130,6 +1158,10 @@ public final class ClientSceneManager {
         if (current == null || !usesInGamePresentation(current.descriptor.profile())) {
             return 0.0F;
         }
+        if (usesBreachPresentation(current.descriptor.profile())) {
+            // The fallback is deliberately shader-independent screen space.
+            return 0.0F;
+        }
         float dip = switch (current.phase()) {
             case PRELUDE -> (float) preludeDim(current, partialTick);
             case BODY -> (float) (0.35D * SceneMath.lifeEnvelope(
@@ -1159,9 +1191,10 @@ public final class ClientSceneManager {
         if (current == null) {
             return releasePull();
         }
-        if (!usesInGamePresentation(current.descriptor.profile())) {
-            // This profile has no in-game presentation in Batch 1, including a
-            // decaying gaze offset inherited from an immediately prior scene.
+        if (!usesInGamePresentation(current.descriptor.profile())
+                || usesBreachPresentation(current.descriptor.profile())) {
+            // Breach owns no camera transform. Clear any inherited gaze pull
+            // so the placement-proof fallback has no world-space residue.
             pullYawOffset = 0.0F;
             pullPitchOffset = 0.0F;
             pullWasActive = false;
@@ -1330,16 +1363,42 @@ public final class ClientSceneManager {
         return active != null;
     }
 
-    /** Pure policy seam: visitation can never gain VISIBLE from a render pass. */
+    /** Pure policy seam: screen-space/sound-only profiles skip world observation. */
     static boolean usesRenderObservation(SceneProfile profile) {
         return profile != SceneProfile.FOOTSTEPS_01
                 && profile != SceneProfile.WHISPER_STEPS_01
-                && profile != SceneProfile.VISITATION_01;
+                && profile != SceneProfile.VISITATION_01
+                && profile != SceneProfile.BREACH_01;
     }
 
-    /** Visitation owns only its explicitly opted-in external hooks. */
+    /** Both breach profiles now have a guaranteed in-game presentation. */
     static boolean usesInGamePresentation(SceneProfile profile) {
-        return profile != SceneProfile.VISITATION_01;
+        return true;
+    }
+
+    static boolean usesBreachPresentation(SceneProfile profile) {
+        return profile == SceneProfile.BREACH_01
+                || profile == SceneProfile.VISITATION_01;
+    }
+
+    /**
+     * Render proof seam. VISITATION reports the fallback axis rather than a
+     * generic VISIBLE acknowledgement; BREACH reports VISIBLE normally.
+     */
+    static void markBreachFramePresented(SceneProfile profile) {
+        ActiveScene current = active;
+        if (current == null
+                || current.phase() != ScenePhase.BODY
+                || current.descriptor.profile() != profile
+                || !usesBreachPresentation(profile)) {
+            return;
+        }
+        if (profile == SceneProfile.VISITATION_01) {
+            OsScareDriver.instance().markInGameFallbackApplied();
+            flushOsStatus();
+        } else {
+            markVisible(current);
+        }
     }
 
     private static void flushOsStatus() {

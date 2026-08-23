@@ -6,6 +6,7 @@ import io.github.mizar107.zapegruntime.scene.OsCleanupState;
 import io.github.mizar107.zapegruntime.scene.OsEffect;
 import io.github.mizar107.zapegruntime.scene.OsEffectOutcome;
 import io.github.mizar107.zapegruntime.scene.OsEffectReason;
+import io.github.mizar107.zapegruntime.scene.OsFallbackState;
 import io.github.mizar107.zapegruntime.scene.OsPrimaryState;
 import io.github.mizar107.zapegruntime.scene.OsScareChoreography;
 import io.github.mizar107.zapegruntime.scene.OsScareReport;
@@ -155,6 +156,34 @@ public final class OsScareDriver {
 
     public synchronized OsScareReport report() {
         return OsScareReport.from(outcomes);
+    }
+
+    /**
+     * The client scene layer owns fallback rendering. REQUESTED means the
+     * sequence is scheduled; it is not proof that a frame reached the player.
+     */
+    public synchronized void markInGameFallbackRequested() {
+        if (!sceneActive) {
+            return;
+        }
+        for (OsEffect effect : OsEffect.values()) {
+            outcomes.put(effect, outcomes.get(effect).withFallback(
+                    OsFallbackState.REQUESTED, OsEffectReason.NONE));
+        }
+    }
+
+    /** Called only by the GUI hook after it emitted non-zero primitives. */
+    public synchronized void markInGameFallbackApplied() {
+        if (!sceneActive) {
+            return;
+        }
+        for (OsEffect effect : OsEffect.values()) {
+            OsEffectOutcome current = outcomes.get(effect);
+            if (current.fallback() == OsFallbackState.REQUESTED) {
+                outcomes.put(effect, current.withFallback(
+                        OsFallbackState.APPLIED, OsEffectReason.NONE));
+            }
+        }
     }
 
     /**

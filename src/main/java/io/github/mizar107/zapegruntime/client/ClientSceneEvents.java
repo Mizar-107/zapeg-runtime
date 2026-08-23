@@ -132,10 +132,6 @@ public final class ClientSceneEvents {
 
     @SubscribeEvent
     public static void onRenderGui(RenderGuiEvent.Post event) {
-        float intensity = ClientSceneManager.guiEffectIntensity(event.getPartialTick());
-        if (intensity <= 0.0F) {
-            return;
-        }
         SceneProfile profile = ClientSceneManager.activeProfile();
         if (profile == null) {
             return;
@@ -143,6 +139,23 @@ public final class ClientSceneEvents {
         GuiGraphics graphics = event.getGuiGraphics();
         int width = event.getWindow().getGuiScaledWidth();
         int height = event.getWindow().getGuiScaledHeight();
+        if (ClientSceneManager.usesBreachPresentation(profile)) {
+            boolean presented = BreachRenderer.render(
+                    graphics,
+                    width,
+                    height,
+                    ClientSceneManager.bodyAgeWithPartial(event.getPartialTick()),
+                    ClientSceneManager.bodyTtlTicks(),
+                    ClientSceneManager.visualSeed());
+            if (presented) {
+                ClientSceneManager.markBreachFramePresented(profile);
+            }
+            return;
+        }
+        float intensity = ClientSceneManager.guiEffectIntensity(event.getPartialTick());
+        if (intensity <= 0.0F) {
+            return;
+        }
         long seed = ClientSceneManager.visualSeed();
         double age = ClientSceneManager.bodyAgeWithPartial(event.getPartialTick());
         ClientSceneManager.ScenePhase phase = ClientSceneManager.scenePhase();
@@ -198,10 +211,10 @@ public final class ClientSceneEvents {
                     seed,
                     age,
                     ClientSceneManager.activeStage());
-            case NEAR_MISS_01, WHISPER_STEPS_01, FOOTSTEPS_01, COLOSSUS_01, VISITATION_01 -> {
-                // Sound-only / crossing / colossus / visitation scenes: the
-                // screen must stay clean; the ground shake carries the
-                // colossus, and the visitation lives outside the window.
+            case NEAR_MISS_01, WHISPER_STEPS_01, FOOTSTEPS_01, COLOSSUS_01,
+                    VISITATION_01, BREACH_01 -> {
+                // Sound-only / crossing / colossus scenes stay clean. The two
+                // breach profiles returned through the dedicated renderer above.
             }
         }
     }

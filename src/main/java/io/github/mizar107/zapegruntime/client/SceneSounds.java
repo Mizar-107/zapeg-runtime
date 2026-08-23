@@ -1,7 +1,9 @@
 package io.github.mizar107.zapegruntime.client;
 
+import io.github.mizar107.zapegruntime.scene.BreachChoreography;
 import io.github.mizar107.zapegruntime.scene.RiftChoreography;
 import io.github.mizar107.zapegruntime.scene.SceneDescriptor;
+import io.github.mizar107.zapegruntime.sound.HeraldorSounds;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.sounds.SoundEvent;
@@ -10,9 +12,9 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Client-local vanilla sound pairing for scenes. Sounds play only on the
- * target's own client, positioned at the scene anchor; nothing is sent to
- * other players and no custom or remote audio asset is involved.
+ * Client-local sound pairing for scenes. Sounds play only on the target's own
+ * client; breach audio is mod-owned and positionally derived from the target,
+ * never a remote URL, sidecar or server-broadcast sound.
  */
 final class SceneSounds {
 
@@ -42,6 +44,9 @@ final class SceneSounds {
             }
             case VISITATION_01 -> play(descriptor, position, SoundEvents.WARDEN_HEARTBEAT, 0.45F, 0.50F);
             case RIFT_01 -> playRiftArrival(descriptor, position);
+            case BREACH_01 -> {
+                // The normalized breach cue table owns its arrival.
+            }
         }
     }
 
@@ -77,6 +82,9 @@ final class SceneSounds {
             case RIFT_01 -> {
                 // Overlay pulse carries the scene; arrival already sounded.
             }
+            case BREACH_01 -> {
+                // The normalized breach cue table owns its middle beats.
+            }
         }
     }
 
@@ -105,6 +113,9 @@ final class SceneSounds {
                 // The blink is simply over; nothing answers.
             }
             case RIFT_01 -> play(descriptor, position, SoundEvents.AMBIENT_CAVE.value(), 0.35F, 0.55F);
+            case BREACH_01 -> {
+                // The breach fades to silence rather than adding a stock resolve cue.
+            }
         }
     }
 
@@ -125,6 +136,66 @@ final class SceneSounds {
     /** A soft, wrong-sounding step while the near-miss figure crosses behind. */
     static void playNearMissStep(SceneDescriptor descriptor, Vec3 position) {
         play(descriptor, position, SoundEvents.SOUL_SOIL_STEP, 0.42F, 0.55F);
+    }
+
+    /** Complete breach sound line, spatialized around the target only. */
+    static void playBreachCue(
+            SceneDescriptor descriptor,
+            BreachChoreography.Cue cue,
+            Vec3 playerPosition,
+            float playerYawDegrees) {
+        if (cue == null || playerPosition == null) {
+            return;
+        }
+        switch (cue.soundKind()) {
+            case KNOCK -> {
+                double side = cue == BreachChoreography.Cue.FIRST_KNOCK ? -1.0D : 1.0D;
+                Vec3 position = rotateTargetOffset(
+                        playerPosition, playerYawDegrees, side * 2.8D, 1.2D);
+                float pitch = cue == BreachChoreography.Cue.FIRST_KNOCK ? 0.92F : 0.82F;
+                SoundEvent sound = cue == BreachChoreography.Cue.FIRST_KNOCK
+                        ? HeraldorSounds.KNOCK_01.get()
+                        : HeraldorSounds.KNOCK_02.get();
+                playOwned(descriptor, position, sound, 0.64F, pitch);
+            }
+            case FOOTSTEP -> {
+                double[] offset = BreachChoreography.footstepOffset(
+                        descriptor.visualSeed(), cue.footstepIndex());
+                Vec3 position = rotateTargetOffset(
+                        playerPosition, playerYawDegrees, offset[0], offset[1]);
+                float pitch = 0.91F + cue.footstepIndex() * 0.025F;
+                boolean alternate = ((descriptor.visualSeed() >>> cue.footstepIndex()) & 1L) != 0L;
+                SoundEvent sound = alternate
+                        ? HeraldorSounds.FOOTSTEP_02.get()
+                        : HeraldorSounds.FOOTSTEP_01.get();
+                playOwned(descriptor, position, sound, 0.58F, pitch);
+            }
+            case WHISPER -> {
+                Vec3 position = rotateTargetOffset(
+                        playerPosition, playerYawDegrees, 0.0D, -1.25D);
+                SoundEvent sound = (descriptor.visualSeed() & 0x20L) == 0L
+                        ? HeraldorSounds.WHISPER_01.get()
+                        : HeraldorSounds.WHISPER_02.get();
+                playOwned(descriptor, position, sound, 0.48F, 0.96F);
+            }
+            case MANIFESTATION -> playOwned(
+                    descriptor,
+                    playerPosition,
+                    HeraldorSounds.MANIFESTATION.get(),
+                    0.76F,
+                    0.94F);
+        }
+    }
+
+    private static Vec3 rotateTargetOffset(
+            Vec3 origin, float yawDegrees, double right, double forward) {
+        double radians = Math.toRadians(yawDegrees);
+        double sin = Math.sin(radians);
+        double cos = Math.cos(radians);
+        return origin.add(
+                cos * right - sin * forward,
+                0.15D,
+                sin * right + cos * forward);
     }
 
     /**
@@ -313,6 +384,32 @@ final class SceneSounds {
                 SoundSource.AMBIENT,
                 rangedVolume,
                 pitch * jitter,
+                false);
+    }
+
+    /** Mod-owned cues never use distance amplification and stay below 0.85. */
+    private static void playOwned(
+            SceneDescriptor descriptor,
+            Vec3 position,
+            SoundEvent event,
+            float volume,
+            float pitch) {
+        Minecraft minecraft = Minecraft.getInstance();
+        ClientLevel level = minecraft.level;
+        if (level == null || minecraft.player == null || position == null || event == null) {
+            return;
+        }
+        float boundedVolume = Math.max(0.0F, Math.min(0.85F, volume));
+        float jitter = 0.96F + ((descriptor.visualSeed() >>> 13) & 0x7L) / 7.0F * 0.08F;
+        float boundedPitch = Math.max(0.50F, Math.min(1.50F, pitch * jitter));
+        level.playLocalSound(
+                position.x,
+                position.y,
+                position.z,
+                event,
+                SoundSource.AMBIENT,
+                boundedVolume,
+                boundedPitch,
                 false);
     }
 }

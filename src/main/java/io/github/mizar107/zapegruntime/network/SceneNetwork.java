@@ -28,7 +28,8 @@ public final class SceneNetwork {
     // verified OS outcomes from the generic scene acknowledgement stream;
     // mixed v7/v8 installations must fail the handshake rather than report a
     // false VISIBLE or silently discard diagnostics.
-    public static final String PROTOCOL = "8";
+    /** Protocol 9 adds {@code breach_01} and the truthful AVAILABLE fallback state. */
+    public static final String PROTOCOL = "9";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             ResourceLocation.fromNamespaceAndPath(ZapeGRuntime.MOD_ID, "scenes"),
             () -> PROTOCOL,

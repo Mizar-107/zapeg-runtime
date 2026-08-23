@@ -1,0 +1,44 @@
+{
+  "heraldor_whisper_01": {
+    "subtitle": "subtitles.zapeg_runtime.heraldor_whisper",
+    "sounds": [
+      { "name": "zapeg_runtime:heraldor/whisper_01", "volume": 0.72, "pitch": 0.97 }
+    ]
+  },
+  "heraldor_whisper_02": {
+    "subtitle": "subtitles.zapeg_runtime.heraldor_whisper",
+    "sounds": [
+      { "name": "zapeg_runtime:heraldor/whisper_02", "volume": 0.68, "pitch": 1.02 }
+    ]
+  },
+  "heraldor_knock_01": {
+    "subtitle": "subtitles.zapeg_runtime.heraldor_knock",
+    "sounds": [
+      { "name": "zapeg_runtime:heraldor/knock_01", "volume": 0.80, "pitch": 1.00 }
+    ]
+  },
+  "heraldor_knock_02": {
+    "subtitle": "subtitles.zapeg_runtime.heraldor_knock",
+    "sounds": [
+      { "name": "zapeg_runtime:heraldor/knock_02", "volume": 0.78, "pitch": 0.96 }
+    ]
+  },
+  "heraldor_footstep_01": {
+    "subtitle": "subtitles.zapeg_runtime.heraldor_footstep",
+    "sounds": [
+      { "name": "zapeg_runtime:heraldor/footstep_01", "volume": 0.76, "pitch": 1.00 }
+    ]
+  },
+  "heraldor_footstep_02": {
+    "subtitle": "subtitles.zapeg_runtime.heraldor_footstep",
+    "sounds": [
+      { "name": "zapeg_runtime:heraldor/footstep_02", "volume": 0.74, "pitch": 0.98 }
+    ]
+  },
+  "heraldor_manifestation": {
+    "subtitle": "subtitles.zapeg_runtime.heraldor_manifestation",
+    "sounds": [
+      { "name": "zapeg_runtime:heraldor/manifestation", "volume": 0.82, "pitch": 1.00 }
+    ]
+  }
+}

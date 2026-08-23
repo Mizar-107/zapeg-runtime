@@ -3,7 +3,7 @@ package io.github.mizar107.zapegruntime.scene;
 import java.util.Objects;
 
 /**
- * Fixed lifecycle for one effect. Capability, primary delivery, future
+ * Fixed lifecycle for one effect. Capability, primary delivery,
  * in-game fallback and cleanup are independent so one success cannot conceal
  * another unverified or failed stage.
  */
@@ -44,8 +44,8 @@ public record OsEffectOutcome(
                 capabilityReason,
                 OsPrimaryState.NOT_REQUESTED,
                 OsEffectReason.NONE,
-                OsFallbackState.NOT_AVAILABLE,
-                OsEffectReason.FALLBACK_NOT_IMPLEMENTED,
+                OsFallbackState.AVAILABLE,
+                OsEffectReason.NONE,
                 OsCleanupState.NOT_REQUIRED,
                 OsEffectReason.NONE);
     }
@@ -54,6 +54,12 @@ public record OsEffectOutcome(
         return new OsEffectOutcome(
                 effect, capability, capabilityReason, state, reason,
                 fallback, fallbackReason, cleanup, cleanupReason);
+    }
+
+    public OsEffectOutcome withFallback(OsFallbackState state, OsEffectReason reason) {
+        return new OsEffectOutcome(
+                effect, capability, capabilityReason, primary, primaryReason,
+                state, reason, cleanup, cleanupReason);
     }
 
     public OsEffectOutcome withCleanup(OsCleanupState state, OsEffectReason reason) {
@@ -105,7 +111,7 @@ public record OsEffectOutcome(
             case NOT_AVAILABLE -> requireOneOf(
                     "NOT_AVAILABLE fallback", reason,
                     OsEffectReason.FALLBACK_NOT_IMPLEMENTED);
-            case NOT_NEEDED, REQUESTED, APPLIED -> requireNone(state.name(), reason);
+            case NOT_NEEDED, REQUESTED, APPLIED, AVAILABLE -> requireNone(state.name(), reason);
             case FAILED -> requireFailure("FAILED fallback", reason);
         }
     }

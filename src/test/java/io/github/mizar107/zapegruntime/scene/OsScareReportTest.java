@@ -36,10 +36,10 @@ class OsScareReportTest {
                     effect, OsCapabilityState.READY, OsEffectReason.NONE));
         }
         assertEquals(
-                "title{c=ready,p=not_requested,f=not_available:fallback_not_implemented,x=not_required} "
-                        + "motion{c=ready,p=not_requested,f=not_available:fallback_not_implemented,x=not_required} "
-                        + "popup{c=ready,p=not_requested,f=not_available:fallback_not_implemented,x=not_required} "
-                        + "taskbar{c=ready,p=not_requested,f=not_available:fallback_not_implemented,x=not_required}",
+                "title{c=ready,p=not_requested,f=available,x=not_required} "
+                        + "motion{c=ready,p=not_requested,f=available,x=not_required} "
+                        + "popup{c=ready,p=not_requested,f=available,x=not_required} "
+                        + "taskbar{c=ready,p=not_requested,f=available,x=not_required}",
                 OsScareReport.from(outcomes).compactString());
     }
 
@@ -53,6 +53,16 @@ class OsScareReportTest {
                 OsPrimaryState.APPLIED, OsEffectReason.ASSET_INVALID));
         assertThrows(IllegalArgumentException.class, () -> ready.withPrimary(
                 OsPrimaryState.FAILED, OsEffectReason.NONE));
+        assertEquals(
+                OsFallbackState.REQUESTED,
+                ready.withFallback(OsFallbackState.REQUESTED, OsEffectReason.NONE).fallback());
+        assertEquals(
+                OsFallbackState.APPLIED,
+                ready.withFallback(OsFallbackState.APPLIED, OsEffectReason.NONE).fallback());
+        assertThrows(IllegalArgumentException.class, () -> ready.withFallback(
+                OsFallbackState.APPLIED, OsEffectReason.FALLBACK_NOT_IMPLEMENTED));
+        assertThrows(IllegalArgumentException.class, () -> ready.withFallback(
+                OsFallbackState.FAILED, OsEffectReason.NONE));
         assertThrows(IllegalArgumentException.class, () -> ready.withCleanup(
                 OsCleanupState.APPLIED, OsEffectReason.CLEANUP_FAILED));
         assertThrows(IllegalArgumentException.class, () -> OsEffectOutcome.initial(

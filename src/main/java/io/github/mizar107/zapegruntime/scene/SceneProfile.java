@@ -67,20 +67,25 @@ public enum SceneProfile {
     COLOSSUS_01(
             11, "colossus_01", 320, 360.0D, 60_000, false,
             ScenePlacementMode.HORIZON, 40, 3, 0),
-    // The visitation: nothing renders in the world at all — the scare lives
-    // outside the game window (a brief face blink, a wrong title, a small
-    // window pulse), driven by the client OS-scare layer and bounded by
-    // OsScareChoreography. Operator-only on the Director side; never
-    // gaze-resolved, and the screen itself stays clean.
+    // The visitation always carries the placement-proof in-game breach. The
+    // optional OS layer (brief face blink, wrong title and window pulse) can
+    // augment it, but an opt-out, unsupported platform or failed native hook
+    // can never turn the scene into empty air. Never gaze-resolved.
     VISITATION_01(
-            12, "visitation_01", 70, 360.0D, 60_000, false,
+            12, "visitation_01", 170, 360.0D, 60_000, false,
             ScenePlacementMode.PLAYER_RELATIVE, 0, 0, 0),
     // Manifestation rift: target-private overlay family. Wire stage picks
     // eclipse (near-black), tear (chroma), unmoor (slow acid warp) or
     // witness (HUD gone, fullscreen eyes). Never gaze-resolved.
     RIFT_01(
             13, "rift_01", 200, 360.0D, 60_000, false,
-            ScenePlacementMode.PLAYER_RELATIVE, 12, 3, 0);
+            ScenePlacementMode.PLAYER_RELATIVE, 12, 3, 0),
+    // A screen-space breach with target-local sound. Its descriptor anchor is
+    // only an identity/bounds witness: no ground scan, line of sight, distant
+    // chunk, shader or world renderer participates in the presentation.
+    BREACH_01(
+            14, "breach_01", 180, 360.0D, 60_000, false,
+            ScenePlacementMode.PLAYER_RELATIVE, 0, 0, 0);
 
     /**
      * Length of the single final beat that closes an encore, in ticks. The

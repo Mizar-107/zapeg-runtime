@@ -17,6 +17,14 @@ class SceneAcknowledgementPolicyTest {
     }
 
     @Test
+    void breachAcceptsGuiProofButCanNeverBeGazeResolved() {
+        assertTrue(SceneProfile.BREACH_01.acceptsAcknowledgement(SceneAck.VISIBLE));
+        assertFalse(SceneProfile.BREACH_01.acceptsAcknowledgement(SceneAck.GAZE));
+        assertTrue(SceneProfile.BREACH_01.acceptsAcknowledgement(SceneAck.RECEIVED));
+        assertTrue(SceneProfile.BREACH_01.acceptsAcknowledgement(SceneAck.TIMEOUT));
+    }
+
+    @Test
     void gazeIsAllowedOnlyForProfilesWithARealGazeResolution() {
         assertTrue(SceneProfile.ECHO_01.acceptsAcknowledgement(SceneAck.GAZE));
         assertTrue(SceneProfile.SKY_MARK_01.acceptsAcknowledgement(SceneAck.GAZE));

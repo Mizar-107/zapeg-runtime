@@ -32,8 +32,8 @@ class SceneProtocolTest {
     }
 
     @Test
-    void versionEightProfileIdsRemainExplicitAndBounded() {
-        assertEquals("8", SceneNetwork.PROTOCOL);
+    void versionNineProfileIdsRemainExplicitAndBounded() {
+        assertEquals("9", SceneNetwork.PROTOCOL);
         assertEquals(0, SceneProfile.ECHO_01.wireId());
         assertEquals(1, SceneProfile.THRESHOLD_01.wireId());
         assertEquals(2, SceneProfile.MOTION_ECHO_01.wireId());
@@ -48,6 +48,7 @@ class SceneProtocolTest {
         assertEquals(11, SceneProfile.COLOSSUS_01.wireId());
         assertEquals(12, SceneProfile.VISITATION_01.wireId());
         assertEquals(13, SceneProfile.RIFT_01.wireId());
+        assertEquals(14, SceneProfile.BREACH_01.wireId());
 
         assertEquals(0, SceneProfile.ECHO_01.maxStage());
         assertEquals(HauntChoreography.MAX_STAGE, SceneProfile.FOOTSTEPS_01.maxStage());
@@ -56,7 +57,14 @@ class SceneProtocolTest {
         assertEquals(
                 ScenePlacementMode.PLAYER_RELATIVE,
                 SceneProfile.RIFT_01.placementMode());
+        assertEquals(
+                ScenePlacementMode.PLAYER_RELATIVE,
+                SceneProfile.VISITATION_01.placementMode());
+        assertEquals(
+                ScenePlacementMode.PLAYER_RELATIVE,
+                SceneProfile.BREACH_01.placementMode());
         assertFalse(SceneProfile.RIFT_01.rendersFigure());
+        assertFalse(SceneProfile.BREACH_01.rendersFigure());
 
         assertEquals(
                 ScenePlacementMode.DISTANT_SAFE_GROUND,
@@ -108,6 +116,7 @@ class SceneProtocolTest {
         assertFalse(SceneProfile.WHISPER_STEPS_01.rendersFigure());
         // The colossus has its own silhouette renderer, not the humanoid path.
         assertFalse(SceneProfile.COLOSSUS_01.rendersFigure());
+        assertFalse(SceneProfile.BREACH_01.usesMotionHistory());
         assertTrue(SceneProfile.MOTION_ECHO_01.usesMotionHistory());
         assertFalse(SceneProfile.ECHO_01.usesMotionHistory());
         assertFalse(SceneProfile.FOOTSTEPS_01.usesMotionHistory());
