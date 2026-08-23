@@ -6,7 +6,9 @@ boss. Those systems submit evidence through `StoryService`; they do not mutate
 story NBT directly. Durable barrier reconcilers should use
 `StoryService.submitIfExpected`, which leaves out-of-order barriers unconsumed,
 recognizes already processed fact UUIDs, and constructs the epoch-bound fact on
-the server thread.
+the server thread. Its top-level result distinguishes applied, already applied,
+not expected, state unavailable, capacity exhausted, and fact-ID conflict, so a
+reconciler cannot accidentally treat a refused transition as success.
 
 ## Campaign contract
 

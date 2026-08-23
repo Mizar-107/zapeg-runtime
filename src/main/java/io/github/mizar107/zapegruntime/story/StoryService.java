@@ -24,8 +24,7 @@ public final class StoryService {
         }
         StoryWorldData.ApplyResult applied =
                 StoryWorldData.get(server).applyFact(campaign.get(), fact);
-        return new SubmissionResult(
-                SubmissionStatus.PROCESSED, applied.detail(), Optional.of(applied));
+        return classifyExpected(applied);
     }
 
     /**
@@ -79,8 +78,7 @@ public final class StoryService {
         }
         StoryFact fact = gate.fact().orElseThrow();
         StoryWorldData.ApplyResult applied = data.applyFact(campaign, fact);
-        return new SubmissionResult(
-                SubmissionStatus.PROCESSED, applied.detail(), Optional.of(applied));
+        return classifyExpected(applied);
     }
 
     public static Optional<StoryWorldData.PlayerSnapshot> snapshot(
@@ -101,13 +99,33 @@ public final class StoryService {
         return new SubmissionResult(status, detail, Optional.empty());
     }
 
+    static SubmissionResult classifyExpected(StoryWorldData.ApplyResult applied) {
+        Objects.requireNonNull(applied, "applied");
+        SubmissionStatus status = switch (applied.status()) {
+            case ADVANCED -> SubmissionStatus.APPLIED;
+            case DUPLICATE -> SubmissionStatus.ALREADY_PROCESSED;
+            case FACT_ID_CONFLICT -> SubmissionStatus.FACT_ID_CONFLICT;
+            case PLAYER_CAPACITY_EXHAUSTED, FACT_CAPACITY_EXHAUSTED ->
+                    SubmissionStatus.CAPACITY_EXHAUSTED;
+            case DATA_UNAVAILABLE -> SubmissionStatus.DATA_UNAVAILABLE;
+            case DEFINITION_MISMATCH, INVALID_STATE, STALE_EPOCH ->
+                    SubmissionStatus.STATE_NOT_READY;
+            case RECORDED_NO_MATCH, RECORDED_STALE, RECORDED_TERMINAL ->
+                    SubmissionStatus.PROCESSED;
+        };
+        return new SubmissionResult(status, applied.detail(), Optional.of(applied));
+    }
+
     public enum SubmissionStatus {
         PROCESSED,
+        APPLIED,
         ALREADY_PROCESSED,
         NOT_EXPECTED,
         CAMPAIGN_NOT_LOADED,
         DATA_UNAVAILABLE,
-        STATE_NOT_READY
+        STATE_NOT_READY,
+        CAPACITY_EXHAUSTED,
+        FACT_ID_CONFLICT
     }
 
     public record SubmissionResult(
