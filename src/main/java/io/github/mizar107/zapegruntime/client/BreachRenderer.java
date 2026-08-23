@@ -23,20 +23,52 @@ final class BreachRenderer {
         if (graphics == null || width < 8 || height < 8) {
             return false;
         }
-        BreachChoreography.Frame frame =
-                BreachChoreography.frame(bodyAge, bodyTicks, seed);
-        if (frame.veilOpacity() <= 0.001D
-                && frame.doorwayClosure() <= 0.001D
-                && frame.manifestationOpacity() <= 0.001D) {
+        return render(new ProofCanvas(graphics, width, height), bodyAge, bodyTicks, seed);
+    }
+
+    /** Pure proof seam used to test sub-tick ages and clipped geometry. */
+    static boolean hasVisiblePrimitives(
+            int width,
+            int height,
+            double bodyAge,
+            int bodyTicks,
+            long seed) {
+        if (width < 8 || height < 8) {
             return false;
         }
+        return render(new ProofCanvas(null, width, height), bodyAge, bodyTicks, seed);
+    }
+
+    /** Pure contract for the exact clipping/alpha rule behind render proof. */
+    static boolean hasClippedNonTransparentArea(
+            int width,
+            int height,
+            int x0,
+            int y0,
+            int x1,
+            int y1,
+            int color) {
+        ProofCanvas canvas = new ProofCanvas(null, width, height);
+        canvas.fill(x0, y0, x1, y1, color);
+        return canvas.presented();
+    }
+
+    private static boolean render(
+            ProofCanvas canvas,
+            double bodyAge,
+            int bodyTicks,
+            long seed) {
+        BreachChoreography.Frame frame =
+                BreachChoreography.frame(bodyAge, bodyTicks, seed);
 
         int veilAlpha = alpha(154.0D * frame.veilOpacity());
         if (veilAlpha > 0) {
-            graphics.fill(0, 0, width, height, argb(veilAlpha, 1, 2, 4));
-            drawVignette(graphics, width, height, frame.veilOpacity());
+            canvas.fill(0, 0, canvas.width(), canvas.height(), argb(veilAlpha, 1, 2, 4));
+            drawVignette(canvas, frame.veilOpacity());
         }
 
+        int width = canvas.width();
+        int height = canvas.height();
         int preferredWidth = Math.max(42, width * 7 / 20);
         int preferredHeight = Math.max(54, height * 4 / 5);
         int doorWidth = Math.max(4, Math.min(width - 4, preferredWidth));
@@ -49,15 +81,16 @@ final class BreachRenderer {
         int right = left + doorWidth;
         int bottom = top + doorHeight;
 
-        drawClosingRoom(graphics, width, height, left, right, frame.doorwayClosure());
-        drawManifestation(graphics, left, top, right, bottom, frame);
-        drawDoorFrame(graphics, left, top, right, bottom, frame.seamOpacity());
-        drawSlowFaults(graphics, width, height, seed, bodyAge, frame.seamOpacity());
-        return true;
+        drawClosingRoom(canvas, left, right, frame.doorwayClosure());
+        drawManifestation(canvas, left, top, right, bottom, frame);
+        drawDoorFrame(canvas, left, top, right, bottom, frame.seamOpacity());
+        drawSlowFaults(canvas, seed, bodyAge, frame.seamOpacity());
+        return canvas.presented();
     }
 
-    private static void drawVignette(
-            GuiGraphics graphics, int width, int height, double opacity) {
+    private static void drawVignette(ProofCanvas canvas, double opacity) {
+        int width = canvas.width();
+        int height = canvas.height();
         int bands = 7;
         int xBand = Math.max(1, width / 28);
         int yBand = Math.max(1, height / 24);
@@ -66,15 +99,15 @@ final class BreachRenderer {
             int alpha = alpha(46.0D * opacity * weight);
             int xInset = band * xBand;
             int yInset = band * yBand;
-            graphics.fill(xInset, yInset, width - xInset, yInset + yBand, argb(alpha, 0, 0, 1));
-            graphics.fill(
+            canvas.fill(xInset, yInset, width - xInset, yInset + yBand, argb(alpha, 0, 0, 1));
+            canvas.fill(
                     xInset,
                     height - yInset - yBand,
                     width - xInset,
                     height - yInset,
                     argb(alpha, 0, 0, 1));
-            graphics.fill(xInset, yInset, xInset + xBand, height - yInset, argb(alpha, 0, 0, 1));
-            graphics.fill(
+            canvas.fill(xInset, yInset, xInset + xBand, height - yInset, argb(alpha, 0, 0, 1));
+            canvas.fill(
                     width - xInset - xBand,
                     yInset,
                     width - xInset,
@@ -85,9 +118,7 @@ final class BreachRenderer {
 
     /** The room narrows around a central impossible doorway. */
     private static void drawClosingRoom(
-            GuiGraphics graphics,
-            int width,
-            int height,
+            ProofCanvas canvas,
             int doorLeft,
             int doorRight,
             double closure) {
@@ -95,14 +126,16 @@ final class BreachRenderer {
         if (sideAlpha <= 0) {
             return;
         }
+        int width = canvas.width();
+        int height = canvas.height();
         int leftEdge = (int) Math.round(doorLeft * closure);
         int rightEdge = width - (int) Math.round((width - doorRight) * closure);
-        graphics.fill(0, 0, leftEdge, height, argb(sideAlpha, 0, 1, 2));
-        graphics.fill(rightEdge, 0, width, height, argb(sideAlpha, 0, 1, 2));
+        canvas.fill(0, 0, leftEdge, height, argb(sideAlpha, 0, 1, 2));
+        canvas.fill(rightEdge, 0, width, height, argb(sideAlpha, 0, 1, 2));
     }
 
     private static void drawManifestation(
-            GuiGraphics graphics,
+            ProofCanvas canvas,
             int left,
             int top,
             int right,
@@ -123,31 +156,31 @@ final class BreachRenderer {
 
         // The body is deliberately not a texture or entity. Five irregular
         // slabs imply a too-tall witness without relying on model rendering.
-        graphics.fill(
+        canvas.fill(
                 center - headWidth / 2,
                 headTop,
                 center + headWidth / 2,
                 headBottom,
                 argb(alpha, 0, 0, 1));
-        graphics.fill(
+        canvas.fill(
                 center - width / 4,
                 shoulderTop,
                 center + width / 4,
                 shoulderTop + Math.max(3, height / 16),
                 argb(alpha, 0, 0, 1));
-        graphics.fill(
+        canvas.fill(
                 center - width / 6,
                 shoulderTop,
                 center + width / 6,
                 bodyBottom,
                 argb(alpha, 0, 0, 1));
-        graphics.fill(
+        canvas.fill(
                 center - width / 4,
                 shoulderTop + height / 18,
                 center - width / 7,
                 bodyBottom - height / 9,
                 argb(alpha * 3 / 4, 0, 0, 1));
-        graphics.fill(
+        canvas.fill(
                 center + width / 7,
                 shoulderTop + height / 18,
                 center + width / 4,
@@ -159,13 +192,13 @@ final class BreachRenderer {
             int eyeY = headTop + Math.max(3, (headBottom - headTop) * 2 / 5);
             int eyeWidth = Math.max(2, headWidth / 5);
             int gap = Math.max(2, headWidth / 8);
-            graphics.fill(
+            canvas.fill(
                     center - gap - eyeWidth,
                     eyeY,
                     center - gap,
                     eyeY + Math.max(1, height / 90),
                     argb(eyeAlpha, 68, 92, 94));
-            graphics.fill(
+            canvas.fill(
                     center + gap,
                     eyeY,
                     center + gap + eyeWidth,
@@ -175,7 +208,7 @@ final class BreachRenderer {
     }
 
     private static void drawDoorFrame(
-            GuiGraphics graphics,
+            ProofCanvas canvas,
             int left,
             int top,
             int right,
@@ -186,18 +219,16 @@ final class BreachRenderer {
             return;
         }
         int color = argb(alpha, 22, 39, 42);
-        graphics.fill(left, top, left + 2, bottom, color);
-        graphics.fill(right - 2, top, right, bottom, color);
-        graphics.fill(left, top, right, top + 2, color);
+        canvas.fill(left, top, left + 2, bottom, color);
+        canvas.fill(right - 2, top, right, bottom, color);
+        canvas.fill(left, top, right, top + 2, color);
         int center = (left + right) / 2;
-        graphics.fill(center, top + 2, center + 1, bottom, argb(alpha / 2, 37, 53, 54));
+        canvas.fill(center, top + 2, center + 1, bottom, argb(alpha / 2, 37, 53, 54));
     }
 
     /** Sparse, slowly moving seams; never a full-screen strobe. */
     private static void drawSlowFaults(
-            GuiGraphics graphics,
-            int width,
-            int height,
+            ProofCanvas canvas,
             long seed,
             double age,
             double opacity) {
@@ -205,13 +236,62 @@ final class BreachRenderer {
         if (alpha <= 0) {
             return;
         }
+        int width = canvas.width();
+        int height = canvas.height();
         int span = Math.max(16, width / 5);
         for (int index = 0; index < 3; index++) {
             long laneSeed = seed >>> (index * 9);
             int y = Math.floorMod((int) (laneSeed + index * 71L), Math.max(1, height));
             int travel = (int) Math.round(Math.sin(age * 0.035D + index * 1.7D) * width / 12.0D);
             int x = Math.floorMod((int) (laneSeed >>> 17) + travel, width + span) - span;
-            graphics.fill(x, y, Math.min(width, x + span), y + 1, argb(alpha, 31, 50, 51));
+            canvas.fill(x, y, Math.min(width, x + span), y + 1, argb(alpha, 31, 50, 51));
+        }
+    }
+
+    /**
+     * Counts only a nontransparent rectangle with a nonempty intersection
+     * with the actual GUI viewport. The optional graphics target lets the
+     * exact same path drive both rendering and pure proof tests.
+     */
+    private static final class ProofCanvas {
+        private final GuiGraphics graphics;
+        private final int width;
+        private final int height;
+        private boolean presented;
+
+        private ProofCanvas(GuiGraphics graphics, int width, int height) {
+            this.graphics = graphics;
+            this.width = width;
+            this.height = height;
+        }
+
+        private int width() {
+            return width;
+        }
+
+        private int height() {
+            return height;
+        }
+
+        private boolean presented() {
+            return presented;
+        }
+
+        private void fill(int x0, int y0, int x1, int y1, int color) {
+            if (((color >>> 24) & 0xFF) == 0) {
+                return;
+            }
+            int left = Math.max(0, Math.min(x0, x1));
+            int top = Math.max(0, Math.min(y0, y1));
+            int right = Math.min(width, Math.max(x0, x1));
+            int bottom = Math.min(height, Math.max(y0, y1));
+            if (left >= right || top >= bottom) {
+                return;
+            }
+            if (graphics != null) {
+                graphics.fill(left, top, right, bottom, color);
+            }
+            presented = true;
         }
     }
 

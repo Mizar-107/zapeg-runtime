@@ -22,11 +22,13 @@ The seeded body is deliberately slow and dark:
 5. a dark, texture-free manifestation resolves inside the doorway, then fades;
 6. one final step lands before the entire overlay returns to zero.
 
-The renderer uses only bounded `GuiGraphics.fill` primitives. It has no block,
-entity, texture, model, world-render, raycast, render-distance, culling, shader
-or chunk dependency. Veil opacity is capped at 0.72, eye opacity at 0.68, and
-all full-screen transitions are eased over multiple ticks; there is no bright
-or rapid flash.
+The renderer uses only bounded `GuiGraphics.fill` primitives. Normal play owns
+the post-HUD surface, open screens own their post-screen surface, and F1 mode
+uses an `AFTER_LEVEL` orthographic GUI bridge without changing `hideGui`. It has
+no block, entity, texture, model, world-render, raycast, render-distance,
+culling, shader or chunk dependency. Veil opacity is capped at 0.72, eye
+opacity at 0.68, and all full-screen transitions are eased over multiple ticks;
+there is no bright or rapid flash.
 
 Screens open when a packet arrives retain the existing hold behavior. Cancel,
 death, dimension change, level unload and logout clear the same single
@@ -35,11 +37,12 @@ transient client scene state. No breach state is persisted.
 ## Truthful visitation fallback
 
 Opening a visitation diagnostic session records the in-game fallback as
-`requested`. It becomes `applied` only when the GUI hook actually emits at
-least one non-zero breach frame. Packet receipt, sound scheduling and elapsed
-client ticks do not prove presentation. `visitation_01` still rejects generic
-`VISIBLE` and `GAZE`; `breach_01` accepts `VISIBLE` from the GUI proof hook but
-can never resolve by gaze.
+`requested`. It becomes `applied` only after the selected per-frame hook emits
+and submits at least one clipped, nonempty fill with non-zero integer alpha.
+Packet receipt, sound scheduling and elapsed client ticks do not prove
+presentation. `visitation_01` still rejects generic `VISIBLE` and `GAZE`;
+`breach_01` accepts `VISIBLE` from the presentation proof hook but can never
+resolve by gaze.
 
 The fallback runs regardless of the OS-effect master/subtoggles and regardless
 of platform preflight results. OS capability, primary, fallback and cleanup

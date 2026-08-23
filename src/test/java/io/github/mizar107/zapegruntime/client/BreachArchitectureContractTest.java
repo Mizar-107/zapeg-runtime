@@ -27,9 +27,10 @@ class BreachArchitectureContractTest {
     @Test
     void visitationProofComesFromTheGuiHookNotTickOrPacketReceipt() throws IOException {
         String manager = source("client/ClientSceneManager.java");
-        String events = source("client/ClientSceneEvents.java");
-        assertTrue(events.contains("if (presented)"));
-        assertTrue(events.contains("markBreachFramePresented(profile)"));
+        String presentation = source("client/BreachPresentation.java");
+        assertTrue(presentation.contains("if (presented)"));
+        assertTrue(presentation.contains("proof.run()"));
+        assertTrue(presentation.contains("markBreachFramePresented("));
         assertTrue(manager.contains("markInGameFallbackRequested()"));
         assertTrue(manager.contains("markInGameFallbackApplied()"));
         int proof = manager.indexOf("static void markBreachFramePresented");
@@ -37,6 +38,24 @@ class BreachArchitectureContractTest {
         assertTrue(manager.indexOf("markInGameFallbackApplied()", proof) > proof);
         assertFalse(manager.substring(0, proof).contains("markInGameFallbackApplied()"),
                 "ticks and packet acceptance cannot manufacture render proof");
+    }
+
+    @Test
+    void everyGuiStateHasOneTopmostOrHiddenHudHookWithStateRestoration()
+            throws IOException {
+        String events = source("client/ClientSceneEvents.java");
+        assertTrue(events.contains("Surface.HUD_POST"));
+        assertTrue(events.contains("ScreenEvent.Render.Post"));
+        assertTrue(events.contains("Surface.SCREEN_POST"));
+        assertTrue(events.contains("RenderLevelStageEvent.Stage.AFTER_LEVEL"));
+        assertTrue(events.contains("Surface.HIDDEN_HUD_AFTER_LEVEL"));
+        assertTrue(events.contains("new Matrix4f(RenderSystem.getProjectionMatrix())"));
+        assertTrue(events.contains("RenderSystem.getVertexSorting()"));
+        assertTrue(events.contains("modelView.pushPose()"));
+        assertTrue(events.contains("modelView.popPose()"));
+        assertTrue(events.contains("previousBlendDepth.restore()"));
+        assertTrue(events.contains("graphics.flush()"));
+        assertFalse(events.contains("options.hideGui ="));
     }
 
     @Test

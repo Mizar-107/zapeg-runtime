@@ -1,29 +1,43 @@
 package io.github.mizar107.zapegruntime.client;
 
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexSorting;
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
 import io.github.mizar107.zapegruntime.scene.RiftChoreography;
 import io.github.mizar107.zapegruntime.scene.ScenePalette;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
-import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.FogRenderer;
 import net.minecraft.world.level.material.FogType;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.ForgeHooksClient;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.client.event.RenderGuiEvent;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.client.event.ViewportEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.level.LevelEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import org.joml.Matrix4f;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL14;
+import org.lwjgl.opengl.GL20;
 
 @Mod.EventBusSubscriber(
         modid = ZapeGRuntime.MOD_ID,
         value = Dist.CLIENT,
         bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class ClientSceneEvents {
+
+    private static final BreachPresentation BREACH_PRESENTATION =
+            new BreachPresentation();
 
     private ClientSceneEvents() {}
 
@@ -53,6 +67,29 @@ public final class ClientSceneEvents {
         } else {
             ApparitionRenderer.render(snapshot, event);
         }
+    }
+
+    /**
+     * Forge skips Gui.render when F1 hides the HUD and no Screen exists. This
+     * final level stage is therefore the only Forge-only surface available in
+     * that state. It installs a vanilla-equivalent GUI projection for one
+     * bounded draw and restores every state it owns even if rendering fails.
+     */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void onAfterLevel(RenderLevelStageEvent event) {
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_LEVEL) {
+            return;
+        }
+        BREACH_PRESENTATION.beginFrame();
+        Minecraft minecraft = Minecraft.getInstance();
+        if (!BreachPresentation.routesTo(
+                        BreachPresentation.Surface.HIDDEN_HUD_AFTER_LEVEL,
+                        minecraft.screen != null,
+                        minecraft.options.hideGui)
+                || ClientSceneManager.breachPresentationSnapshot(event.getPartialTick()) == null) {
+            return;
+        }
+        renderHiddenHudBreach(minecraft, event.getPartialTick());
     }
 
     /**
@@ -130,7 +167,7 @@ public final class ClientSceneEvents {
         }
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onRenderGui(RenderGuiEvent.Post event) {
         SceneProfile profile = ClientSceneManager.activeProfile();
         if (profile == null) {
@@ -140,16 +177,10 @@ public final class ClientSceneEvents {
         int width = event.getWindow().getGuiScaledWidth();
         int height = event.getWindow().getGuiScaledHeight();
         if (ClientSceneManager.usesBreachPresentation(profile)) {
-            boolean presented = BreachRenderer.render(
+            BREACH_PRESENTATION.present(
+                    BreachPresentation.Surface.HUD_POST,
                     graphics,
-                    width,
-                    height,
-                    ClientSceneManager.bodyAgeWithPartial(event.getPartialTick()),
-                    ClientSceneManager.bodyTtlTicks(),
-                    ClientSceneManager.visualSeed());
-            if (presented) {
-                ClientSceneManager.markBreachFramePresented(profile);
-            }
+                    event.getPartialTick());
             return;
         }
         float intensity = ClientSceneManager.guiEffectIntensity(event.getPartialTick());
@@ -215,6 +246,122 @@ public final class ClientSceneEvents {
                     VISITATION_01, BREACH_01 -> {
                 // Sound-only / crossing / colossus scenes stay clean. The two
                 // breach profiles returned through the dedicated renderer above.
+            }
+        }
+    }
+
+    /** Draw after an inventory/chat/menu, never underneath its opaque background. */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void onRenderScreen(ScreenEvent.Render.Post event) {
+        BREACH_PRESENTATION.present(
+                BreachPresentation.Surface.SCREEN_POST,
+                event.getGuiGraphics(),
+                event.getPartialTick());
+    }
+
+    private static void renderHiddenHudBreach(Minecraft minecraft, float partialTick) {
+        GuiGraphics graphics = new GuiGraphics(
+                minecraft, minecraft.renderBuffers().bufferSource());
+        Matrix4f previousProjection = new Matrix4f(RenderSystem.getProjectionMatrix());
+        VertexSorting previousSorting = RenderSystem.getVertexSorting();
+        PoseStack modelView = RenderSystem.getModelViewStack();
+        BlendDepthState previousBlendDepth = BlendDepthState.capture();
+        float[] previousShaderColor = RenderSystem.getShaderColor().clone();
+        modelView.pushPose();
+        try {
+            // Flush any world batch under its original matrices before the
+            // temporary GUI projection is installed.
+            graphics.flush();
+            int width = minecraft.getWindow().getGuiScaledWidth();
+            int height = minecraft.getWindow().getGuiScaledHeight();
+            float farPlane = ForgeHooksClient.getGuiFarPlane();
+            Matrix4f guiProjection = new Matrix4f().setOrtho(
+                    0.0F,
+                    (float) width,
+                    (float) height,
+                    0.0F,
+                    1000.0F,
+                    farPlane);
+            RenderSystem.setProjectionMatrix(guiProjection, VertexSorting.ORTHOGRAPHIC_Z);
+            modelView.setIdentity();
+            modelView.translate(0.0D, 0.0D, 1000.0F - farPlane);
+            RenderSystem.applyModelViewMatrix();
+            RenderSystem.enableBlend();
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.disableDepthTest();
+            RenderSystem.depthMask(false);
+            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+            BREACH_PRESENTATION.present(
+                    BreachPresentation.Surface.HIDDEN_HUD_AFTER_LEVEL,
+                    graphics,
+                    partialTick);
+        } finally {
+            try {
+                // GuiGraphics buffers the rectangles; presentation is not
+                // complete until that batch is submitted under the GUI matrix.
+                graphics.flush();
+            } finally {
+                try {
+                    modelView.popPose();
+                    RenderSystem.applyModelViewMatrix();
+                } finally {
+                    RenderSystem.setProjectionMatrix(previousProjection, previousSorting);
+                    RenderSystem.setShaderColor(
+                            previousShaderColor[0],
+                            previousShaderColor[1],
+                            previousShaderColor[2],
+                            previousShaderColor[3]);
+                    previousBlendDepth.restore();
+                }
+            }
+        }
+    }
+
+    /** Exact GL state queried before GuiGraphics.flush mutates the depth bit. */
+    private record BlendDepthState(
+            boolean blendEnabled,
+            int blendSourceRgb,
+            int blendDestinationRgb,
+            int blendSourceAlpha,
+            int blendDestinationAlpha,
+            int blendEquationRgb,
+            int blendEquationAlpha,
+            boolean depthEnabled,
+            boolean depthMask,
+            int depthFunction) {
+
+        private static BlendDepthState capture() {
+            return new BlendDepthState(
+                    GL11.glIsEnabled(GL11.GL_BLEND),
+                    GL11.glGetInteger(GL14.GL_BLEND_SRC_RGB),
+                    GL11.glGetInteger(GL14.GL_BLEND_DST_RGB),
+                    GL11.glGetInteger(GL14.GL_BLEND_SRC_ALPHA),
+                    GL11.glGetInteger(GL14.GL_BLEND_DST_ALPHA),
+                    GL11.glGetInteger(GL20.GL_BLEND_EQUATION_RGB),
+                    GL11.glGetInteger(GL20.GL_BLEND_EQUATION_ALPHA),
+                    GL11.glIsEnabled(GL11.GL_DEPTH_TEST),
+                    GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK),
+                    GL11.glGetInteger(GL11.GL_DEPTH_FUNC));
+        }
+
+        private void restore() {
+            RenderSystem.depthMask(depthMask);
+            RenderSystem.depthFunc(depthFunction);
+            if (depthEnabled) {
+                RenderSystem.enableDepthTest();
+            } else {
+                RenderSystem.disableDepthTest();
+            }
+            RenderSystem.blendFuncSeparate(
+                    blendSourceRgb,
+                    blendDestinationRgb,
+                    blendSourceAlpha,
+                    blendDestinationAlpha);
+            GL20.glBlendEquationSeparate(blendEquationRgb, blendEquationAlpha);
+            if (blendEnabled) {
+                RenderSystem.enableBlend();
+            } else {
+                RenderSystem.disableBlend();
             }
         }
     }

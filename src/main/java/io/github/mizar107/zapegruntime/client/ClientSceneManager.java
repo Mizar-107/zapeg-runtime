@@ -94,6 +94,13 @@ public final class ClientSceneManager {
             float gazeProgress,
             float effectProgress) {}
 
+    record BreachPresentationSnapshot(
+            UUID eventId,
+            SceneProfile profile,
+            double bodyAge,
+            int bodyTicks,
+            long visualSeed) {}
+
     private record MotionSample(Vec3 anchor, float yawDegrees) {}
 
     private static final class ActiveScene {
@@ -1381,14 +1388,31 @@ public final class ClientSceneManager {
                 || profile == SceneProfile.VISITATION_01;
     }
 
+    /** One coherent render-thread snapshot for all three breach surfaces. */
+    static BreachPresentationSnapshot breachPresentationSnapshot(float partialTick) {
+        ActiveScene current = active;
+        if (current == null
+                || current.phase() != ScenePhase.BODY
+                || !usesBreachPresentation(current.descriptor.profile())) {
+            return null;
+        }
+        return new BreachPresentationSnapshot(
+                current.descriptor.eventId(),
+                current.descriptor.profile(),
+                bodyAge(current, partialTick),
+                bodyTicks(current),
+                current.descriptor.visualSeed());
+    }
+
     /**
      * Render proof seam. VISITATION reports the fallback axis rather than a
      * generic VISIBLE acknowledgement; BREACH reports VISIBLE normally.
      */
-    static void markBreachFramePresented(SceneProfile profile) {
+    static void markBreachFramePresented(UUID eventId, SceneProfile profile) {
         ActiveScene current = active;
         if (current == null
                 || current.phase() != ScenePhase.BODY
+                || !current.descriptor.eventId().equals(eventId)
                 || current.descriptor.profile() != profile
                 || !usesBreachPresentation(profile)) {
             return;
