@@ -17,7 +17,11 @@ public interface OsScareHooks {
 
     CapabilityResult preflight(OsEffect effect);
 
-    /** Emits show/fade lifecycle updates; APPLIED requires visible nonzero opacity. */
+    /**
+     * Emits show/fade lifecycle updates. APPLIED requires a showing window on
+     * the selected monitor and either observed nonzero opacity or the explicit
+     * opaque-window degradation path.
+     */
     void showFacePopup(
             int visibleMillis,
             int fadeMillis,

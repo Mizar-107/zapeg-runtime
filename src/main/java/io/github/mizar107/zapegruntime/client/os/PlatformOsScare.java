@@ -7,13 +7,25 @@ import io.github.mizar107.zapegruntime.scene.OsEffect;
 import io.github.mizar107.zapegruntime.scene.OsEffectReason;
 import io.github.mizar107.zapegruntime.scene.OsPrimaryState;
 import io.github.mizar107.zapegruntime.scene.OsScareChoreography;
+import java.awt.Color;
+import java.awt.GraphicsConfiguration;
+import java.awt.GraphicsDevice;
 import java.awt.GraphicsEnvironment;
+import java.awt.Image;
+import java.awt.Insets;
+import java.awt.Rectangle;
+import java.awt.Toolkit;
 import java.awt.image.BufferedImage;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import javax.imageio.ImageIO;
+import javax.swing.ImageIcon;
+import javax.swing.JLabel;
 import javax.swing.JWindow;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
@@ -26,18 +38,52 @@ final class PlatformOsScare implements OsScareHooks {
 
     static final String FACE_RESOURCE =
             "/assets/zapeg_runtime/textures/misc/calibration_b.png";
-    private static final AtomicBoolean POPUP_ACTIVE = new AtomicBoolean();
+    private static final PopupOwnership POPUP_OWNERSHIP = new PopupOwnership();
+    private static final AtomicBoolean PLACEMENT_DEGRADATION_LOGGED = new AtomicBoolean();
     private static final Set<String> LOGGED_FAILURES = ConcurrentHashMap.newKeySet();
 
     private static volatile BufferedImage faceImage;
     private static volatile OsEffectReason faceImageFailure;
-    private static volatile JWindow currentPopup;
-    private static volatile PrimaryResult currentPopupPrimary =
-            new PrimaryResult(OsPrimaryState.NOT_REQUESTED, OsEffectReason.NONE);
+    private static volatile PopupSession currentPopup;
 
     private Integer originalX;
     private Integer originalY;
     private boolean motionActive;
+
+    private record PopupTarget(
+            GraphicsConfiguration configuration,
+            PopupPlacementPolicy.Rect usableBounds,
+            PopupPlacementPolicy.Placement placement) {}
+
+    private record PopupTargetProbe(PopupTarget target, OsEffectReason failureReason) {
+        static PopupTargetProbe ready(PopupTarget target) {
+            return new PopupTargetProbe(Objects.requireNonNull(target), OsEffectReason.NONE);
+        }
+
+        static PopupTargetProbe failed(OsEffectReason reason) {
+            return new PopupTargetProbe(null, Objects.requireNonNull(reason));
+        }
+    }
+
+    private record UsableBounds(PopupPlacementPolicy.Rect bounds, boolean degraded) {}
+
+    /** Mutable only on the EDT; the token is the cross-thread authority. */
+    private static final class PopupSession {
+        private final long token;
+        private final JWindow window;
+        private final Consumer<LifecycleUpdate> completion;
+        private PrimaryResult primary =
+                new PrimaryResult(OsPrimaryState.REQUESTED, OsEffectReason.NONE);
+        private Timer timer;
+        private boolean presentationProved;
+
+        private PopupSession(
+                long token, JWindow window, Consumer<LifecycleUpdate> completion) {
+            this.token = token;
+            this.window = window;
+            this.completion = completion;
+        }
+    }
 
     static OsScareHooks create() {
         return new PlatformOsScare();
@@ -78,7 +124,7 @@ final class PlatformOsScare implements OsScareHooks {
             return new CapabilityResult(
                     OsCapabilityState.UNSUPPORTED, OsEffectReason.PLATFORM_UNSUPPORTED);
         }
-        if (POPUP_ACTIVE.get() || currentPopup != null) {
+        if (POPUP_OWNERSHIP.ownerToken() != PopupOwnership.NO_OWNER) {
             return capabilityFailed(OsEffect.EXTERNAL_POPUP, OsEffectReason.ALREADY_ACTIVE);
         }
         try {
@@ -90,13 +136,19 @@ final class PlatformOsScare implements OsScareHooks {
             return capabilityFailed(
                     OsEffect.EXTERNAL_POPUP, OsEffectReason.TOOLKIT_FAILURE);
         }
-        return faceImage() == null
-                ? capabilityFailed(
-                        OsEffect.EXTERNAL_POPUP,
-                        faceImageFailure == null
-                                ? OsEffectReason.ASSET_INVALID
-                                : faceImageFailure)
-                : new CapabilityResult(OsCapabilityState.READY, OsEffectReason.NONE);
+        BufferedImage image = faceImage();
+        if (image == null) {
+            return capabilityFailed(
+                    OsEffect.EXTERNAL_POPUP,
+                    faceImageFailure == null
+                            ? OsEffectReason.ASSET_INVALID
+                            : faceImageFailure);
+        }
+        PopupTargetProbe target = resolvePopupTarget(image);
+        if (target.target() == null) {
+            return capabilityFailed(OsEffect.EXTERNAL_POPUP, target.failureReason());
+        }
+        return new CapabilityResult(OsCapabilityState.READY, OsEffectReason.NONE);
     }
 
     private CapabilityResult taskbarPreflight() {
@@ -114,107 +166,143 @@ final class PlatformOsScare implements OsScareHooks {
             Consumer<LifecycleUpdate> completion) {
         CapabilityResult capability = popupPreflight();
         if (capability.state() != OsCapabilityState.READY) {
+            PrimaryResult primary = capability.state() == OsCapabilityState.FAILED
+                    ? primaryFailed(OsEffect.EXTERNAL_POPUP, capability.reason())
+                    : new PrimaryResult(OsPrimaryState.NOT_REQUESTED, OsEffectReason.NONE);
             emit(completion, new LifecycleUpdate(
-                    primaryFailed(OsEffect.EXTERNAL_POPUP, OsEffectReason.TOOLKIT_FAILURE),
+                    primary,
                     new CleanupResult(OsCleanupState.NOT_REQUIRED, OsEffectReason.NONE)));
             return;
         }
-        if (!POPUP_ACTIVE.compareAndSet(false, true)) {
+        long token = POPUP_OWNERSHIP.tryAcquire();
+        if (token == PopupOwnership.NO_OWNER) {
             emit(completion, new LifecycleUpdate(
                     primaryFailed(OsEffect.EXTERNAL_POPUP, OsEffectReason.ALREADY_ACTIVE),
                     new CleanupResult(OsCleanupState.NOT_REQUIRED, OsEffectReason.NONE)));
             return;
         }
-        currentPopupPrimary =
-                new PrimaryResult(OsPrimaryState.REQUESTED, OsEffectReason.NONE);
         try {
             SwingUtilities.invokeLater(
-                    () -> runPopup(visibleMillis, fadeMillis, completion));
+                    () -> runPopup(token, visibleMillis, fadeMillis, completion));
         } catch (Throwable failure) {
-            POPUP_ACTIVE.set(false);
-            currentPopupPrimary = primaryFailed(
+            POPUP_OWNERSHIP.release(token);
+            PrimaryResult primary = primaryFailed(
                     OsEffect.EXTERNAL_POPUP, OsEffectReason.EDT_UNAVAILABLE);
             emit(completion, new LifecycleUpdate(
-                    currentPopupPrimary,
+                    primary,
                     new CleanupResult(OsCleanupState.NOT_REQUIRED, OsEffectReason.NONE)));
         }
     }
 
     private static void runPopup(
+            long token,
             int visibleMillis,
             int fadeMillis,
             Consumer<LifecycleUpdate> completion) {
-        JWindow window = null;
+        PopupSession session = null;
         try {
+            if (!POPUP_OWNERSHIP.owns(token)) {
+                return;
+            }
             BufferedImage image = faceImage();
             if (image == null) {
-                failPopupBeforeShow(completion,
+                failPopupBeforeShow(token, completion,
                         faceImageFailure == null
                                 ? OsEffectReason.ASSET_INVALID
                                 : faceImageFailure);
                 return;
             }
-            window = new JWindow();
+            PopupTargetProbe probe = resolvePopupTarget(image);
+            if (probe.target() == null) {
+                failPopupBeforeShow(token, completion, probe.failureReason());
+                return;
+            }
+            PopupTarget target = probe.target();
+            JWindow window = new JWindow(target.configuration());
+            session = new PopupSession(token, window, completion);
+            if (!installPopup(session)) {
+                window.dispose();
+                return;
+            }
             window.setFocusableWindowState(false);
             window.setAlwaysOnTop(true);
-            window.setBackground(new java.awt.Color(0, 0, 0, 0));
-            window.getContentPane().add(new javax.swing.JLabel(
-                    new javax.swing.ImageIcon(image), javax.swing.SwingConstants.CENTER));
+            window.setBackground(new Color(0, 0, 0, 0));
+            PopupPlacementPolicy.Rect popupBounds = target.placement().popupBounds();
+            Image rendered = image.getScaledInstance(
+                    popupBounds.width(), popupBounds.height(), Image.SCALE_SMOOTH);
+            window.getContentPane().add(new JLabel(
+                    new ImageIcon(rendered), javax.swing.SwingConstants.CENTER));
             window.pack();
-            java.awt.Dimension screen = java.awt.Toolkit.getDefaultToolkit().getScreenSize();
-            window.setLocation(
-                    (screen.width - window.getWidth()) / 2,
-                    (screen.height - window.getHeight()) / 2);
+            window.setBounds(
+                    popupBounds.x(),
+                    popupBounds.y(),
+                    popupBounds.width(),
+                    popupBounds.height());
+            if (target.placement().metricsDegraded()
+                    && PLACEMENT_DEGRADATION_LOGGED.compareAndSet(false, true)) {
+                ZapeGRuntime.LOGGER.info(
+                        "OS popup placement used safe DPI-metrics degradation");
+            }
             boolean opacitySupported = true;
             try {
                 window.setOpacity(0.0F);
             } catch (Throwable unsupported) {
                 opacitySupported = false;
             }
-            currentPopup = window;
             window.setVisible(true);
             if (!window.isShowing()) {
-                failPopup(window, completion, OsEffectReason.POPUP_NOT_SHOWING);
+                failPopup(session, OsEffectReason.POPUP_NOT_SHOWING);
+                return;
+            }
+            if (!placementMatches(window, target)) {
+                failPopup(session, OsEffectReason.READBACK_MISMATCH);
                 return;
             }
             if (!opacitySupported) {
                 // Opaque degradation: isShowing is sufficient because no zero
-                // opacity was applied.
-                currentPopupPrimary =
-                        new PrimaryResult(OsPrimaryState.APPLIED, OsEffectReason.NONE);
-                emit(completion, new LifecycleUpdate(
-                        currentPopupPrimary,
+                // opacity was applied, and placement was read back on the
+                // selected monitor before this APPLIED report.
+                session.presentationProved = true;
+                session.primary = new PrimaryResult(
+                        OsPrimaryState.APPLIED, OsEffectReason.NONE);
+                emit(session.completion, new LifecycleUpdate(
+                        session.primary,
                         new CleanupResult(OsCleanupState.PENDING, OsEffectReason.NONE)));
             }
-            startFade(window, visibleMillis, fadeMillis, opacitySupported, completion);
+            startFade(session, visibleMillis, fadeMillis, opacitySupported);
         } catch (Throwable failure) {
-            if (window == null) {
-                failPopupBeforeShow(completion, OsEffectReason.TOOLKIT_FAILURE);
+            if (session == null) {
+                failPopupBeforeShow(token, completion, OsEffectReason.TOOLKIT_FAILURE);
             } else {
-                failPopup(window, completion, OsEffectReason.TOOLKIT_FAILURE);
+                failPopup(session, OsEffectReason.TOOLKIT_FAILURE);
             }
         }
     }
 
     private static void startFade(
-            JWindow window,
+            PopupSession session,
             int visibleMillis,
             int fadeMillis,
-            boolean opacitySupported,
-            Consumer<LifecycleUpdate> completion) {
+            boolean opacitySupported) {
+        JWindow window = session.window;
         long started = System.nanoTime();
-        boolean[] presentationProved = {!opacitySupported};
         Timer timer = new Timer(40, null);
+        session.timer = timer;
         timer.addActionListener(event -> {
             try {
+                if (!ownsCurrentPopup(session)) {
+                    timer.stop();
+                    return;
+                }
                 if (!window.isDisplayable()) {
                     timer.stop();
+                    finishPopupFromTimer(session);
                     return;
                 }
                 long elapsedMillis = (System.nanoTime() - started) / 1_000_000L;
                 if (elapsedMillis >= visibleMillis) {
                     timer.stop();
-                    finishPopupFromTimer(window, completion, presentationProved[0]);
+                    finishPopupFromTimer(session);
                     return;
                 }
                 if (opacitySupported) {
@@ -229,70 +317,76 @@ final class PlatformOsScare implements OsScareHooks {
                                 * (visibleMillis - elapsedMillis) / (float) fadeMillis;
                     }
                     window.setOpacity(Math.max(0.0F, Math.min(1.0F, opacity)));
-                    if (!presentationProved[0]
+                    if (!session.presentationProved
                             && window.isShowing()
-                            && window.getOpacity() > 0.0F) {
-                        presentationProved[0] = true;
-                        currentPopupPrimary = new PrimaryResult(
+                            && window.getOpacity() > 0.0F
+                            && window.isDisplayable()) {
+                        session.presentationProved = true;
+                        session.primary = new PrimaryResult(
                                 OsPrimaryState.APPLIED, OsEffectReason.NONE);
-                        emit(completion, new LifecycleUpdate(
-                                currentPopupPrimary,
+                        emit(session.completion, new LifecycleUpdate(
+                                session.primary,
                                 new CleanupResult(
                                         OsCleanupState.PENDING, OsEffectReason.NONE)));
                     }
                 }
             } catch (Throwable failure) {
                 timer.stop();
-                failPopup(window, completion, OsEffectReason.TOOLKIT_FAILURE);
+                failPopup(session, OsEffectReason.TOOLKIT_FAILURE);
             }
         });
         timer.setRepeats(true);
         timer.start();
     }
 
-    private static void finishPopupFromTimer(
-            JWindow window,
-            Consumer<LifecycleUpdate> completion,
-            boolean presentationProved) {
-        CleanupResult cleanup = disposeAndVerify(window);
-        if (!presentationProved) {
-            currentPopupPrimary = primaryFailed(
+    private static void finishPopupFromTimer(PopupSession session) {
+        if (!ownsCurrentPopup(session)) {
+            return;
+        }
+        CleanupResult cleanup = disposeAndVerify(session);
+        if (!session.presentationProved) {
+            session.primary = primaryFailed(
                     OsEffect.EXTERNAL_POPUP, OsEffectReason.POPUP_NOT_SHOWING);
         } else if (cleanup.state() == OsCleanupState.FAILED) {
             // A timer lifecycle failure must not leave the primary APPLIED.
-            currentPopupPrimary = primaryFailed(
+            session.primary = primaryFailed(
                     OsEffect.EXTERNAL_POPUP, OsEffectReason.CLEANUP_FAILED);
         }
-        emit(completion, new LifecycleUpdate(currentPopupPrimary, cleanup));
+        emit(session.completion, new LifecycleUpdate(session.primary, cleanup));
     }
 
     private static void failPopupBeforeShow(
-            Consumer<LifecycleUpdate> completion, OsEffectReason reason) {
-        POPUP_ACTIVE.set(false);
-        currentPopup = null;
-        currentPopupPrimary = primaryFailed(OsEffect.EXTERNAL_POPUP, reason);
+            long token,
+            Consumer<LifecycleUpdate> completion,
+            OsEffectReason reason) {
+        if (!POPUP_OWNERSHIP.release(token)) {
+            return;
+        }
+        PrimaryResult primary = primaryFailed(OsEffect.EXTERNAL_POPUP, reason);
         emit(completion, new LifecycleUpdate(
-                currentPopupPrimary,
+                primary,
                 new CleanupResult(OsCleanupState.NOT_REQUIRED, OsEffectReason.NONE)));
     }
 
     private static void failPopup(
-            JWindow window,
-            Consumer<LifecycleUpdate> completion,
-            OsEffectReason reason) {
-        CleanupResult cleanup = disposeAndVerify(window);
-        currentPopupPrimary = primaryFailed(OsEffect.EXTERNAL_POPUP, reason);
-        emit(completion, new LifecycleUpdate(currentPopupPrimary, cleanup));
+            PopupSession session, OsEffectReason reason) {
+        if (!ownsCurrentPopup(session)) {
+            return;
+        }
+        CleanupResult cleanup = disposeAndVerify(session);
+        session.primary = primaryFailed(OsEffect.EXTERNAL_POPUP, reason);
+        emit(session.completion, new LifecycleUpdate(session.primary, cleanup));
     }
 
     @Override
     public CleanupResult closePopup(Consumer<CleanupResult> completion) {
-        if (!POPUP_ACTIVE.get() && currentPopup == null) {
+        long ownerToken = POPUP_OWNERSHIP.ownerToken();
+        if (ownerToken == PopupOwnership.NO_OWNER) {
             return new CleanupResult(OsCleanupState.APPLIED, OsEffectReason.NONE);
         }
         try {
             SwingUtilities.invokeLater(() -> {
-                CleanupResult cleanup = disposeAndVerify(currentPopup);
+                CleanupResult cleanup = cleanupOwnedPopup(ownerToken);
                 emit(completion, cleanup);
             });
             return new CleanupResult(
@@ -302,33 +396,243 @@ final class PlatformOsScare implements OsScareHooks {
         }
     }
 
-    /** EDT-only; failed disposal deliberately retains both reference and active flag. */
-    private static CleanupResult disposeAndVerify(JWindow window) {
-        if (window == null) {
-            if (POPUP_ACTIVE.get()) {
-                return new CleanupResult(
-                        OsCleanupState.PENDING, OsEffectReason.CLEANUP_PENDING);
-            }
+    /** EDT-only. A missing materialised window can release only its exact lease. */
+    private static CleanupResult cleanupOwnedPopup(long token) {
+        if (!POPUP_OWNERSHIP.owns(token)) {
+            return new CleanupResult(OsCleanupState.APPLIED, OsEffectReason.NONE);
+        }
+        PopupSession session = currentPopup;
+        if (session == null) {
+            return POPUP_OWNERSHIP.release(token)
+                    ? new CleanupResult(OsCleanupState.APPLIED, OsEffectReason.NONE)
+                    : cleanupFailed(
+                            OsEffect.EXTERNAL_POPUP, OsEffectReason.CLEANUP_FAILED);
+        }
+        if (session.token != token) {
+            return cleanupFailed(OsEffect.EXTERNAL_POPUP, OsEffectReason.CLEANUP_FAILED);
+        }
+        return disposeAndVerify(session);
+    }
+
+    /** Failed disposal deliberately retains both the session and its lease. */
+    private static CleanupResult disposeAndVerify(PopupSession session) {
+        if (!ownsCurrentPopup(session)) {
             return new CleanupResult(OsCleanupState.APPLIED, OsEffectReason.NONE);
         }
         try {
-            window.dispose();
-            if (window.isDisplayable()) {
-                currentPopup = window;
-                POPUP_ACTIVE.set(true);
+            if (session.timer != null) {
+                session.timer.stop();
+                session.timer = null;
+            }
+            // Hiding is a best-effort visual failsafe, independent from the
+            // stricter disposal proof below. Neither call may prevent the
+            // other from running.
+            try {
+                session.window.setAlwaysOnTop(false);
+            } catch (Throwable ignored) {
+                // Disposal still gets its bounded attempt.
+            }
+            try {
+                session.window.setVisible(false);
+            } catch (Throwable ignored) {
+                // Disposal still gets its bounded attempt.
+            }
+            session.window.dispose();
+            if (session.window.isDisplayable()) {
                 return cleanupFailed(
                         OsEffect.EXTERNAL_POPUP, OsEffectReason.CLEANUP_FAILED);
             }
-            if (currentPopup == window) {
-                currentPopup = null;
+            if (currentPopup != session) {
+                return cleanupFailed(
+                        OsEffect.EXTERNAL_POPUP, OsEffectReason.CLEANUP_FAILED);
             }
-            POPUP_ACTIVE.set(false);
+            currentPopup = null;
+            if (!POPUP_OWNERSHIP.release(session.token)) {
+                currentPopup = session;
+                return cleanupFailed(
+                        OsEffect.EXTERNAL_POPUP, OsEffectReason.CLEANUP_FAILED);
+            }
             return new CleanupResult(OsCleanupState.APPLIED, OsEffectReason.NONE);
         } catch (Throwable failure) {
-            currentPopup = window;
-            POPUP_ACTIVE.set(true);
             return cleanupFailed(
                     OsEffect.EXTERNAL_POPUP, OsEffectReason.CLEANUP_FAILED);
+        }
+    }
+
+    private static boolean installPopup(PopupSession session) {
+        if (!POPUP_OWNERSHIP.owns(session.token) || currentPopup != null) {
+            return false;
+        }
+        currentPopup = session;
+        return true;
+    }
+
+    private static boolean ownsCurrentPopup(PopupSession session) {
+        return session != null
+                && currentPopup == session
+                && POPUP_OWNERSHIP.owns(session.token);
+    }
+
+    private static PopupTargetProbe resolvePopupTarget(BufferedImage image) {
+        PopupPlacementPolicy.Rect minecraftWindow = minecraftWindowBounds();
+        if (minecraftWindow == null) {
+            return PopupTargetProbe.failed(OsEffectReason.WINDOW_UNAVAILABLE);
+        }
+        try {
+            GraphicsDevice[] devices = GraphicsEnvironment
+                    .getLocalGraphicsEnvironment()
+                    .getScreenDevices();
+            if (devices == null || devices.length == 0) {
+                return PopupTargetProbe.failed(OsEffectReason.TOOLKIT_FAILURE);
+            }
+            Toolkit toolkit = Toolkit.getDefaultToolkit();
+            List<GraphicsConfiguration> configurations = new ArrayList<>();
+            List<PopupPlacementPolicy.Monitor> monitors = new ArrayList<>();
+            for (GraphicsDevice device : devices) {
+                try {
+                    GraphicsConfiguration configuration = device.getDefaultConfiguration();
+                    if (configuration == null) {
+                        continue;
+                    }
+                    Rectangle rawBounds = configuration.getBounds();
+                    PopupPlacementPolicy.Rect bounds = new PopupPlacementPolicy.Rect(
+                            rawBounds.x, rawBounds.y, rawBounds.width, rawBounds.height);
+
+                    UsableBounds usable;
+                    try {
+                        usable = safeUsableBounds(
+                                bounds, toolkit.getScreenInsets(configuration));
+                    } catch (Throwable unsupportedInsets) {
+                        usable = conservativeUsableBounds(bounds);
+                    }
+
+                    double scaleX;
+                    double scaleY;
+                    boolean transformDegraded = false;
+                    try {
+                        var transform = configuration.getDefaultTransform();
+                        scaleX = transform.getScaleX();
+                        scaleY = transform.getScaleY();
+                    } catch (Throwable unsupportedTransform) {
+                        scaleX = Double.NaN;
+                        scaleY = Double.NaN;
+                        transformDegraded = true;
+                    }
+
+                    int index = configurations.size();
+                    configurations.add(configuration);
+                    monitors.add(new PopupPlacementPolicy.Monitor(
+                            index,
+                            bounds,
+                            usable.bounds(),
+                            scaleX,
+                            scaleY,
+                            usable.degraded() || transformDegraded));
+                } catch (Throwable unusableDevice) {
+                    // A broken device must not prevent another valid monitor
+                    // from hosting the popup. No device names leave this boundary.
+                }
+            }
+            var placement = PopupPlacementPolicy.place(
+                    minecraftWindow,
+                    monitors,
+                    image.getWidth(),
+                    image.getHeight());
+            if (placement.isEmpty()) {
+                return PopupTargetProbe.failed(OsEffectReason.TOOLKIT_FAILURE);
+            }
+            PopupPlacementPolicy.Placement selected = placement.get();
+            PopupPlacementPolicy.Rect usable = monitors
+                    .get(selected.monitorIndex())
+                    .usableBounds();
+            return PopupTargetProbe.ready(new PopupTarget(
+                    configurations.get(selected.monitorIndex()), usable, selected));
+        } catch (Throwable failure) {
+            return PopupTargetProbe.failed(OsEffectReason.TOOLKIT_FAILURE);
+        }
+    }
+
+    private static PopupPlacementPolicy.Rect minecraftWindowBounds() {
+        long handle = windowHandle();
+        if (handle == 0L) {
+            return null;
+        }
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            var x = stack.callocInt(1);
+            var y = stack.callocInt(1);
+            var width = stack.callocInt(1);
+            var height = stack.callocInt(1);
+            GLFW.glfwGetWindowPos(handle, x, y);
+            GLFW.glfwGetWindowSize(handle, width, height);
+            if (width.get(0) <= 0 || height.get(0) <= 0) {
+                return null;
+            }
+            return new PopupPlacementPolicy.Rect(
+                    x.get(0), y.get(0), width.get(0), height.get(0));
+        } catch (Throwable failure) {
+            return null;
+        }
+    }
+
+    private static UsableBounds safeUsableBounds(
+            PopupPlacementPolicy.Rect bounds, Insets insets) {
+        if (insets == null) {
+            return conservativeUsableBounds(bounds);
+        }
+        long left = Math.max(0, insets.left);
+        long right = Math.max(0, insets.right);
+        long top = Math.max(0, insets.top);
+        long bottom = Math.max(0, insets.bottom);
+        long width = (long) bounds.width() - left - right;
+        long height = (long) bounds.height() - top - bottom;
+        long x = (long) bounds.x() + left;
+        long y = (long) bounds.y() + top;
+        if (width <= 0L
+                || height <= 0L
+                || x < Integer.MIN_VALUE
+                || x > Integer.MAX_VALUE
+                || y < Integer.MIN_VALUE
+                || y > Integer.MAX_VALUE
+                || width > Integer.MAX_VALUE
+                || height > Integer.MAX_VALUE) {
+            return conservativeUsableBounds(bounds);
+        }
+        return new UsableBounds(new PopupPlacementPolicy.Rect(
+                (int) x, (int) y, (int) width, (int) height), false);
+    }
+
+    /**
+     * If platform insets cannot be trusted, reserve one eighth of every edge.
+     * This keeps the small popup away from taskbars, docks and mixed-DPI seams
+     * without claiming that unavailable toolkit metrics were observed.
+     */
+    private static UsableBounds conservativeUsableBounds(
+            PopupPlacementPolicy.Rect bounds) {
+        int horizontalMargin = bounds.width() >= 8 ? bounds.width() / 8 : 0;
+        int verticalMargin = bounds.height() >= 8 ? bounds.height() / 8 : 0;
+        int width = bounds.width() - horizontalMargin * 2;
+        int height = bounds.height() - verticalMargin * 2;
+        if (width <= 0 || height <= 0) {
+            return new UsableBounds(bounds, true);
+        }
+        return new UsableBounds(new PopupPlacementPolicy.Rect(
+                bounds.x() + horizontalMargin,
+                bounds.y() + verticalMargin,
+                width,
+                height), true);
+    }
+
+    private static boolean placementMatches(JWindow window, PopupTarget target) {
+        try {
+            Rectangle raw = window.getBounds();
+            PopupPlacementPolicy.Rect actual = new PopupPlacementPolicy.Rect(
+                    raw.x, raw.y, raw.width, raw.height);
+            GraphicsConfiguration actualConfiguration = window.getGraphicsConfiguration();
+            return target.usableBounds().contains(actual)
+                    && actualConfiguration != null
+                    && actualConfiguration.getDevice() == target.configuration().getDevice();
+        } catch (Throwable failure) {
+            return false;
         }
     }
 
