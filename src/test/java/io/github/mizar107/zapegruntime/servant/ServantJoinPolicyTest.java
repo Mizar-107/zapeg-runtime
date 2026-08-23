@@ -17,7 +17,8 @@ class ServantJoinPolicyTest {
                 "minecraft:overworld",
                 false,
                 12_345L,
-                true);
+                true,
+                ServantArchetype.BINDER);
         assertTrue(accepts(persisted, persisted.servantId()));
         assertFalse(accepts(persisted, UUID.randomUUID()),
                 "old entity loading after replacement must be rejected");
@@ -28,7 +29,17 @@ class ServantJoinPolicyTest {
                 persisted.servantId(),
                 persisted.dimension(),
                 persisted.rehearsal(),
-                persisted.deadlineGameTime()));
+                persisted.deadlineGameTime(),
+                persisted.archetype()));
+        assertFalse(ServantJoinPolicy.accepts(
+                persisted,
+                persisted.encounterId(),
+                persisted.targetId(),
+                persisted.servantId(),
+                persisted.dimension(),
+                persisted.rehearsal(),
+                persisted.deadlineGameTime(),
+                ServantArchetype.HERALD));
         assertFalse(ServantJoinPolicy.accepts(
                 persisted,
                 persisted.encounterId(),
@@ -47,6 +58,7 @@ class ServantJoinPolicyTest {
                 entityId,
                 persisted.dimension(),
                 persisted.rehearsal(),
-                persisted.deadlineGameTime());
+                persisted.deadlineGameTime(),
+                persisted.archetype());
     }
 }

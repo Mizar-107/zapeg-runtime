@@ -58,7 +58,8 @@ public final class ServantProgressionSync {
                 server,
                 barrier.encounterId(),
                 barrier.targetId(),
-                victories));
+                victories,
+                barrier.archetype()));
         return true;
     }
 

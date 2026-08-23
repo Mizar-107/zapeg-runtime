@@ -25,6 +25,25 @@ world and deployment migration.
 See [docs/BREACH-01.md](docs/BREACH-01.md) for the timing, resource hashes and
 integration contract.
 
+## Batch 3 native Servant archetypes (development)
+
+- `stalker`, `herald`, and `binder` are the complete archetype set. Each uses
+  one visible server entity, UUID-owned targeting, shared sound/particle/glow
+  telegraphs, and server-resolved bounded damage/effects;
+- special timing is derived from encounter UUID plus a persisted sequence—no
+  player RNG—and a miss never damages a hidden or out-of-range target;
+- spawn collision checks and pursuit corridors are rejected unless every
+  touched chunk is already loaded. The Servant never teleports, wanders, or
+  asks for a chunk to be generated;
+- durable victory barriers now retain the archetype. Schema-1 encounters and
+  victories migrate to `stalker`; unknown future schemas remain read-only;
+- logout, target death, dimension change, operator dismissal, expiry, and the
+  existing one-shot restart recovery close or reconcile the encounter without
+  awarding a victory.
+
+See [docs/SERVANT-ARCHETYPES.md](docs/SERVANT-ARCHETYPES.md) for mechanics,
+operator commands, and the durable integration contract.
+
 ## Batch 1 (`0.5.0-b1`) compatibility history
 
 - exact-match protocol `8`; mixed protocol 7 clients fail the handshake. v8
@@ -46,6 +65,9 @@ RCON source (not through `/execute` or a command block):
 /heraldor diagnose Mizar__107
 /heraldor servant status Mizar__107
 /heraldor servant awaken Mizar__107 rehearsal
+/heraldor servant rehearse Mizar__107 stalker
+/heraldor servant rehearse Mizar__107 herald
+/heraldor servant rehearse Mizar__107 binder
 /heraldor servant dismiss Mizar__107
 /zapegscene rehearse Mizar__107 visitation_01
 /zapegscene diagnose Mizar__107
@@ -66,6 +88,10 @@ Strict datapack definitions drive UUID-scoped, restart-safe sessions and
 seeded target-private scene dispatch. Durable terminal barriers make start
 requests idempotent without claiming that packet delivery proves client
 presentation. See [`docs/HERALDOR-TIMELINES.md`](docs/HERALDOR-TIMELINES.md).
+
+The legacy `awaken <target>`, `awaken <target> rehearsal`, and
+`awaken <target> event <uuid>` forms select `stalker`. A typed live run is
+`/heraldor servant awaken <target> <stalker|herald|binder> event <uuid>`.
 
 ## v0.3 boundaries
 

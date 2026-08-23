@@ -16,12 +16,33 @@ public final class ServantJoinPolicy {
             String entityDimension,
             boolean entityRehearsal,
             long entityDeadline) {
+        return accepts(
+                persisted,
+                entityEncounterId,
+                entityTargetId,
+                entityId,
+                entityDimension,
+                entityRehearsal,
+                entityDeadline,
+                ServantArchetype.STALKER);
+    }
+
+    public static boolean accepts(
+            @Nullable ServantEncounter persisted,
+            @Nullable UUID entityEncounterId,
+            @Nullable UUID entityTargetId,
+            UUID entityId,
+            String entityDimension,
+            boolean entityRehearsal,
+            long entityDeadline,
+            ServantArchetype entityArchetype) {
         return persisted != null
                 && persisted.encounterId().equals(entityEncounterId)
                 && persisted.targetId().equals(entityTargetId)
                 && persisted.servantId().equals(entityId)
                 && persisted.dimension().equals(entityDimension)
                 && persisted.rehearsal() == entityRehearsal
-                && persisted.deadlineGameTime() == entityDeadline;
+                && persisted.deadlineGameTime() == entityDeadline
+                && persisted.archetype() == entityArchetype;
     }
 }

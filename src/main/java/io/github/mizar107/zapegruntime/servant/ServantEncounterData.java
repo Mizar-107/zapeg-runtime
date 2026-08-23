@@ -8,6 +8,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import net.minecraft.nbt.CompoundTag;
@@ -19,7 +20,7 @@ import net.minecraft.world.level.saveddata.SavedData;
 /** Server-authoritative Servant encounter state with an explicit disk schema. */
 public final class ServantEncounterData extends SavedData {
 
-    public static final int CURRENT_SCHEMA_VERSION = 1;
+    public static final int CURRENT_SCHEMA_VERSION = 2;
     public static final int MAX_ACTIVE_ENCOUNTERS = 256;
     /**
      * A campaign is expected to award far fewer than this many victories.
@@ -35,10 +36,12 @@ public final class ServantEncounterData extends SavedData {
     private static final String LIVE_VICTORIES = "LiveVictories";
     private static final String ENCOUNTER_ID = "EncounterId";
     private static final String TARGET_ID = "TargetId";
+    private static final String ARCHETYPE = "Archetype";
+    private static final int LEGACY_SCHEMA_VERSION = 1;
     private static final UUID NIL_UUID = new UUID(0L, 0L);
 
     private final Map<UUID, ServantEncounter> activeByTarget = new HashMap<>();
-    private final Map<UUID, UUID> liveVictoryTargetsByEvent = new HashMap<>();
+    private final Map<UUID, LiveVictory> liveVictoriesByEvent = new HashMap<>();
     private final CompoundTag unsupportedRoot;
 
     public ServantEncounterData() {
@@ -57,12 +60,17 @@ public final class ServantEncounterData extends SavedData {
     }
 
     public static ServantEncounterData load(CompoundTag root) {
-        if (!root.contains(SCHEMA_VERSION, Tag.TAG_INT)
-                || root.getInt(SCHEMA_VERSION) != CURRENT_SCHEMA_VERSION) {
+        if (!root.contains(SCHEMA_VERSION, Tag.TAG_INT)) {
             // Unknown past/future data is kept byte-for-byte and all mutation
             // is rejected. A migration can later understand it safely.
             return new ServantEncounterData(root);
         }
+        int schemaVersion = root.getInt(SCHEMA_VERSION);
+        if (schemaVersion != CURRENT_SCHEMA_VERSION
+                && schemaVersion != LEGACY_SCHEMA_VERSION) {
+            return new ServantEncounterData(root);
+        }
+        boolean legacyV1 = schemaVersion == LEGACY_SCHEMA_VERSION;
 
         ServantEncounterData data = new ServantEncounterData();
         ListTag victories = root.getList(LIVE_VICTORIES, Tag.TAG_COMPOUND);
@@ -79,7 +87,19 @@ public final class ServantEncounterData extends SavedData {
                     || eventId.equals(targetId)) {
                 continue;
             }
-            data.liveVictoryTargetsByEvent.putIfAbsent(eventId, targetId);
+            ServantArchetype archetype;
+            if (legacyV1) {
+                archetype = ServantArchetype.STALKER;
+            } else if (victory.contains(ARCHETYPE, Tag.TAG_STRING)) {
+                archetype = ServantArchetype.fromId(victory.getString(ARCHETYPE)).orElse(null);
+                if (archetype == null) {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+            data.liveVictoriesByEvent.putIfAbsent(
+                    eventId, new LiveVictory(eventId, targetId, archetype));
         }
 
         List<ServantEncounter> candidates = new ArrayList<>();
@@ -87,7 +107,7 @@ public final class ServantEncounterData extends SavedData {
         int activeLimit = Math.min(active.size(), MAX_ACTIVE_ENCOUNTERS);
         for (int index = 0; index < activeLimit; index++) {
             try {
-                candidates.add(ServantEncounter.load(active.getCompound(index)));
+                candidates.add(ServantEncounter.load(active.getCompound(index), legacyV1));
             } catch (IllegalArgumentException ignored) {
                 // Isolate corrupt records; valid siblings remain usable.
             }
@@ -95,7 +115,7 @@ public final class ServantEncounterData extends SavedData {
         Set<UUID> seenEncounterIds = new HashSet<>();
         Set<UUID> seenServantIds = new HashSet<>();
         for (ServantEncounter encounter : candidates) {
-            if (data.liveVictoryTargetsByEvent.containsKey(encounter.encounterId())
+            if (data.liveVictoriesByEvent.containsKey(encounter.encounterId())
                     || data.activeByTarget.containsKey(encounter.targetId())
                     || !seenEncounterIds.add(encounter.encounterId())
                     || !seenServantIds.add(encounter.servantId())
@@ -104,6 +124,9 @@ public final class ServantEncounterData extends SavedData {
                 continue;
             }
             data.activeByTarget.put(encounter.targetId(), encounter);
+        }
+        if (legacyV1) {
+            data.setDirty();
         }
         return data;
     }
@@ -116,7 +139,7 @@ public final class ServantEncounterData extends SavedData {
         if (!supportsCurrentSchema()) {
             return new BeginResult(BeginStatus.UNSUPPORTED_SCHEMA, null);
         }
-        if (liveVictoryTargetsByEvent.containsKey(proposed.encounterId())) {
+        if (liveVictoriesByEvent.containsKey(proposed.encounterId())) {
             return new BeginResult(BeginStatus.REPLAYED_LIVE_VICTORY, null);
         }
 
@@ -124,7 +147,8 @@ public final class ServantEncounterData extends SavedData {
         if (sameEvent.isPresent()) {
             ServantEncounter existing = sameEvent.get();
             if (existing.targetId().equals(proposed.targetId())
-                    && existing.rehearsal() == proposed.rehearsal()) {
+                    && existing.rehearsal() == proposed.rehearsal()
+                    && existing.archetype() == proposed.archetype()) {
                 return new BeginResult(BeginStatus.IDEMPOTENT, existing);
             }
             return new BeginResult(BeginStatus.EVENT_ID_CONFLICT, existing);
@@ -157,10 +181,22 @@ public final class ServantEncounterData extends SavedData {
      * permanent replay barrier; rehearsals are immediately retryable.
      */
     public FinishResult finishVictory(UUID encounterId, UUID servantId, UUID killerId) {
+        Optional<ServantEncounter> active = findByEncounter(encounterId);
+        ServantArchetype archetype = active
+                .map(ServantEncounter::archetype)
+                .orElse(ServantArchetype.STALKER);
+        return finishVictory(encounterId, servantId, killerId, archetype);
+    }
+
+    public FinishResult finishVictory(
+            UUID encounterId,
+            UUID servantId,
+            UUID killerId,
+            ServantArchetype archetype) {
         if (!supportsCurrentSchema()) {
             return FinishResult.UNSUPPORTED_SCHEMA;
         }
-        if (liveVictoryTargetsByEvent.containsKey(encounterId)) {
+        if (liveVictoriesByEvent.containsKey(encounterId)) {
             return FinishResult.ALREADY_TERMINAL;
         }
         Optional<ServantEncounter> match = findByEncounter(encounterId);
@@ -169,7 +205,8 @@ public final class ServantEncounterData extends SavedData {
         }
         ServantEncounter encounter = match.get();
         if (!encounter.servantId().equals(servantId)
-                || !encounter.targetId().equals(killerId)) {
+                || !encounter.targetId().equals(killerId)
+                || encounter.archetype() != archetype) {
             return FinishResult.IDENTITY_MISMATCH;
         }
 
@@ -179,7 +216,9 @@ public final class ServantEncounterData extends SavedData {
             return FinishResult.REHEARSAL_COMPLETE;
         }
 
-        liveVictoryTargetsByEvent.put(encounterId, encounter.targetId());
+        liveVictoriesByEvent.put(
+                encounterId,
+                new LiveVictory(encounterId, encounter.targetId(), encounter.archetype()));
         setDirty();
         return FinishResult.LIVE_CREDITED;
     }
@@ -242,7 +281,7 @@ public final class ServantEncounterData extends SavedData {
     }
 
     public boolean isLiveVictory(UUID encounterId) {
-        return supportsCurrentSchema() && liveVictoryTargetsByEvent.containsKey(encounterId);
+        return supportsCurrentSchema() && liveVictoriesByEvent.containsKey(encounterId);
     }
 
     /**
@@ -256,10 +295,10 @@ public final class ServantEncounterData extends SavedData {
         if (!supportsCurrentSchema()) {
             return List.of();
         }
-        List<LiveVictory> snapshot = new ArrayList<>(liveVictoryTargetsByEvent.size());
-        liveVictoryTargetsByEvent.entrySet().stream()
+        List<LiveVictory> snapshot = new ArrayList<>(liveVictoriesByEvent.size());
+        liveVictoriesByEvent.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
-                .map(entry -> new LiveVictory(entry.getKey(), entry.getValue()))
+                .map(Map.Entry::getValue)
                 .forEach(snapshot::add);
         return List.copyOf(snapshot);
     }
@@ -268,13 +307,30 @@ public final class ServantEncounterData extends SavedData {
         if (!supportsCurrentSchema()) {
             return 0;
         }
-        return Math.toIntExact(liveVictoryTargetsByEvent.values().stream()
+        return Math.toIntExact(liveVictoriesByEvent.values().stream()
+                .map(LiveVictory::targetId)
                 .filter(targetId::equals)
                 .count());
     }
 
+    public int victoryCount(UUID targetId, ServantArchetype archetype) {
+        if (!supportsCurrentSchema()) {
+            return 0;
+        }
+        return Math.toIntExact(liveVictoriesByEvent.values().stream()
+                .filter(victory -> victory.targetId().equals(targetId)
+                        && victory.archetype() == archetype)
+                .count());
+    }
+
+    public Optional<LiveVictory> liveVictory(UUID encounterId) {
+        return supportsCurrentSchema()
+                ? Optional.ofNullable(liveVictoriesByEvent.get(encounterId))
+                : Optional.empty();
+    }
+
     int terminalCount() {
-        return liveVictoryTargetsByEvent.size();
+        return liveVictoriesByEvent.size();
     }
 
     int reservedLiveSlots() {
@@ -284,7 +340,7 @@ public final class ServantEncounterData extends SavedData {
         long activeLive = activeByTarget.values().stream()
                 .filter(encounter -> !encounter.rehearsal())
                 .count();
-        return Math.toIntExact(liveVictoryTargetsByEvent.size() + activeLive);
+        return Math.toIntExact(liveVictoriesByEvent.size() + activeLive);
     }
 
     private boolean removeActive(UUID encounterId) {
@@ -315,12 +371,13 @@ public final class ServantEncounterData extends SavedData {
         root.put(ACTIVE, active);
 
         ListTag victories = new ListTag();
-        liveVictoryTargetsByEvent.entrySet().stream()
+        liveVictoriesByEvent.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> {
                     CompoundTag victory = new CompoundTag();
                     victory.putUUID(ENCOUNTER_ID, entry.getKey());
-                    victory.putUUID(TARGET_ID, entry.getValue());
+                    victory.putUUID(TARGET_ID, entry.getValue().targetId());
+                    victory.putString(ARCHETYPE, entry.getValue().archetype().id());
                     victories.add(victory);
                 });
         root.put(LIVE_VICTORIES, victories);
@@ -340,7 +397,26 @@ public final class ServantEncounterData extends SavedData {
 
     public record BeginResult(BeginStatus status, ServantEncounter encounter) {}
 
-    public record LiveVictory(UUID encounterId, UUID targetId) {}
+    public record LiveVictory(
+            UUID encounterId,
+            UUID targetId,
+            ServantArchetype archetype) {
+
+        public LiveVictory {
+            Objects.requireNonNull(encounterId, "encounterId");
+            Objects.requireNonNull(targetId, "targetId");
+            Objects.requireNonNull(archetype, "archetype");
+            if (NIL_UUID.equals(encounterId)
+                    || NIL_UUID.equals(targetId)
+                    || encounterId.equals(targetId)) {
+                throw new IllegalArgumentException("invalid victory identity");
+            }
+        }
+
+        public LiveVictory(UUID encounterId, UUID targetId) {
+            this(encounterId, targetId, ServantArchetype.STALKER);
+        }
+    }
 
     public enum FinishResult {
         LIVE_CREDITED,

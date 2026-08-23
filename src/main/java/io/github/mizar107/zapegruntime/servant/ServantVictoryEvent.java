@@ -19,16 +19,27 @@ public final class ServantVictoryEvent extends Event {
     private final UUID encounterId;
     private final UUID targetId;
     private final int victoryCount;
+    private final ServantArchetype archetype;
 
     public ServantVictoryEvent(
             MinecraftServer server,
             UUID encounterId,
             UUID targetId,
             int victoryCount) {
+        this(server, encounterId, targetId, victoryCount, ServantArchetype.STALKER);
+    }
+
+    public ServantVictoryEvent(
+            MinecraftServer server,
+            UUID encounterId,
+            UUID targetId,
+            int victoryCount,
+            ServantArchetype archetype) {
         this.server = server;
         this.encounterId = encounterId;
         this.targetId = targetId;
         this.victoryCount = victoryCount;
+        this.archetype = archetype;
     }
 
     public MinecraftServer server() {
@@ -45,5 +56,9 @@ public final class ServantVictoryEvent extends Event {
 
     public int victoryCount() {
         return victoryCount;
+    }
+
+    public ServantArchetype archetype() {
+        return archetype;
     }
 }

@@ -24,6 +24,15 @@ class ServantEncounterValidationTest {
                 "x:" + "a".repeat(ServantEncounter.MAX_DIMENSION_ID_LENGTH), 1L));
         assertThrows(IllegalArgumentException.class, () -> encounter(EVENT, TARGET, ENTITY,
                 "minecraft:overworld", -1L));
+        assertThrows(NullPointerException.class, () -> new ServantEncounter(
+                EVENT,
+                TARGET,
+                ENTITY,
+                "minecraft:overworld",
+                false,
+                1L,
+                false,
+                null));
     }
 
     @Test
@@ -39,6 +48,11 @@ class ServantEncounterValidationTest {
         assertThrows(IllegalArgumentException.class, () -> ServantEncounter.load(incomplete));
 
         incomplete.putString("RecoveryAttempted", "wrong-type");
+        assertThrows(IllegalArgumentException.class, () -> ServantEncounter.load(incomplete));
+
+        incomplete.putBoolean("RecoveryAttempted", false);
+        assertThrows(IllegalArgumentException.class, () -> ServantEncounter.load(incomplete));
+        incomplete.putString("Archetype", "unknown");
         assertThrows(IllegalArgumentException.class, () -> ServantEncounter.load(incomplete));
     }
 

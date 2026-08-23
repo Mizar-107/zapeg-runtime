@@ -14,7 +14,8 @@ public record ServantEncounter(
         String dimension,
         boolean rehearsal,
         long deadlineGameTime,
-        boolean recoveryAttempted) {
+        boolean recoveryAttempted,
+        ServantArchetype archetype) {
 
     static final int MAX_DIMENSION_ID_LENGTH = 128;
     private static final UUID NIL_UUID = new UUID(0L, 0L);
@@ -25,12 +26,34 @@ public record ServantEncounter(
     private static final String REHEARSAL = "Rehearsal";
     private static final String DEADLINE = "Deadline";
     private static final String RECOVERY_ATTEMPTED = "RecoveryAttempted";
+    private static final String ARCHETYPE = "Archetype";
+
+    /** Compatibility constructor for pre-archetype callers and tests. */
+    public ServantEncounter(
+            UUID encounterId,
+            UUID targetId,
+            UUID servantId,
+            String dimension,
+            boolean rehearsal,
+            long deadlineGameTime,
+            boolean recoveryAttempted) {
+        this(
+                encounterId,
+                targetId,
+                servantId,
+                dimension,
+                rehearsal,
+                deadlineGameTime,
+                recoveryAttempted,
+                ServantArchetype.STALKER);
+    }
 
     public ServantEncounter {
         Objects.requireNonNull(encounterId, "encounterId");
         Objects.requireNonNull(targetId, "targetId");
         Objects.requireNonNull(servantId, "servantId");
         Objects.requireNonNull(dimension, "dimension");
+        Objects.requireNonNull(archetype, "archetype");
         if (NIL_UUID.equals(encounterId)
                 || NIL_UUID.equals(targetId)
                 || NIL_UUID.equals(servantId)) {
@@ -68,7 +91,8 @@ public record ServantEncounter(
                 dimension,
                 rehearsal,
                 deadlineGameTime,
-                true);
+                true,
+                archetype);
     }
 
     public ServantEncounter withRecoveredEntity(UUID replacementId) {
@@ -79,7 +103,8 @@ public record ServantEncounter(
                 dimension,
                 rehearsal,
                 deadlineGameTime,
-                true);
+                true,
+                archetype);
     }
 
     CompoundTag save() {
@@ -91,19 +116,30 @@ public record ServantEncounter(
         tag.putBoolean(REHEARSAL, rehearsal);
         tag.putLong(DEADLINE, deadlineGameTime);
         tag.putBoolean(RECOVERY_ATTEMPTED, recoveryAttempted);
+        tag.putString(ARCHETYPE, archetype.id());
         return tag;
     }
 
     static ServantEncounter load(CompoundTag tag) {
+        return load(tag, false);
+    }
+
+    static ServantEncounter load(CompoundTag tag, boolean legacyV1) {
         if (!tag.hasUUID(ENCOUNTER_ID)
                 || !tag.hasUUID(TARGET_ID)
                 || !tag.hasUUID(SERVANT_ID)
                 || !tag.contains(DIMENSION, Tag.TAG_STRING)
                 || !tag.contains(REHEARSAL, Tag.TAG_BYTE)
                 || !tag.contains(DEADLINE, Tag.TAG_LONG)
-                || !tag.contains(RECOVERY_ATTEMPTED, Tag.TAG_BYTE)) {
+                || !tag.contains(RECOVERY_ATTEMPTED, Tag.TAG_BYTE)
+                || (!legacyV1 && !tag.contains(ARCHETYPE, Tag.TAG_STRING))) {
             throw new IllegalArgumentException("incomplete Servant encounter");
         }
+        ServantArchetype loadedArchetype = legacyV1
+                ? ServantArchetype.STALKER
+                : ServantArchetype.fromId(tag.getString(ARCHETYPE))
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "invalid Servant archetype"));
         return new ServantEncounter(
                 tag.getUUID(ENCOUNTER_ID),
                 tag.getUUID(TARGET_ID),
@@ -111,6 +147,7 @@ public record ServantEncounter(
                 tag.getString(DIMENSION),
                 tag.getBoolean(REHEARSAL),
                 tag.getLong(DEADLINE),
-                tag.getBoolean(RECOVERY_ATTEMPTED));
+                tag.getBoolean(RECOVERY_ATTEMPTED),
+                loadedArchetype);
     }
 }

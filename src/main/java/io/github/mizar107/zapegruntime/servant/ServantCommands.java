@@ -1,6 +1,7 @@
 package io.github.mizar107.zapegruntime.servant;
 
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
 import java.util.Optional;
@@ -9,6 +10,7 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.UuidArgument;
+import net.minecraft.commands.arguments.selector.EntitySelector;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -23,27 +25,51 @@ public final class ServantCommands {
      */
     public static LiteralArgumentBuilder<CommandSourceStack> attach(
             LiteralArgumentBuilder<CommandSourceStack> root) {
-        return root.then(Commands.literal("servant")
-                .requires(source -> source.hasPermission(2))
-                .then(Commands.literal("awaken")
-                        .then(Commands.argument("target", EntityArgument.player())
-                                .executes(context -> awaken(context, UUID.randomUUID(), false))
-                                .then(Commands.literal("rehearsal")
+        RequiredArgumentBuilder<CommandSourceStack, EntitySelector> awakenTarget =
+                Commands.argument("target", EntityArgument.player())
+                        .executes(context -> awaken(
+                                context,
+                                UUID.randomUUID(),
+                                ServantArchetype.STALKER,
+                                false))
+                        .then(Commands.literal("rehearsal")
+                                .executes(context -> awaken(
+                                        context,
+                                        UUID.randomUUID(),
+                                        ServantArchetype.STALKER,
+                                        true)))
+                        .then(Commands.literal("event")
+                                .then(Commands.argument("encounter_id", UuidArgument.uuid())
                                         .executes(context -> awaken(
-                                                context, UUID.randomUUID(), true)))
-                                .then(Commands.literal("event")
-                                        .then(Commands.argument("encounter_id", UuidArgument.uuid())
+                                                context,
+                                                UuidArgument.getUuid(context, "encounter_id"),
+                                                ServantArchetype.STALKER,
+                                                false))
+                                        .then(Commands.literal("rehearsal")
                                                 .executes(context -> awaken(
                                                         context,
                                                         UuidArgument.getUuid(
                                                                 context, "encounter_id"),
-                                                        false))
-                                                .then(Commands.literal("rehearsal")
-                                                        .executes(context -> awaken(
-                                                                context,
-                                                                UuidArgument.getUuid(
-                                                                        context, "encounter_id"),
-                                                                true)))))))
+                                                        ServantArchetype.STALKER,
+                                                        true)))));
+        RequiredArgumentBuilder<CommandSourceStack, EntitySelector> rehearseTarget =
+                Commands.argument("target", EntityArgument.player())
+                        .executes(context -> awaken(
+                                context,
+                                UUID.randomUUID(),
+                                ServantArchetype.STALKER,
+                                true));
+        for (ServantArchetype archetype : ServantArchetype.values()) {
+            awakenTarget.then(archetypeBranch(archetype, false));
+            rehearseTarget.then(archetypeBranch(archetype, true));
+        }
+
+        return root.then(Commands.literal("servant")
+                .requires(source -> source.hasPermission(2))
+                .then(Commands.literal("awaken")
+                        .then(awakenTarget))
+                .then(Commands.literal("rehearse")
+                        .then(rehearseTarget))
                 .then(Commands.literal("dismiss")
                         .then(Commands.argument("target", EntityArgument.player())
                                 .executes(ServantCommands::dismiss)))
@@ -55,13 +81,15 @@ public final class ServantCommands {
     private static int awaken(
             CommandContext<CommandSourceStack> context,
             UUID encounterId,
+            ServantArchetype archetype,
             boolean rehearsal)
             throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer target = EntityArgument.getPlayer(context, "target");
         ServantEncounterManager.StartResult result = ServantEncounterManager.awaken(
-                target, encounterId, rehearsal);
+                target, encounterId, archetype, rehearsal);
         Component reply = Component.literal(
                 result.message()
+                        + " archetype=" + archetype.id()
                         + " encounter=" + result.encounterId()
                         + (result.servantId() == null ? "" : " entity=" + result.servantId()));
         if (result.success()) {
@@ -69,7 +97,13 @@ public final class ServantCommands {
         } else {
             context.getSource().sendFailure(reply);
         }
-        audit(context.getSource(), "awaken", target, encounterId, result.status().name());
+        audit(
+                context.getSource(),
+                rehearsal ? "rehearse" : "awaken",
+                target,
+                encounterId,
+                archetype,
+                result.status().name());
         return result.success() ? 1 : 0;
     }
 
@@ -83,7 +117,7 @@ public final class ServantCommands {
         context.getSource().sendSuccess(
                 () -> Component.literal(removed ? "Servant dismissed" : "active=0"),
                 false);
-        audit(context.getSource(), "dismiss", target, null, Boolean.toString(removed));
+        audit(context.getSource(), "dismiss", target, null, null, Boolean.toString(removed));
         return removed ? 1 : 0;
     }
 
@@ -97,14 +131,47 @@ public final class ServantCommands {
         String detail = active
                 .map(encounter -> "active=1 encounter=" + encounter.encounterId()
                         + " entity=" + encounter.servantId()
+                        + " archetype=" + encounter.archetype().id()
                         + " rehearsal=" + encounter.rehearsal()
-                        + " deadline=" + encounter.deadlineGameTime())
+                        + " deadline=" + encounter.deadlineGameTime()
+                        + ServantEncounterManager.combatSnapshot(
+                                        context.getSource().getServer(), encounter)
+                                .map(snapshot -> " telegraph=" + snapshot.telegraphing()
+                                        + " next_special=" + snapshot.nextSpecialGameTime()
+                                        + " resolves=" + snapshot.specialResolveGameTime()
+                                        + " specials=" + snapshot.completedSpecials())
+                                .orElse(" entity_loaded=0"))
                 .orElse("active=0");
+        StringBuilder typedVictories = new StringBuilder();
+        for (ServantArchetype archetype : ServantArchetype.values()) {
+            int count = ServantEncounterManager.victoryCount(
+                    context.getSource().getServer(), target.getUUID(), archetype);
+            typedVictories.append(' ')
+                    .append(archetype.id())
+                    .append("_victories=")
+                    .append(count < 0 ? "unavailable" : count);
+        }
         context.getSource().sendSuccess(
                 () -> Component.literal(detail + " live_victories="
-                        + (victories < 0 ? "unavailable" : victories)),
+                        + (victories < 0 ? "unavailable" : victories)
+                        + typedVictories),
                 false);
         return 1;
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> archetypeBranch(
+            ServantArchetype archetype,
+            boolean rehearsal) {
+        return Commands.literal(archetype.id())
+                .executes(context -> awaken(
+                        context, UUID.randomUUID(), archetype, rehearsal))
+                .then(Commands.literal("event")
+                        .then(Commands.argument("encounter_id", UuidArgument.uuid())
+                                .executes(context -> awaken(
+                                        context,
+                                        UuidArgument.getUuid(context, "encounter_id"),
+                                        archetype,
+                                        rehearsal))));
     }
 
     private static void audit(
@@ -112,14 +179,16 @@ public final class ServantCommands {
             String action,
             ServerPlayer target,
             UUID encounterId,
+            ServantArchetype archetype,
             String result) {
         ZapeGRuntime.LOGGER.info(
-                "Servant operator action={} source={} target={} target_uuid={} encounter={} result={}",
+                "Servant operator action={} source={} target={} target_uuid={} encounter={} archetype={} result={}",
                 action,
                 source.getTextName(),
                 target.getGameProfile().getName(),
                 target.getUUID(),
                 encounterId,
+                archetype == null ? "none" : archetype.id(),
                 result);
     }
 }

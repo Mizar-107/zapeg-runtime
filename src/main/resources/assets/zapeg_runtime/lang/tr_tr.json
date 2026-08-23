@@ -2,5 +2,11 @@
   "subtitles.zapeg_runtime.heraldor_whisper": "Yakında bir nefes fısıldıyor",
   "subtitles.zapeg_runtime.heraldor_knock": "Hiçlikten kapı vuruşları geliyor",
   "subtitles.zapeg_runtime.heraldor_footstep": "Ayak sesleri yaklaşıyor",
-  "subtitles.zapeg_runtime.heraldor_manifestation": "Bir şey tezahür ediyor"
+  "subtitles.zapeg_runtime.heraldor_manifestation": "Bir şey tezahür ediyor",
+  "entity.zapeg_runtime.servant.stalker": "Heraldor'un Takipçisi",
+  "entity.zapeg_runtime.servant.herald": "Heraldor'un Habercisi",
+  "entity.zapeg_runtime.servant.binder": "Heraldor'un Bağlayıcısı",
+  "message.zapeg_runtime.servant.telegraph.stalker": "Takipçi parçalamak için geriliyor.",
+  "message.zapeg_runtime.servant.telegraph.herald": "Haberci'nin alameti yankılanıyor.",
+  "message.zapeg_runtime.servant.telegraph.binder": "Bağlayıcı'nın zinciri kapanıyor."
 }

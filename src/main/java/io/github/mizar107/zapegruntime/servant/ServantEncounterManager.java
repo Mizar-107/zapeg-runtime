@@ -27,7 +27,14 @@ public final class ServantEncounterManager {
     private ServantEncounterManager() {}
 
     public static StartResult awaken(ServerPlayer target, boolean rehearsal) {
-        return awaken(target, UUID.randomUUID(), rehearsal);
+        return awaken(target, UUID.randomUUID(), ServantArchetype.STALKER, rehearsal);
+    }
+
+    public static StartResult awaken(
+            ServerPlayer target,
+            ServantArchetype archetype,
+            boolean rehearsal) {
+        return awaken(target, UUID.randomUUID(), archetype, rehearsal);
     }
 
     /** Same event UUID is idempotent while active and replay-safe after a live victory. */
@@ -35,6 +42,21 @@ public final class ServantEncounterManager {
             ServerPlayer target,
             UUID encounterId,
             boolean rehearsal) {
+        return awaken(target, encounterId, ServantArchetype.STALKER, rehearsal);
+    }
+
+    /** Same event UUID and archetype are idempotent while the encounter is active. */
+    public static StartResult awaken(
+            ServerPlayer target,
+            UUID encounterId,
+            ServantArchetype archetype,
+            boolean rehearsal) {
+        if (encounterId == null || archetype == null) {
+            return StartResult.failed(
+                    StartStatus.INVALID_REQUEST,
+                    encounterId,
+                    "encounter id and archetype are required");
+        }
         MinecraftServer server = target.getServer();
         if (server == null) {
             return StartResult.failed(StartStatus.NO_SERVER, encounterId, "target has no server");
@@ -58,7 +80,7 @@ public final class ServantEncounterManager {
                     StartStatus.INVALID_REQUEST, encounterId, "invalid world game time");
         }
         long deadline = gameTime + LIFETIME_TICKS;
-        servant.configure(encounterId, target.getUUID(), rehearsal, deadline);
+        servant.configure(encounterId, target.getUUID(), rehearsal, deadline, archetype);
         ServantEncounter proposed;
         try {
             proposed = new ServantEncounter(
@@ -68,7 +90,8 @@ public final class ServantEncounterManager {
                     level.dimension().location().toString(),
                     rehearsal,
                     deadline,
-                    false);
+                    false,
+                    archetype);
         } catch (IllegalArgumentException | NullPointerException invalid) {
             return StartResult.failed(
                     StartStatus.INVALID_REQUEST, encounterId, "invalid encounter identity");
@@ -134,10 +157,11 @@ public final class ServantEncounterManager {
         }
 
         ZapeGRuntime.LOGGER.info(
-                "Servant started encounter={} target={} entity={} rehearsal={} deadline={}",
+                "Servant started encounter={} target={} entity={} archetype={} rehearsal={} deadline={}",
                 encounterId,
                 target.getGameProfile().getName(),
                 servant.getUUID(),
+                archetype.id(),
                 rehearsal,
                 deadline);
         return new StartResult(
@@ -174,13 +198,14 @@ public final class ServantEncounterManager {
         MinecraftServer server = level.getServer();
         ServantEncounterData data = ServantEncounterData.get(server);
         ServantEncounterData.FinishResult result = data.finishVictory(
-                servant.encounterId(), servant.getUUID(), killerId);
+                servant.encounterId(), servant.getUUID(), killerId, servant.archetype());
         switch (result) {
             case LIVE_CREDITED -> {
-                ServantProgressionSync.syncBarrier(
-                        server,
-                        new ServantEncounterData.LiveVictory(
-                                servant.encounterId(), killerId));
+                data.liveVictory(servant.encounterId()).ifPresentOrElse(
+                        barrier -> ServantProgressionSync.syncBarrier(server, barrier),
+                        () -> ZapeGRuntime.LOGGER.error(
+                                "Missing durable Servant victory after credit encounter={}",
+                                servant.encounterId()));
             }
             case REHEARSAL_COMPLETE -> ZapeGRuntime.LOGGER.info(
                     "Servant rehearsal completed without progression encounter={} target={}",
@@ -223,7 +248,8 @@ public final class ServantEncounterManager {
                 servant.getUUID(),
                 level.dimension().location().toString(),
                 servant.rehearsal(),
-                servant.deadlineGameTime());
+                servant.deadlineGameTime(),
+                servant.archetype());
     }
 
     public static boolean cancelForTarget(
@@ -240,6 +266,29 @@ public final class ServantEncounterManager {
 
     public static int victoryCount(MinecraftServer server, UUID targetId) {
         return ServantProgressionSync.victoryCount(server, targetId);
+    }
+
+    public static int victoryCount(
+            MinecraftServer server,
+            UUID targetId,
+            ServantArchetype archetype) {
+        ServantEncounterData data = ServantEncounterData.get(server);
+        return data.supportsCurrentSchema()
+                ? data.victoryCount(targetId, archetype)
+                : -1;
+    }
+
+    public static Optional<HeraldorServant.CombatSnapshot> combatSnapshot(
+            MinecraftServer server,
+            ServantEncounter encounter) {
+        ServerLevel level = resolveLevel(server, encounter.dimension());
+        if (level == null) {
+            return Optional.empty();
+        }
+        Entity loaded = level.getEntity(encounter.servantId());
+        return loaded instanceof HeraldorServant servant && servant.identityMatches(encounter)
+                ? Optional.of(servant.combatSnapshot())
+                : Optional.empty();
     }
 
     public static void onServerStarted(MinecraftServer server) {
@@ -297,7 +346,8 @@ public final class ServantEncounterManager {
                 oldRecord.encounterId(),
                 oldRecord.targetId(),
                 oldRecord.rehearsal(),
-                oldRecord.deadlineGameTime());
+                oldRecord.deadlineGameTime(),
+                oldRecord.archetype());
         if (ServantSpawnPolicy.placeSafely(level, replacement, target).isEmpty()) {
             close(server, oldRecord, CloseReason.NO_SAFE_RECOVERY_SPAWN);
             return;

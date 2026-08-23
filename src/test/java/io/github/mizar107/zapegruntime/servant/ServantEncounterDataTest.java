@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.UUID;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import org.junit.jupiter.api.Test;
 
 class ServantEncounterDataTest {
@@ -38,6 +39,15 @@ class ServantEncounterDataTest {
         assertEquals(
                 ServantEncounterData.BeginStatus.EVENT_ID_CONFLICT,
                 data.begin(encounter(event, TARGET, UUID.randomUUID(), true)).status());
+        assertEquals(
+                ServantEncounterData.BeginStatus.EVENT_ID_CONFLICT,
+                data.begin(encounter(
+                                event,
+                                TARGET,
+                                UUID.randomUUID(),
+                                false,
+                                ServantArchetype.BINDER))
+                        .status());
     }
 
     @Test
@@ -48,7 +58,18 @@ class ServantEncounterDataTest {
 
         assertEquals(
                 ServantEncounterData.FinishResult.IDENTITY_MISMATCH,
-                data.finishVictory(live.encounterId(), UUID.randomUUID(), TARGET));
+                data.finishVictory(
+                        live.encounterId(),
+                        UUID.randomUUID(),
+                        TARGET,
+                        ServantArchetype.STALKER));
+        assertEquals(
+                ServantEncounterData.FinishResult.IDENTITY_MISMATCH,
+                data.finishVictory(
+                        live.encounterId(),
+                        live.servantId(),
+                        TARGET,
+                        ServantArchetype.HERALD));
         assertEquals(
                 ServantEncounterData.FinishResult.LIVE_CREDITED,
                 data.finishVictory(live.encounterId(), live.servantId(), TARGET));
@@ -56,6 +77,11 @@ class ServantEncounterDataTest {
                 ServantEncounterData.FinishResult.ALREADY_TERMINAL,
                 data.finishVictory(live.encounterId(), live.servantId(), TARGET));
         assertEquals(1, data.victoryCount(TARGET));
+        assertEquals(1, data.victoryCount(TARGET, ServantArchetype.STALKER));
+        assertEquals(0, data.victoryCount(TARGET, ServantArchetype.HERALD));
+        assertEquals(
+                ServantArchetype.STALKER,
+                data.liveVictory(live.encounterId()).orElseThrow().archetype());
         assertTrue(data.isLiveVictory(live.encounterId()));
         assertEquals(
                 ServantEncounterData.BeginStatus.REPLAYED_LIVE_VICTORY,
@@ -116,7 +142,8 @@ class ServantEncounterDataTest {
                 "minecraft:the_nether",
                 true,
                 88_000L,
-                true);
+                true,
+                ServantArchetype.BINDER);
         data.begin(original);
 
         CompoundTag saved = data.save(new CompoundTag());
@@ -124,6 +151,7 @@ class ServantEncounterDataTest {
         ServantEncounterData loaded = ServantEncounterData.load(saved);
         assertTrue(loaded.supportsCurrentSchema());
         assertEquals(original, loaded.activeFor(TARGET).orElseThrow());
+        assertEquals(ServantArchetype.BINDER, loaded.activeFor(TARGET).orElseThrow().archetype());
         assertFalse(original.isExpired(87_999L));
         assertTrue(original.isExpired(88_000L));
     }
@@ -164,6 +192,12 @@ class ServantEncounterDataTest {
         badDeadline.putLong("Deadline", -1L);
         active.add(badDeadline);
 
+        CompoundTag badArchetype = encounter(
+                        UUID.randomUUID(), OTHER_TARGET, UUID.randomUUID(), false)
+                .save();
+        badArchetype.putString("Archetype", "not_a_servant");
+        active.add(badArchetype);
+
         ServantEncounter duplicateEntity = new ServantEncounter(
                 UUID.randomUUID(),
                 OTHER_TARGET,
@@ -202,16 +236,36 @@ class ServantEncounterDataTest {
         ServantEncounterData data = new ServantEncounterData();
         UUID laterEvent = new UUID(0L, 2L);
         UUID earlierEvent = new UUID(0L, 1L);
-        ServantEncounter later = encounter(laterEvent, TARGET, UUID.randomUUID(), false);
-        ServantEncounter earlier = encounter(earlierEvent, OTHER_TARGET, UUID.randomUUID(), false);
+        ServantEncounter later = encounter(
+                laterEvent,
+                TARGET,
+                UUID.randomUUID(),
+                false,
+                ServantArchetype.BINDER);
+        ServantEncounter earlier = encounter(
+                earlierEvent,
+                OTHER_TARGET,
+                UUID.randomUUID(),
+                false,
+                ServantArchetype.HERALD);
         data.begin(later);
-        data.finishVictory(later.encounterId(), later.servantId(), later.targetId());
+        data.finishVictory(
+                later.encounterId(),
+                later.servantId(),
+                later.targetId(),
+                later.archetype());
         data.begin(earlier);
-        data.finishVictory(earlier.encounterId(), earlier.servantId(), earlier.targetId());
+        data.finishVictory(
+                earlier.encounterId(),
+                earlier.servantId(),
+                earlier.targetId(),
+                earlier.archetype());
 
         List<ServantEncounterData.LiveVictory> expected = List.of(
-                new ServantEncounterData.LiveVictory(earlierEvent, OTHER_TARGET),
-                new ServantEncounterData.LiveVictory(laterEvent, TARGET));
+                new ServantEncounterData.LiveVictory(
+                        earlierEvent, OTHER_TARGET, ServantArchetype.HERALD),
+                new ServantEncounterData.LiveVictory(
+                        laterEvent, TARGET, ServantArchetype.BINDER));
         List<ServantEncounterData.LiveVictory> beforeSave = data.liveVictories();
         assertEquals(expected, beforeSave);
         assertThrows(UnsupportedOperationException.class, () -> beforeSave.add(expected.get(0)));
@@ -226,6 +280,55 @@ class ServantEncounterDataTest {
         reloaded.liveVictories().forEach(victory ->
                 idempotentIntegration.add(victory.encounterId()));
         assertEquals(Set.of(earlierEvent, laterEvent), idempotentIntegration);
+    }
+
+    @Test
+    void versionOneDataMigratesLosslesslyToTheDefaultStalkerArchetype() {
+        UUID event = UUID.randomUUID();
+        UUID victoryEvent = UUID.randomUUID();
+        UUID entity = UUID.randomUUID();
+        CompoundTag root = new CompoundTag();
+        root.putInt("SchemaVersion", 1);
+
+        CompoundTag legacyActive = new CompoundTag();
+        legacyActive.putUUID("EncounterId", event);
+        legacyActive.putUUID("TargetId", TARGET);
+        legacyActive.putUUID("ServantId", entity);
+        legacyActive.putString("Dimension", "minecraft:overworld");
+        legacyActive.putBoolean("Rehearsal", false);
+        legacyActive.putLong("Deadline", 42_000L);
+        legacyActive.putBoolean("RecoveryAttempted", false);
+        ListTag active = new ListTag();
+        active.add(legacyActive);
+        root.put("Active", active);
+        CompoundTag legacyVictory = new CompoundTag();
+        legacyVictory.putUUID("EncounterId", victoryEvent);
+        legacyVictory.putUUID("TargetId", OTHER_TARGET);
+        ListTag victories = new ListTag();
+        victories.add(legacyVictory);
+        root.put("LiveVictories", victories);
+
+        ServantEncounterData loaded = ServantEncounterData.load(root);
+        assertTrue(loaded.supportsCurrentSchema());
+        assertEquals(
+                ServantArchetype.STALKER,
+                loaded.activeFor(TARGET).orElseThrow().archetype());
+        assertEquals(
+                ServantArchetype.STALKER,
+                loaded.liveVictory(victoryEvent).orElseThrow().archetype());
+
+        CompoundTag migrated = loaded.save(new CompoundTag());
+        assertEquals(ServantEncounterData.CURRENT_SCHEMA_VERSION, migrated.getInt("SchemaVersion"));
+        assertEquals(
+                "stalker",
+                migrated.getList("Active", Tag.TAG_COMPOUND)
+                        .getCompound(0)
+                        .getString("Archetype"));
+        assertEquals(
+                "stalker",
+                migrated.getList("LiveVictories", Tag.TAG_COMPOUND)
+                        .getCompound(0)
+                        .getString("Archetype"));
     }
 
     @Test
@@ -291,6 +394,7 @@ class ServantEncounterDataTest {
             CompoundTag victory = new CompoundTag();
             victory.putUUID("EncounterId", new UUID(1L, index));
             victory.putUUID("TargetId", TARGET);
+            victory.putString("Archetype", ServantArchetype.STALKER.id());
             victories.add(victory);
         }
         root.put("LiveVictories", victories);
@@ -310,5 +414,22 @@ class ServantEncounterDataTest {
                 rehearsal,
                 42_000L,
                 false);
+    }
+
+    private static ServantEncounter encounter(
+            UUID encounterId,
+            UUID targetId,
+            UUID servantId,
+            boolean rehearsal,
+            ServantArchetype archetype) {
+        return new ServantEncounter(
+                encounterId,
+                targetId,
+                servantId,
+                "minecraft:overworld",
+                rehearsal,
+                42_000L,
+                false,
+                archetype);
     }
 }

@@ -32,7 +32,11 @@ public final class ServantSpawnPolicy {
         double horizontalLength = Math.sqrt(look.x * look.x + look.z * look.z);
         double directionX = horizontalLength < 0.001D ? 0.0D : look.x / horizontalLength;
         double directionZ = horizontalLength < 0.001D ? 1.0D : look.z / horizontalLength;
-        Vec3 base = target.position().subtract(directionX * 5.0D, 0.0D, directionZ * 5.0D);
+        double spawnDistance = servant.archetype().spawnDistance();
+        Vec3 base = target.position().subtract(
+                directionX * spawnDistance,
+                0.0D,
+                directionZ * spawnDistance);
         int baseX = (int) Math.floor(base.x);
         int baseY = (int) Math.floor(target.getY());
         int baseZ = (int) Math.floor(base.z);
@@ -56,15 +60,17 @@ public final class ServantSpawnPolicy {
                         feet.getZ() + 0.5D,
                         target.getYRot() + 180.0F,
                         0.0F);
+                boolean collisionChunksLoaded = ServantLoadedChunks.areaLoaded(
+                        level, servant.getBoundingBox().inflate(0.01D));
                 CandidateFacts facts = new CandidateFacts(
                         floorState.isFaceSturdy(level, floor, Direction.UP),
                         isHazardous(floorState),
                         clear,
                         clear && hasNoFluid(level, feet),
                         level.getWorldBorder().isWithinBounds(servant.getBoundingBox()),
-                        level.noCollision(servant),
+                        collisionChunksLoaded && level.noCollision(servant),
                         true,
-                        true);
+                        collisionChunksLoaded);
                 if (isSafe(facts)) {
                     return Optional.of(feet);
                 }
@@ -89,9 +95,8 @@ public final class ServantSpawnPolicy {
                 || feet.getY() + 2 >= level.getMaxBuildHeight()) {
             return false;
         }
-        return level.hasChunkAt(feet)
-                && level.hasChunkAt(feet.below())
-                && level.hasChunkAt(feet.above(2));
+        return ServantLoadedChunks.blockColumnLoaded(level, feet)
+                && ServantLoadedChunks.spawnProbeLoaded(level, feet);
     }
 
     private static boolean hasThreeBlockClearance(ServerLevel level, BlockPos feet) {

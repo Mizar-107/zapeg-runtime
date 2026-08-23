@@ -2,5 +2,11 @@
   "subtitles.zapeg_runtime.heraldor_whisper": "A breath whispers nearby",
   "subtitles.zapeg_runtime.heraldor_knock": "Knocking sounds from nowhere",
   "subtitles.zapeg_runtime.heraldor_footstep": "Footsteps approach",
-  "subtitles.zapeg_runtime.heraldor_manifestation": "Something manifests"
+  "subtitles.zapeg_runtime.heraldor_manifestation": "Something manifests",
+  "entity.zapeg_runtime.servant.stalker": "Heraldor's Stalker",
+  "entity.zapeg_runtime.servant.herald": "Heraldor's Herald",
+  "entity.zapeg_runtime.servant.binder": "Heraldor's Binder",
+  "message.zapeg_runtime.servant.telegraph.stalker": "The Stalker coils to rend.",
+  "message.zapeg_runtime.servant.telegraph.herald": "The Herald's omen is sounding.",
+  "message.zapeg_runtime.servant.telegraph.binder": "The Binder's chain is closing."
 }
