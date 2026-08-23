@@ -1,0 +1,276 @@
+{
+  "schema": 1,
+  "campaign_id": "zapeg_runtime:heraldor",
+  "revision": 1,
+  "entry": "first_scratch",
+  "nodes": [
+    {
+      "id": "first_scratch",
+      "ordinal": 0,
+      "chapter": 1,
+      "journal_key": "journal.zapeg_runtime.heraldor.first_scratch",
+      "terminal": false,
+      "advance_on": {"type": "world_discovery", "subject": "zapeg_runtime:ashen_scratch"},
+      "next": "voice_without_air"
+    },
+    {
+      "id": "voice_without_air",
+      "ordinal": 1,
+      "chapter": 1,
+      "journal_key": "journal.zapeg_runtime.heraldor.voice_without_air",
+      "terminal": false,
+      "advance_on": {"type": "scene_completed", "subject": "zapeg_runtime:voice_01"},
+      "next": "tracks_against_rain"
+    },
+    {
+      "id": "tracks_against_rain",
+      "ordinal": 2,
+      "chapter": 1,
+      "journal_key": "journal.zapeg_runtime.heraldor.tracks_against_rain",
+      "terminal": false,
+      "advance_on": {"type": "world_discovery", "subject": "zapeg_runtime:backward_tracks"},
+      "next": "empty_bed"
+    },
+    {
+      "id": "empty_bed",
+      "ordinal": 3,
+      "chapter": 1,
+      "journal_key": "journal.zapeg_runtime.heraldor.empty_bed",
+      "terminal": false,
+      "advance_on": {"type": "scene_completed", "subject": "zapeg_runtime:visitation_01"},
+      "next": "ink_beneath_ink"
+    },
+    {
+      "id": "ink_beneath_ink",
+      "ordinal": 4,
+      "chapter": 1,
+      "journal_key": "journal.zapeg_runtime.heraldor.ink_beneath_ink",
+      "terminal": false,
+      "advance_on": {"type": "journal_discovery", "subject": "zapeg_runtime:palimpsest_01"},
+      "next": "name_refused"
+    },
+    {
+      "id": "name_refused",
+      "ordinal": 5,
+      "chapter": 1,
+      "journal_key": "journal.zapeg_runtime.heraldor.name_refused",
+      "terminal": false,
+      "advance_on": {"type": "ritual_completed", "subject": "zapeg_runtime:name_refusal"},
+      "next": "far_figure"
+    },
+    {
+      "id": "far_figure",
+      "ordinal": 6,
+      "chapter": 2,
+      "journal_key": "journal.zapeg_runtime.heraldor.far_figure",
+      "terminal": false,
+      "advance_on": {"type": "scene_presented", "subject": "zapeg_runtime:stalker_glimpse_01"},
+      "next": "servant_of_distance"
+    },
+    {
+      "id": "servant_of_distance",
+      "ordinal": 7,
+      "chapter": 2,
+      "journal_key": "journal.zapeg_runtime.heraldor.servant_of_distance",
+      "terminal": false,
+      "advance_on": {"type": "servant_defeated", "subject": "zapeg_runtime:stalker_01"},
+      "next": "ninth_bell"
+    },
+    {
+      "id": "ninth_bell",
+      "ordinal": 8,
+      "chapter": 2,
+      "journal_key": "journal.zapeg_runtime.heraldor.ninth_bell",
+      "terminal": false,
+      "advance_on": {"type": "world_discovery", "subject": "zapeg_runtime:ninth_bell"},
+      "next": "threshold_breach"
+    },
+    {
+      "id": "threshold_breach",
+      "ordinal": 9,
+      "chapter": 2,
+      "journal_key": "journal.zapeg_runtime.heraldor.threshold_breach",
+      "terminal": false,
+      "advance_on": {"type": "scene_completed", "subject": "zapeg_runtime:breach_01"},
+      "next": "drowned_road"
+    },
+    {
+      "id": "drowned_road",
+      "ordinal": 10,
+      "chapter": 2,
+      "journal_key": "journal.zapeg_runtime.heraldor.drowned_road",
+      "terminal": false,
+      "advance_on": {"type": "world_discovery", "subject": "zapeg_runtime:drowned_road"},
+      "next": "saltless_tide"
+    },
+    {
+      "id": "saltless_tide",
+      "ordinal": 11,
+      "chapter": 2,
+      "journal_key": "journal.zapeg_runtime.heraldor.saltless_tide",
+      "terminal": false,
+      "advance_on": {"type": "scene_presented", "subject": "zapeg_runtime:tide_omen_01"},
+      "next": "herald_at_low_water"
+    },
+    {
+      "id": "herald_at_low_water",
+      "ordinal": 12,
+      "chapter": 3,
+      "journal_key": "journal.zapeg_runtime.heraldor.herald_at_low_water",
+      "terminal": false,
+      "advance_on": {"type": "servant_defeated", "subject": "zapeg_runtime:herald_01"},
+      "next": "borrowed_voice"
+    },
+    {
+      "id": "borrowed_voice",
+      "ordinal": 13,
+      "chapter": 3,
+      "journal_key": "journal.zapeg_runtime.heraldor.borrowed_voice",
+      "terminal": false,
+      "advance_on": {"type": "scene_completed", "subject": "zapeg_runtime:voice_02"},
+      "next": "three_knocks"
+    },
+    {
+      "id": "three_knocks",
+      "ordinal": 14,
+      "chapter": 3,
+      "journal_key": "journal.zapeg_runtime.heraldor.three_knocks",
+      "terminal": false,
+      "advance_on": {"type": "scene_completed", "subject": "zapeg_runtime:knock_sequence_01"},
+      "next": "house_that_leans"
+    },
+    {
+      "id": "house_that_leans",
+      "ordinal": 15,
+      "chapter": 3,
+      "journal_key": "journal.zapeg_runtime.heraldor.house_that_leans",
+      "terminal": false,
+      "advance_on": {"type": "world_discovery", "subject": "zapeg_runtime:leaning_house"},
+      "next": "binder_knot"
+    },
+    {
+      "id": "binder_knot",
+      "ordinal": 16,
+      "chapter": 3,
+      "journal_key": "journal.zapeg_runtime.heraldor.binder_knot",
+      "terminal": false,
+      "advance_on": {"type": "ritual_completed", "subject": "zapeg_runtime:binder_knot"},
+      "next": "servant_of_names"
+    },
+    {
+      "id": "servant_of_names",
+      "ordinal": 17,
+      "chapter": 3,
+      "journal_key": "journal.zapeg_runtime.heraldor.servant_of_names",
+      "terminal": false,
+      "advance_on": {"type": "servant_defeated", "subject": "zapeg_runtime:binder_01"},
+      "next": "ledger_of_absence"
+    },
+    {
+      "id": "ledger_of_absence",
+      "ordinal": 18,
+      "chapter": 4,
+      "journal_key": "journal.zapeg_runtime.heraldor.ledger_of_absence",
+      "terminal": false,
+      "advance_on": {"type": "journal_discovery", "subject": "zapeg_runtime:absence_ledger"},
+      "next": "door_below_door"
+    },
+    {
+      "id": "door_below_door",
+      "ordinal": 19,
+      "chapter": 4,
+      "journal_key": "journal.zapeg_runtime.heraldor.door_below_door",
+      "terminal": false,
+      "advance_on": {"type": "world_discovery", "subject": "zapeg_runtime:underdoor"},
+      "next": "first_seal"
+    },
+    {
+      "id": "first_seal",
+      "ordinal": 20,
+      "chapter": 4,
+      "journal_key": "journal.zapeg_runtime.heraldor.first_seal",
+      "terminal": false,
+      "advance_on": {"type": "ritual_completed", "subject": "zapeg_runtime:seal_01"},
+      "next": "second_seal"
+    },
+    {
+      "id": "second_seal",
+      "ordinal": 21,
+      "chapter": 4,
+      "journal_key": "journal.zapeg_runtime.heraldor.second_seal",
+      "terminal": false,
+      "advance_on": {"type": "ritual_completed", "subject": "zapeg_runtime:seal_02"},
+      "next": "third_seal"
+    },
+    {
+      "id": "third_seal",
+      "ordinal": 22,
+      "chapter": 4,
+      "journal_key": "journal.zapeg_runtime.heraldor.third_seal",
+      "terminal": false,
+      "advance_on": {"type": "ritual_completed", "subject": "zapeg_runtime:seal_03"},
+      "next": "face_in_sky"
+    },
+    {
+      "id": "face_in_sky",
+      "ordinal": 23,
+      "chapter": 4,
+      "journal_key": "journal.zapeg_runtime.heraldor.face_in_sky",
+      "terminal": false,
+      "advance_on": {"type": "scene_presented", "subject": "zapeg_runtime:colossus_01"},
+      "next": "broken_procession"
+    },
+    {
+      "id": "broken_procession",
+      "ordinal": 24,
+      "chapter": 5,
+      "journal_key": "journal.zapeg_runtime.heraldor.broken_procession",
+      "terminal": false,
+      "advance_on": {"type": "scene_completed", "subject": "zapeg_runtime:procession_01"},
+      "next": "ninth_witness"
+    },
+    {
+      "id": "ninth_witness",
+      "ordinal": 25,
+      "chapter": 5,
+      "journal_key": "journal.zapeg_runtime.heraldor.ninth_witness",
+      "terminal": false,
+      "advance_on": {"type": "world_discovery", "subject": "zapeg_runtime:ninth_witness"},
+      "next": "hull_beneath_stone"
+    },
+    {
+      "id": "hull_beneath_stone",
+      "ordinal": 26,
+      "chapter": 5,
+      "journal_key": "journal.zapeg_runtime.heraldor.hull_beneath_stone",
+      "terminal": false,
+      "advance_on": {"type": "scene_completed", "subject": "zapeg_runtime:shipwreck_vision"},
+      "next": "first_shape"
+    },
+    {
+      "id": "first_shape",
+      "ordinal": 27,
+      "chapter": 5,
+      "journal_key": "journal.zapeg_runtime.heraldor.first_shape",
+      "terminal": false,
+      "advance_on": {"type": "boss_phase_completed", "subject": "zapeg_runtime:ninth_form_phase_01"},
+      "next": "last_shape"
+    },
+    {
+      "id": "last_shape",
+      "ordinal": 28,
+      "chapter": 5,
+      "journal_key": "journal.zapeg_runtime.heraldor.last_shape",
+      "terminal": false,
+      "advance_on": {"type": "boss_defeated", "subject": "zapeg_runtime:ninth_form"},
+      "next": "after_ninth"
+    },
+    {
+      "id": "after_ninth",
+      "ordinal": 29,
+      "chapter": 5,
+      "journal_key": "journal.zapeg_runtime.heraldor.after_ninth",
+      "terminal": true
+    }
+  ]
+}
