@@ -4,6 +4,7 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
 import io.github.mizar107.zapegruntime.network.SceneNetwork;
+import io.github.mizar107.zapegruntime.story.StoryCommands;
 import java.util.function.Consumer;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -30,6 +31,7 @@ public final class HeraldorCommands {
             RegisterCommandsEvent event,
             Consumer<LiteralArgumentBuilder<CommandSourceStack>> childAttacher) {
         LiteralArgumentBuilder<CommandSourceStack> root = createRoot();
+        StoryCommands.attach(root);
         childAttacher.accept(root);
         event.getDispatcher().register(root);
     }
