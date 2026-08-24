@@ -3,7 +3,11 @@ package io.github.mizar107.zapegruntime.boss.api;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Server-authored combat evidence; consumers still validate it against durable state. */
+/**
+ * Server-authored combat evidence; consumers still validate it against durable state.
+ * PHASE_COMPLETED is emitted only after the entity has entered INTERLUDE; its
+ * {@code phase} names the phase that was completed, not the entity's new phase.
+ */
 public record NinthFormCombatSignal(
         Kind kind,
         NinthFormIdentity identity,

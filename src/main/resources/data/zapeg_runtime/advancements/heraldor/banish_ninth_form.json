@@ -1,0 +1,14 @@
+{
+  "display": {
+    "icon": {"item": "minecraft:echo_shard"},
+    "title": "After the Ninth",
+    "description": "The Ninth Form is banished, but one page remains warm.",
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": false,
+    "hidden": true
+  },
+  "criteria": {
+    "banished": {"trigger": "minecraft:impossible"}
+  }
+}
