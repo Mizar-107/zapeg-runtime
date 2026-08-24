@@ -25,7 +25,7 @@ world and deployment migration.
 See [docs/BREACH-01.md](docs/BREACH-01.md) for the timing, resource hashes and
 integration contract.
 
-## Heraldor `1.0.0`
+## Heraldor `1.1.0`
 
 The five delivery batches now form one native Forge runtime: UUID-authorized
 scenes and diagnostics, deterministic horror timelines, a 30-node hidden
@@ -34,6 +34,19 @@ Ninth Form finale. Gameplay authority does not require Python, RCON, KubeJS,
 Discord, voice delivery, Cataclysm, Aquamirae, or GeckoLib. Exact-match
 protocol `11` requires the server and every joining client to use this release
 generation.
+
+Release 1.1 adds a fail-closed operational boundary around that content. Fresh
+world safety state is quarantined. `manual`, `live`, and `auto` must be armed
+explicitly with a rotating nonce, cannot exceed `HERALDOR_MAX_MODE`, and are
+admitted only when a second atomic world authority record exactly matches the
+forced/read-back SavedData plus a zero-active cleanup certificate. Missing,
+corrupt, stale, unwritable, or mismatched authority stays quarantined.
+
+`/heraldor safety stop` is nonce-free and cancels scenes, timelines, Servants,
+Ninth Form projections, Director queues, and quest sessions while preserving
+story evidence. Direct OP players may arm; authenticated RCON may inspect and
+stop but may not re-arm. The physical server console uses the dedicated
+`/heraldorsafety` alias. See [docs/RELEASE-1.1.md](docs/RELEASE-1.1.md).
 
 ## Batch 4 (`0.8.0-b4`) Ninth Form
 
@@ -447,7 +460,7 @@ See [ROADMAP.md](ROADMAP.md) for the reality-distortion and later combat plan.
 ```
 
 The final release artifact is
-`build/libs/zapeg-runtime-forge-1.20.1-1.0.0.jar`. Protocol 11 is
+`build/libs/zapeg-runtime-forge-1.20.1-1.1.0.jar`. Protocol 11 is
 wire-incompatible: server, tracked
 `overrides/mods` jar and every client artifact must be replaced atomically
 with the same build.

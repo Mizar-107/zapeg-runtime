@@ -69,7 +69,7 @@ class NinthFormIntegrationContractTest {
     void protocolVersionAndToastResourceMatchTheFinalReleaseArtifact() throws Exception {
         assertEquals("11", SceneNetwork.PROTOCOL);
         String properties = Files.readString(Path.of("gradle.properties"));
-        assertTrue(properties.contains("mod_version=1.0.0"));
+        assertTrue(properties.contains("mod_version=1.1.0"));
 
         JsonObject advancement = JsonParser.parseString(Files.readString(ROOT.resolve(Path.of(
                         "resources", "data", "zapeg_runtime", "advancements", "heraldor",
