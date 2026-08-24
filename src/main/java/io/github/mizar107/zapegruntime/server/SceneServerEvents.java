@@ -1,6 +1,7 @@
 package io.github.mizar107.zapegruntime.server;
 
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
+import io.github.mizar107.zapegruntime.director.DirectorCommands;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
 import io.github.mizar107.zapegruntime.servant.ServantCommands;
 import io.github.mizar107.zapegruntime.timeline.TimelineCommands;
@@ -25,6 +26,7 @@ public final class SceneServerEvents {
     public static void onRegisterCommands(RegisterCommandsEvent event) {
         SceneCommands.register(event);
         HeraldorCommands.register(event, root -> {
+            DirectorCommands.attach(root);
             ServantCommands.attach(root);
             TimelineCommands.attach(root);
         });

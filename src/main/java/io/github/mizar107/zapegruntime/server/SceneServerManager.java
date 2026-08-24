@@ -1,6 +1,8 @@
 package io.github.mizar107.zapegruntime.server;
 
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
+import io.github.mizar107.zapegruntime.director.DirectorSceneIdentity;
+import io.github.mizar107.zapegruntime.director.HeraldorDirector;
 import io.github.mizar107.zapegruntime.network.SceneAckC2S;
 import io.github.mizar107.zapegruntime.network.SceneNetwork;
 import io.github.mizar107.zapegruntime.network.OsScareStatusC2S;
@@ -43,7 +45,8 @@ public final class SceneServerManager {
             int expiresAtServerTick,
             SceneAck lastAcknowledgement,
             OsScareReport osScareReport,
-            int osScareSequence) {
+            int osScareSequence,
+            DirectorSceneIdentity directorIdentity) {
 
         ActiveScene withAcknowledgement(SceneAck acknowledgement) {
             return new ActiveScene(
@@ -51,7 +54,8 @@ public final class SceneServerManager {
                     expiresAtServerTick,
                     acknowledgement,
                     osScareReport,
-                    osScareSequence);
+                    osScareSequence,
+                    directorIdentity);
         }
 
         ActiveScene withOsScareStatus(OsScareReport report, int sequence) {
@@ -60,7 +64,8 @@ public final class SceneServerManager {
                     expiresAtServerTick,
                     lastAcknowledgement,
                     report,
-                    sequence);
+                    sequence,
+                    directorIdentity);
         }
     }
 
@@ -132,7 +137,38 @@ public final class SceneServerManager {
                 stage,
                 null,
                 null,
+                null,
                 null);
+    }
+
+    /**
+     * Director-only provenance path. Manual commands, rehearsals, and timeline
+     * actions use the legacy entry points above and therefore carry no story
+     * identity even when an operator supplies the same UUID.
+     */
+    public static DispatchResult dispatchDirector(
+            ServerPlayer target,
+            DirectorSceneIdentity identity,
+            SceneProfile profile,
+            int ttlTicks,
+            int stage) {
+        if (identity == null || !identity.targetId().equals(target.getUUID())) {
+            UUID eventId = identity == null ? new UUID(0L, 0L) : identity.eventId();
+            return failure("Director identity mismatch", eventId);
+        }
+        return dispatchInternal(
+                target,
+                identity.eventId(),
+                profile,
+                false,
+                ttlTicks,
+                null,
+                null,
+                stage,
+                identity.visualSeed(),
+                identity.placementSeed(),
+                null,
+                identity);
     }
 
     /**
@@ -176,7 +212,8 @@ public final class SceneServerManager {
                 stage,
                 visualSeed,
                 placementSeed,
-                replayIdentity);
+                replayIdentity,
+                null);
         if (result.success()) {
             return replayData.markApplied(replayIdentity)
                     ? TimelineDispatchStatus.APPLIED
@@ -201,10 +238,18 @@ public final class SceneServerManager {
             int stage,
             Long visualSeed,
             Long placementSeed,
-            TimelineReplayIdentity replayIdentity) {
+            TimelineReplayIdentity replayIdentity,
+            DirectorSceneIdentity directorIdentity) {
         MinecraftServer server = target.getServer();
         if (server == null) {
             return failure("server unavailable", eventId);
+        }
+        if (directorIdentity != null
+                && (!eventId.equals(directorIdentity.eventId())
+                        || !target.getUUID().equals(directorIdentity.targetId())
+                        || rehearsal
+                        || replayIdentity != null)) {
+            return failure("Director identity mismatch", eventId);
         }
         if (stage < 0 || stage > profile.maxStage()) {
             return failure(
@@ -303,7 +348,8 @@ public final class SceneServerManager {
                 server.getTickCount() + profile.occupancyTicks(descriptor.ttlTicks()),
                 null,
                 null,
-                -1));
+                -1,
+                directorIdentity));
         if (profile == SceneProfile.VISITATION_01) {
             // Preserve an older closing event until the new client actually
             // proves it accepted this visitation by sending status sequence
@@ -315,7 +361,7 @@ public final class SceneServerManager {
                 "Dispatched scene {} profile={} target={} rehearsal={}",
                 eventId,
                 profile.serializedName(),
-                target.getGameProfile().getName(),
+                target.getUUID(),
                 rehearsal);
         return new DispatchResult(true, "scene dispatched", eventId);
     }
@@ -343,7 +389,7 @@ public final class SceneServerManager {
                     message.eventId(),
                     current.descriptor.profile().serializedName(),
                     message.acknowledgement().name().toLowerCase(Locale.ROOT),
-                    sender.getGameProfile().getName());
+                    sender.getUUID());
             return;
         }
         activeByTarget.put(
@@ -352,7 +398,14 @@ public final class SceneServerManager {
                 "Scene {} acknowledgement={} target={}",
                 message.eventId(),
                 message.acknowledgement().name().toLowerCase(Locale.ROOT),
-                sender.getGameProfile().getName());
+                sender.getUUID());
+        if (current.directorIdentity != null) {
+            HeraldorDirector.onAcknowledgement(
+                    sender.getServer(),
+                    current.directorIdentity,
+                    current.descriptor.profile(),
+                    message.acknowledgement());
+        }
         if (message.acknowledgement().terminal()) {
             if (current.descriptor.profile() == SceneProfile.VISITATION_01
                     && message.acknowledgement() == SceneAck.BUSY) {
@@ -395,8 +448,15 @@ public final class SceneServerManager {
                 "Scene {} OS status sequence={} target={} {}",
                 message.eventId(),
                 message.sequence(),
-                sender.getGameProfile().getName(),
+                sender.getUUID(),
                 message.report().compactString());
+        if (activeMatch && current.directorIdentity != null) {
+            HeraldorDirector.onOsScareStatus(
+                    sender.getServer(),
+                    current.directorIdentity,
+                    current.descriptor.profile(),
+                    message.report());
+        }
     }
 
     public static void tick(MinecraftServer server) {
@@ -453,6 +513,9 @@ public final class SceneServerManager {
                 "Cancelled scene {} reason={}",
                 current.descriptor.eventId(),
                 reason.name().toLowerCase(Locale.ROOT));
+        if (server != null && current.directorIdentity != null) {
+            HeraldorDirector.onCancelled(server, current.directorIdentity, reason);
+        }
         return true;
     }
 
@@ -531,6 +594,16 @@ public final class SceneServerManager {
                 + " ack=" + (current.lastAcknowledgement == null
                         ? "none"
                         : current.lastAcknowledgement.name().toLowerCase(Locale.ROOT));
+    }
+
+    /** Exact JVM-local liveness check; it never loads a player, level, or chunk. */
+    public static boolean isDirectorSceneActive(UUID targetId, UUID eventId) {
+        ActiveScene current = activeByTarget.get(targetId);
+        return current != null
+                && current.directorIdentity != null
+                && current.descriptor.eventId().equals(eventId)
+                && current.directorIdentity.eventId().equals(eventId)
+                && current.directorIdentity.targetId().equals(targetId);
     }
 
     /**

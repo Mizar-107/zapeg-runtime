@@ -5,6 +5,7 @@ import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraftforge.common.MinecraftForge;
 
 /** Stable typed integration seam for scenes, encounters, and later boss code. */
 public final class StoryService {
@@ -24,7 +25,7 @@ public final class StoryService {
         }
         StoryWorldData.ApplyResult applied =
                 StoryWorldData.get(server).applyFact(campaign.get(), fact);
-        return classifyExpected(applied);
+        return publishAdvance(server, fact, classifyExpected(applied));
     }
 
     /**
@@ -78,7 +79,7 @@ public final class StoryService {
         }
         StoryFact fact = gate.fact().orElseThrow();
         StoryWorldData.ApplyResult applied = data.applyFact(campaign, fact);
-        return classifyExpected(applied);
+        return publishAdvance(server, fact, classifyExpected(applied));
     }
 
     /** Pure receipt coordinator kept executable without a live server fixture. */
@@ -148,6 +149,28 @@ public final class StoryService {
                     SubmissionStatus.PROCESSED;
         };
         return new SubmissionResult(status, applied.detail(), Optional.of(applied));
+    }
+
+    private static SubmissionResult publishAdvance(
+            MinecraftServer server, StoryFact fact, SubmissionResult result) {
+        if (result.status() != SubmissionStatus.APPLIED) {
+            return result;
+        }
+        StoryWorldData.ApplyResult applied = result.application().orElseThrow();
+        if (applied.previousNodeId() == null
+                || applied.currentNodeId() == null
+                || applied.previousNodeId().equals(applied.currentNodeId())) {
+            throw new IllegalStateException("APPLIED story result lacks a node transition");
+        }
+        MinecraftForge.EVENT_BUS.post(new StoryAdvancedEvent(
+                server,
+                fact.playerId(),
+                fact.factId(),
+                fact.type(),
+                fact.subject(),
+                applied.previousNodeId(),
+                applied.currentNodeId()));
+        return result;
     }
 
     public enum SubmissionStatus {

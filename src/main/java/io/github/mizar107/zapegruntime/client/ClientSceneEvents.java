@@ -63,7 +63,9 @@ public final class ClientSceneEvents {
         } else if (profile == SceneProfile.FALSE_PASSAGE_01) {
             FalsePassageRenderer.render(snapshot, event);
         } else if (profile == SceneProfile.COLOSSUS_01) {
-            ColossusRenderer.render(snapshot, event);
+            if (ColossusRenderer.render(snapshot, event)) {
+                ClientSceneManager.acknowledgeColossusRendered(snapshot);
+            }
         } else {
             ApparitionRenderer.render(snapshot, event);
         }

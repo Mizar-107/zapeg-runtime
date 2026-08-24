@@ -1,0 +1,106 @@
+{
+  "format": 1,
+  "campaign_id": "zapeg_runtime:heraldor",
+  "bindings": [
+    {
+      "fact_type": "scene_completed",
+      "subject": "zapeg_runtime:voice_01",
+      "profile": "breach_01",
+      "ttl_ticks": 140,
+      "stage": 0,
+      "presentation_variant": 1,
+      "cooldown_ticks": 600,
+      "retry_ticks": 100
+    },
+    {
+      "fact_type": "scene_completed",
+      "subject": "zapeg_runtime:visitation_01",
+      "profile": "visitation_01",
+      "ttl_ticks": 170,
+      "stage": 0,
+      "presentation_variant": 2,
+      "cooldown_ticks": 900,
+      "retry_ticks": 120
+    },
+    {
+      "fact_type": "scene_presented",
+      "subject": "zapeg_runtime:stalker_glimpse_01",
+      "profile": "peripheral_01",
+      "ttl_ticks": 140,
+      "stage": 0,
+      "presentation_variant": 3,
+      "cooldown_ticks": 700,
+      "retry_ticks": 100
+    },
+    {
+      "fact_type": "scene_completed",
+      "subject": "zapeg_runtime:breach_01",
+      "profile": "breach_01",
+      "ttl_ticks": 180,
+      "stage": 0,
+      "presentation_variant": 4,
+      "cooldown_ticks": 1000,
+      "retry_ticks": 120
+    },
+    {
+      "fact_type": "scene_presented",
+      "subject": "zapeg_runtime:tide_omen_01",
+      "profile": "sky_mark_01",
+      "ttl_ticks": 240,
+      "stage": 0,
+      "presentation_variant": 5,
+      "cooldown_ticks": 900,
+      "retry_ticks": 120
+    },
+    {
+      "fact_type": "scene_completed",
+      "subject": "zapeg_runtime:voice_02",
+      "profile": "breach_01",
+      "ttl_ticks": 220,
+      "stage": 0,
+      "presentation_variant": 6,
+      "cooldown_ticks": 800,
+      "retry_ticks": 100
+    },
+    {
+      "fact_type": "scene_completed",
+      "subject": "zapeg_runtime:knock_sequence_01",
+      "profile": "breach_01",
+      "ttl_ticks": 120,
+      "stage": 0,
+      "presentation_variant": 7,
+      "cooldown_ticks": 700,
+      "retry_ticks": 80
+    },
+    {
+      "fact_type": "scene_presented",
+      "subject": "zapeg_runtime:colossus_01",
+      "profile": "colossus_01",
+      "ttl_ticks": 320,
+      "stage": 3,
+      "presentation_variant": 8,
+      "cooldown_ticks": 1800,
+      "retry_ticks": 160
+    },
+    {
+      "fact_type": "scene_completed",
+      "subject": "zapeg_runtime:procession_01",
+      "profile": "near_miss_01",
+      "ttl_ticks": 110,
+      "stage": 0,
+      "presentation_variant": 9,
+      "cooldown_ticks": 800,
+      "retry_ticks": 100
+    },
+    {
+      "fact_type": "scene_completed",
+      "subject": "zapeg_runtime:shipwreck_vision",
+      "profile": "rift_01",
+      "ttl_ticks": 200,
+      "stage": 1,
+      "presentation_variant": 10,
+      "cooldown_ticks": 1200,
+      "retry_ticks": 140
+    }
+  ]
+}

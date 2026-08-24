@@ -45,7 +45,7 @@ public final class ColossusRenderer {
 
     private ColossusRenderer() {}
 
-    public static void render(
+    public static boolean render(
             ClientSceneManager.RenderSnapshot snapshot,
             RenderLevelStageEvent event) {
         int stage = snapshot.descriptor().stage();
@@ -56,12 +56,12 @@ public final class ColossusRenderer {
                 24.0D,
                 26.0D);
         if (envelope <= 0.001F) {
-            return;
+            return false;
         }
         int vanishTick = ColossusChoreography.vanishTick(stage);
         if (vanishTick >= 0 && age >= vanishTick) {
             // The finale's resolve: after the held watch it is simply gone.
-            return;
+            return false;
         }
 
         Vec3 cameraPosition = event.getCamera().getPosition();
@@ -180,6 +180,7 @@ public final class ColossusRenderer {
         RenderSystem.depthMask(true);
         RenderSystem.disableBlend();
         pose.popPose();
+        return true;
     }
 
     /** A vertical quad on the face plane, centred on (cx, cy). */

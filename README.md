@@ -35,7 +35,12 @@ integration contract.
   fail closed on corruption or future schemas;
 - durable encounter barriers feed typed story facts directly. Advisory Forge
   events and sidecars never advance the campaign;
-
+- a restart-safe native Director dispatches the ten campaign scene predicates
+  from a strict datapack catalog. Only validated active-scene presentation or
+  completion evidence advances story; rehearsals and manual triggers never do;
+- retained Servant victories are reconciled in current campaign order after
+  each applied transition, on login/startup, and through a bounded periodic
+  cursor. Out-of-order barriers remain unconsumed;
 - `stalker`, `herald`, and `binder` are the complete archetype set. Each uses
   one visible server entity, UUID-owned targeting, shared sound/particle/glow
   telegraphs, and server-resolved bounded damage/effects;
@@ -54,6 +59,8 @@ See [docs/SERVANT-ARCHETYPES.md](docs/SERVANT-ARCHETYPES.md) for mechanics,
 operator commands, and the durable integration contract. See
 [docs/HERALDOR-STORY-FOUNDATION.md](docs/HERALDOR-STORY-FOUNDATION.md) for the
 campaign schema, replay identity and recovery contract.
+See [docs/HERALDOR-DIRECTOR.md](docs/HERALDOR-DIRECTOR.md) for scene mappings,
+proof semantics, restart windows, pacing, and UUID diagnostics.
 
 ## Batch 1 (`0.5.0-b1`) compatibility history
 

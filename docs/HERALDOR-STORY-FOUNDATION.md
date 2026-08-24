@@ -1,9 +1,9 @@
 # Heraldor story foundation
 
-This slice owns only the server-authoritative hidden-journal campaign state. It
-does not implement the journal screen, servant archetypes, a Director, or the
-boss. Those systems submit evidence through `StoryService`; they do not mutate
-story NBT directly. Durable barrier reconcilers should use
+This foundation owns the server-authoritative hidden-journal campaign state.
+The native Director and Servant systems submit evidence through `StoryService`;
+they do not mutate story NBT directly. The journal screen and boss remain
+separate consumers. Durable barrier reconcilers should use
 `StoryService.submitIfExpected`, which leaves out-of-order barriers unconsumed,
 recognizes an already processed fact only when its target and payload receipt
 match, and constructs the epoch-bound fact on the server thread. Its top-level

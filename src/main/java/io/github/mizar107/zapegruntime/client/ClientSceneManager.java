@@ -465,7 +465,6 @@ public final class ClientSceneManager {
         int steps = ColossusChoreography.stepsForStage(stage);
         if (current.colossusStepIndex < steps
                 && bodyAge >= ColossusChoreography.stepTick(current.colossusStepIndex)) {
-            markVisible(current);
             current.lastColossusStepTick = current.ageTicks;
             SceneSounds.playColossusStep(descriptor, stage, current.colossusStepIndex);
             current.colossusStepIndex++;
@@ -889,12 +888,26 @@ public final class ClientSceneManager {
         if (!event.getFrustum().isVisible(bounds)) {
             return null;
         }
-        if (!current.visibleAcknowledged) {
-            markVisible(current);
-            SceneSounds.playArrival(descriptor, anchor);
-        }
         return new RenderSnapshot(
                 descriptor, anchor, descriptor.yawDegrees(), 0.0F, (float) approach);
+    }
+
+    /**
+     * Records colossus presentation only after its renderer completed a real
+     * body draw. A footfall, a body tick, or a decoded packet is deliberately
+     * insufficient evidence for the Director's presented-story barrier.
+     */
+    static void acknowledgeColossusRendered(RenderSnapshot snapshot) {
+        ActiveScene current = active;
+        if (current == null
+                || snapshot.descriptor().profile() != SceneProfile.COLOSSUS_01
+                || !current.descriptor.eventId().equals(snapshot.descriptor().eventId())) {
+            return;
+        }
+        if (!current.visibleAcknowledged) {
+            markVisible(current);
+            SceneSounds.playArrival(snapshot.descriptor(), snapshot.anchor());
+        }
     }
 
     /**
