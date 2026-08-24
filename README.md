@@ -32,8 +32,8 @@ scenes and diagnostics, deterministic horror timelines, a 30-node hidden
 journal campaign, automatic Servant encounters, and the original multipart
 Ninth Form finale. Gameplay authority does not require Python, RCON, KubeJS,
 Discord, voice delivery, Cataclysm, Aquamirae, or GeckoLib. Exact-match
-protocol `11` requires the server and every joining client to use this release
-generation.
+protocol `11` is retained, while Forge `MATCH_VERSION` requires the server and
+every joining client to use this exact release.
 
 Release 1.1 adds a fail-closed operational boundary around that content. Fresh
 world safety state is quarantined. `manual`, `live`, and `auto` must be armed
@@ -460,8 +460,8 @@ See [ROADMAP.md](ROADMAP.md) for the reality-distortion and later combat plan.
 ```
 
 The final release artifact is
-`build/libs/zapeg-runtime-forge-1.20.1-1.1.0.jar`. Protocol 11 is
-wire-incompatible: server, tracked
+`build/libs/zapeg-runtime-forge-1.20.1-1.1.0.jar`. Protocol remains 11, but
+Forge exact-version matching means the server, tracked
 `overrides/mods` jar and every client artifact must be replaced atomically
 with the same build.
 
