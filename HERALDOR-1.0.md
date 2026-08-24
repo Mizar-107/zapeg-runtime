@@ -48,9 +48,10 @@ as presentation, never as the authority.
 
 ## Batch 4 — Dokuzuncu Suret
 
-- Original GeckoLib manifestation with server-authoritative multipart hit
-  regions and deterministic attack timelines.
-- Dedicated resettable arena, 1–8 player scaling and restart checkpoints.
+- Original Forge-native manifestation with server-authoritative multipart hit
+  regions, code-built art and deterministic attack timelines.
+- Loaded-chunk-only 48-block virtual arena, 1–8 player scaling and restart
+  checkpoints; no blocks, chunk tickets, explosions or terrain are changed.
 - Shared readable damage telegraphs; target-private illusions never conceal
   real damage.
 - One-time banishment and non-farmable narrative reward.

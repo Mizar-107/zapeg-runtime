@@ -25,6 +25,16 @@ world and deployment migration.
 See [docs/BREACH-01.md](docs/BREACH-01.md) for the timing, resource hashes and
 integration contract.
 
+## Heraldor `1.0.0`
+
+The five delivery batches now form one native Forge runtime: UUID-authorized
+scenes and diagnostics, deterministic horror timelines, a 30-node hidden
+journal campaign, automatic Servant encounters, and the original multipart
+Ninth Form finale. Gameplay authority does not require Python, RCON, KubeJS,
+Discord, voice delivery, Cataclysm, Aquamirae, or GeckoLib. Exact-match
+protocol `11` requires the server and every joining client to use this release
+generation.
+
 ## Batch 4 (`0.8.0-b4`) Ninth Form
 
 - exact-match protocol `11` registers the original multipart `Ninth Form`
@@ -408,8 +418,8 @@ See [ROADMAP.md](ROADMAP.md) for the reality-distortion and later combat plan.
 .\gradlew.bat test build
 ```
 
-The Batch-4 artifact is
-`build/libs/zapeg-runtime-forge-1.20.1-0.8.0-b4.jar`. Protocol 11 is
+The final release artifact is
+`build/libs/zapeg-runtime-forge-1.20.1-1.0.0.jar`. Protocol 11 is
 wire-incompatible: server, tracked
 `overrides/mods` jar and every client artifact must be replaced atomically
 with the same build.
