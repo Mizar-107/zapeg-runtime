@@ -8,5 +8,17 @@
   "entity.zapeg_runtime.servant.binder": "Heraldor'un Bağlayıcısı",
   "message.zapeg_runtime.servant.telegraph.stalker": "Takipçi parçalamak için geriliyor.",
   "message.zapeg_runtime.servant.telegraph.herald": "Haberci'nin alameti yankılanıyor.",
-  "message.zapeg_runtime.servant.telegraph.binder": "Bağlayıcı'nın zinciri kapanıyor."
+  "message.zapeg_runtime.servant.telegraph.binder": "Bağlayıcı'nın zinciri kapanıyor.",
+  "message.zapeg_runtime.quest.ashen_scratch.complete": "Soğuk kül çiziyi saklıyor.",
+  "message.zapeg_runtime.quest.backward_tracks.complete": "Yağmur reddettiğin adımları hatırlıyor.",
+  "message.zapeg_runtime.quest.ninth_bell.complete": "Dokuzuncu çan aşağıda bir yerden karşılık veriyor.",
+  "message.zapeg_runtime.quest.drowned_road.complete": "Boğulmuş yol ağırlığını öğrendi.",
+  "message.zapeg_runtime.quest.leaning_house.complete": "Kapalı ev sana karşı yaslanıyor.",
+  "message.zapeg_runtime.quest.underdoor.complete": "Küçük kapının altından seninle birlikte bir şey geçti.",
+  "message.zapeg_runtime.quest.ninth_witness.complete": "Sekiz boş yüz, dokuzuncu oluşunu izledi.",
+  "message.zapeg_runtime.quest.name_refusal.complete": "Kullanılmamış isim mavi dumanın içinde kıvrılıyor.",
+  "message.zapeg_runtime.quest.binder_knot.complete": "Hat, göremediğin bir ismin etrafında sıkılaşıyor.",
+  "message.zapeg_runtime.quest.seal_01.complete": "İlk mühür koru içine çekiyor.",
+  "message.zapeg_runtime.quest.seal_02.complete": "İkinci mühür boğulmuş ışığı içine çekiyor.",
+  "message.zapeg_runtime.quest.seal_03.complete": "Üçüncü mühür yankıyı içine çekiyor."
 }

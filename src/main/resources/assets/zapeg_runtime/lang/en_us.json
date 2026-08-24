@@ -8,5 +8,17 @@
   "entity.zapeg_runtime.servant.binder": "Heraldor's Binder",
   "message.zapeg_runtime.servant.telegraph.stalker": "The Stalker coils to rend.",
   "message.zapeg_runtime.servant.telegraph.herald": "The Herald's omen is sounding.",
-  "message.zapeg_runtime.servant.telegraph.binder": "The Binder's chain is closing."
+  "message.zapeg_runtime.servant.telegraph.binder": "The Binder's chain is closing.",
+  "message.zapeg_runtime.quest.ashen_scratch.complete": "The cold ash keeps the scratch.",
+  "message.zapeg_runtime.quest.backward_tracks.complete": "The rain remembers the steps you denied.",
+  "message.zapeg_runtime.quest.ninth_bell.complete": "The ninth toll answers from somewhere below.",
+  "message.zapeg_runtime.quest.drowned_road.complete": "The drowned road has learned your weight.",
+  "message.zapeg_runtime.quest.leaning_house.complete": "The shut house leans back.",
+  "message.zapeg_runtime.quest.underdoor.complete": "Something passed beneath the little door with you.",
+  "message.zapeg_runtime.quest.ninth_witness.complete": "Eight empty faces watched you become the ninth.",
+  "message.zapeg_runtime.quest.name_refusal.complete": "The unused name curls into blue smoke.",
+  "message.zapeg_runtime.quest.binder_knot.complete": "The line tightens around a name you cannot see.",
+  "message.zapeg_runtime.quest.seal_01.complete": "The first seal takes the ember.",
+  "message.zapeg_runtime.quest.seal_02.complete": "The second seal takes the drowned light.",
+  "message.zapeg_runtime.quest.seal_03.complete": "The third seal takes the echo."
 }
