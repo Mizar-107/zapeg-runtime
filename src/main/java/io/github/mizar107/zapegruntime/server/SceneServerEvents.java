@@ -16,6 +16,7 @@ import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
+import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.event.TickEvent;
@@ -43,8 +44,17 @@ public final class SceneServerEvents {
     }
 
     @SubscribeEvent
+    public static void onServerStarted(ServerStartedEvent event) {
+        // Persist ceiling demotion before the first game tick; gateway failures remain retriable.
+        HeraldorSafetyController.enforce(event.getServer());
+    }
+
+    @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
+            if (!HeraldorSafetyController.enforce(event.getServer())) {
+                return;
+            }
             SceneServerManager.tick(event.getServer());
             TimelineServerManager.tick(event.getServer());
         }
@@ -88,5 +98,6 @@ public final class SceneServerEvents {
         TimelineServerManager.onServerStopping(event.getServer());
         SceneServerManager.shutdown();
         VoiceRehearsalManager.shutdown();
+        HeraldorSafetyController.forget(event.getServer());
     }
 }

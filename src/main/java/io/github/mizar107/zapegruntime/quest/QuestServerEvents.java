@@ -56,4 +56,11 @@ public final class QuestServerEvents {
     public static void onServerStopped(ServerStoppedEvent event) {
         QuestActionManager.clear();
     }
+
+    /** Safety coordinator hook; returns the exact number of partial player sessions forgotten. */
+    public static int clearForSafety() {
+        int count = QuestActionManager.trackedPlayerCount();
+        QuestActionManager.clear();
+        return count;
+    }
 }

@@ -6,6 +6,8 @@ import io.github.mizar107.zapegruntime.boss.api.NinthFormEntityGateway;
 import io.github.mizar107.zapegruntime.boss.api.NinthFormIdentity;
 import io.github.mizar107.zapegruntime.boss.api.NinthFormPhase;
 import io.github.mizar107.zapegruntime.boss.presentation.NinthFormSounds;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyController;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyMode;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Objects;
@@ -489,8 +491,18 @@ public final class NinthFormBoss extends LivingEntity {
                 discard();
                 return;
             }
+            net.minecraft.server.level.ServerLevel serverLevel =
+                    (net.minecraft.server.level.ServerLevel) level();
+            HeraldorSafetyMode required = encounterIdentity.rehearsal()
+                    ? HeraldorSafetyMode.MANUAL
+                    : HeraldorSafetyMode.AUTO;
+            if (!HeraldorSafetyController.allows(serverLevel.getServer(), required)) {
+                // Same-tick backstop: no combat action can escape a successful emergency stop.
+                discard();
+                return;
+            }
             updateBossBar();
-            NinthFormCombatEngine.tick(this, (net.minecraft.server.level.ServerLevel) level());
+            NinthFormCombatEngine.tick(this, serverLevel);
         }
     }
 

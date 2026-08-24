@@ -1,5 +1,7 @@
 package io.github.mizar107.zapegruntime.quest;
 
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyController;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyMode;
 import io.github.mizar107.zapegruntime.story.StoryService;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -56,6 +58,9 @@ final class QuestActionManager {
 
     static void tick(MinecraftServer server) {
         Objects.requireNonNull(server, "server");
+        if (!HeraldorSafetyController.allows(server, HeraldorSafetyMode.AUTO)) {
+            return;
+        }
         Set<UUID> online = new HashSet<>();
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             online.add(player.getUUID());
@@ -69,6 +74,10 @@ final class QuestActionManager {
                 || event.getHand() != net.minecraft.world.InteractionHand.MAIN_HAND
                 || event.isCanceled()
                 || event.getUseBlock() == Event.Result.DENY) {
+            return;
+        }
+        MinecraftServer server = player.getServer();
+        if (!HeraldorSafetyController.allows(server, HeraldorSafetyMode.AUTO)) {
             return;
         }
         Optional<QuestStoryAccess.ExpectedAction> expected = QuestStoryAccess.expected(player);

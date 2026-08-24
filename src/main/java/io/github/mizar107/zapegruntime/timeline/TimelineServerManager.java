@@ -3,6 +3,8 @@ package io.github.mizar107.zapegruntime.timeline;
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
 import io.github.mizar107.zapegruntime.server.SceneServerManager;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyController;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyMode;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
@@ -20,6 +22,12 @@ public final class TimelineServerManager {
             ServerPlayer target,
             UUID sessionId,
             ResourceLocation timelineId) {
+        if (!HeraldorSafetyController.allows(server, HeraldorSafetyMode.LIVE)) {
+            return new StartResult(
+                    false,
+                    HeraldorSafetyController.denial(server, HeraldorSafetyMode.LIVE),
+                    sessionId);
+        }
         Optional<TimelineDefinition> definition =
                 TimelineRegistry.current().find(timelineId);
         if (definition.isEmpty()) {
@@ -57,6 +65,9 @@ public final class TimelineServerManager {
     }
 
     public static void tick(MinecraftServer server) {
+        if (!HeraldorSafetyController.allows(server, HeraldorSafetyMode.LIVE)) {
+            return;
+        }
         TimelineSessionData data = TimelineSessionData.get(server);
         if (!data.supportsCurrentSchema()) {
             return;
@@ -124,6 +135,22 @@ public final class TimelineServerManager {
             return true;
         }
         return false;
+    }
+
+    /** Safety cleanup; snapshots targets first so terminal writes cannot disturb iteration. */
+    public static int cancelAll(MinecraftServer server) {
+        TimelineSessionData data = TimelineSessionData.get(server);
+        int cancelled = 0;
+        for (TimelineSession session : data.activeSessions()) {
+            if (cancel(server, session.targetId())) {
+                cancelled++;
+            }
+        }
+        return cancelled;
+    }
+
+    public static int activeCount(MinecraftServer server) {
+        return TimelineSessionData.get(server).activeSessions().size();
     }
 
     public static void onServerStopping(MinecraftServer server) {

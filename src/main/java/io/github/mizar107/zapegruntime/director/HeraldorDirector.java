@@ -6,6 +6,8 @@ import io.github.mizar107.zapegruntime.scene.OsScareReport;
 import io.github.mizar107.zapegruntime.scene.SceneAck;
 import io.github.mizar107.zapegruntime.scene.SceneProfile;
 import io.github.mizar107.zapegruntime.server.SceneServerManager;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyController;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyMode;
 import io.github.mizar107.zapegruntime.story.StoryCampaignDefinition;
 import io.github.mizar107.zapegruntime.story.StoryCampaignRegistry;
 import io.github.mizar107.zapegruntime.story.StoryFactType;
@@ -78,7 +80,27 @@ public final class HeraldorDirector {
         CampaignServantScheduler.clear(server);
     }
 
+    /** Clears only transient scheduling/reconciliation state; durable story evidence is untouched. */
+    public static int clearForSafety(MinecraftServer server) {
+        int cleared = 0;
+        synchronized (reconciliationQueue) {
+            Set<UUID> queued = reconciliationQueue.remove(server);
+            cleared += queued == null ? 0 : queued.size();
+        }
+        synchronized (reconciliationStatus) {
+            Map<UUID, ServantBarrierReconciler.ReconcileResult> statuses =
+                    reconciliationStatus.remove(server);
+            cleared += statuses == null ? 0 : statuses.size();
+        }
+        ServantBarrierReconciler.clear(server);
+        CampaignServantScheduler.clear(server);
+        return cleared;
+    }
+
     public static void tick(MinecraftServer server) {
+        if (!HeraldorSafetyController.allows(server, HeraldorSafetyMode.AUTO)) {
+            return;
+        }
         if (server.getTickCount() % DRIVE_INTERVAL_TICKS != 0) {
             return;
         }
@@ -104,6 +126,9 @@ public final class HeraldorDirector {
             SceneProfile profile,
             SceneAck acknowledgement) {
         if (server == null || identity == null || profile == null || acknowledgement == null) {
+            return;
+        }
+        if (!HeraldorSafetyController.allows(server, HeraldorSafetyMode.AUTO)) {
             return;
         }
         HeraldorDirectorData data = HeraldorDirectorData.get(server);
@@ -140,6 +165,9 @@ public final class HeraldorDirector {
         if (server == null || identity == null || profile == null || report == null) {
             return;
         }
+        if (!HeraldorSafetyController.allows(server, HeraldorSafetyMode.AUTO)) {
+            return;
+        }
         HeraldorDirectorData data = HeraldorDirectorData.get(server);
         Optional<HeraldorDirectorData.DispatchRecord> current = data.record(identity.targetId());
         if (current.isEmpty()
@@ -164,6 +192,9 @@ public final class HeraldorDirector {
             DirectorSceneIdentity identity,
             CancelReason reason) {
         if (server == null || identity == null || reason == null || reason == CancelReason.SERVER_STOP) {
+            return;
+        }
+        if (!HeraldorSafetyController.allows(server, HeraldorSafetyMode.AUTO)) {
             return;
         }
         HeraldorDirectorData data = HeraldorDirectorData.get(server);

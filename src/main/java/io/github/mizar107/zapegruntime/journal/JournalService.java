@@ -2,6 +2,8 @@ package io.github.mizar107.zapegruntime.journal;
 
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
 import io.github.mizar107.zapegruntime.network.SceneNetwork;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyController;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyMode;
 import io.github.mizar107.zapegruntime.story.StoryCampaignDefinition;
 import io.github.mizar107.zapegruntime.story.StoryCampaignRegistry;
 import io.github.mizar107.zapegruntime.story.StoryFactType;
@@ -39,6 +41,12 @@ public final class JournalService {
             ServerPlayer player, JournalGrantPolicy.Mode mode) {
         Objects.requireNonNull(player, "player");
         MinecraftServer server = requireServerThread(player);
+        HeraldorSafetyMode required = mode == JournalGrantPolicy.Mode.AUTOMATIC
+                ? HeraldorSafetyMode.AUTO
+                : HeraldorSafetyMode.LIVE;
+        if (!HeraldorSafetyController.allows(server, required)) {
+            return GrantResult.DATA_UNAVAILABLE;
+        }
         boolean campaignAvailable = StoryCampaignRegistry.current()
                 .find(StoryCampaignRegistry.HERALDOR_CAMPAIGN)
                 .filter(campaign -> campaign.ordinalOf(campaign.entryNodeId()) == 0)

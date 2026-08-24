@@ -4,6 +4,8 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyController;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyMode;
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.commands.CommandSourceStack;
@@ -78,6 +80,12 @@ public final class StoryCommands {
     }
 
     private static int recover(CommandContext<CommandSourceStack> context, String requestedNode) {
+        if (!HeraldorSafetyController.allows(
+                context.getSource().getServer(), HeraldorSafetyMode.LIVE)) {
+            context.getSource().sendFailure(Component.literal(HeraldorSafetyController.denial(
+                    context.getSource().getServer(), HeraldorSafetyMode.LIVE)));
+            return 0;
+        }
         UUID playerId = UuidArgument.getUuid(context, "target_uuid");
         UUID operationId = UuidArgument.getUuid(context, "operation_id");
         Optional<StoryCampaignDefinition> loaded = StoryCampaignRegistry.current()

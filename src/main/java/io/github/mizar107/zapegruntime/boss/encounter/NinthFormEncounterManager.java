@@ -4,6 +4,8 @@ import io.github.mizar107.zapegruntime.boss.api.NinthFormCombatSignal;
 import io.github.mizar107.zapegruntime.boss.api.NinthFormCombatSnapshot;
 import io.github.mizar107.zapegruntime.boss.api.NinthFormEntityGateway;
 import io.github.mizar107.zapegruntime.boss.api.NinthFormPhase;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyController;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyMode;
 import io.github.mizar107.zapegruntime.story.StoryCampaignDefinition;
 import io.github.mizar107.zapegruntime.story.StoryCampaignRegistry;
 import io.github.mizar107.zapegruntime.story.StoryService;
@@ -72,6 +74,12 @@ public final class NinthFormEncounterManager {
             server.execute(() -> onCombatSignal(server, signal));
             return;
         }
+        HeraldorSafetyMode required = signal.identity().rehearsal()
+                ? HeraldorSafetyMode.MANUAL
+                : HeraldorSafetyMode.AUTO;
+        if (!HeraldorSafetyController.allows(server, required)) {
+            return;
+        }
         NinthFormEncounterData data = NinthFormEncounterData.get(server);
         switch (signal.kind()) {
             case PHASE_COMPLETED -> {
@@ -119,6 +127,11 @@ public final class NinthFormEncounterManager {
             UUID entityId) {
         return server != null
                 && server.isSameThread()
+                && HeraldorSafetyController.allows(
+                        server,
+                        identity != null && identity.rehearsal()
+                                ? HeraldorSafetyMode.MANUAL
+                                : HeraldorSafetyMode.AUTO)
                 && NinthFormEncounterData.get(server).acceptsEntity(identity, entityId);
     }
 
@@ -126,6 +139,9 @@ public final class NinthFormEncounterManager {
     public static void queueStoryAdvance(MinecraftServer server, UUID targetId) {
         Objects.requireNonNull(server, "server");
         Objects.requireNonNull(targetId, "targetId");
+        if (!HeraldorSafetyController.allows(server, HeraldorSafetyMode.AUTO)) {
+            return;
+        }
         if (server.isSameThread()) {
             queueTarget(server, targetId);
         } else {
@@ -139,33 +155,39 @@ public final class NinthFormEncounterManager {
                 || server.overworld().getGameTime() % RECONCILE_INTERVAL_TICKS != 0L) {
             return;
         }
+        boolean autoAllowed = HeraldorSafetyController.allows(server, HeraldorSafetyMode.AUTO);
         long gameTick = server.overworld().getGameTime();
-        LinkedHashSet<UUID> work = new LinkedHashSet<>(
-                takeQueuedTargets(server, MAX_TARGETS_PER_RECONCILE));
-        int remaining = MAX_TARGETS_PER_RECONCILE - work.size();
-        work.addAll(retryBook(server).due(gameTick, remaining));
-        remaining = MAX_TARGETS_PER_RECONCILE - work.size();
-        work.addAll(startRetryBook(server).due(gameTick, remaining));
-        for (UUID targetId : work) {
-            List<NinthFormProgressionSync.SyncResult> results =
-                    NinthFormProgressionSync.replayTarget(server, targetId);
-            reconcileProofResults(retryBook(server), targetId, gameTick, results);
-            awardDefeatToast(server, targetId);
-            ServerPlayer target = server.getPlayerList().getPlayer(targetId);
-            if (target != null) {
-                StartResult start = startIfEligible(target);
-                reconcileStartResult(startRetryBook(server), targetId, gameTick, start.status());
-            } else {
-                // Login reconstructs the immediate queue; do not poll an offline
-                // player every reconcile interval.
-                startRetryBook(server).clear(targetId);
+        if (autoAllowed) {
+            LinkedHashSet<UUID> work = new LinkedHashSet<>(
+                    takeQueuedTargets(server, MAX_TARGETS_PER_RECONCILE));
+            int remaining = MAX_TARGETS_PER_RECONCILE - work.size();
+            work.addAll(retryBook(server).due(gameTick, remaining));
+            remaining = MAX_TARGETS_PER_RECONCILE - work.size();
+            work.addAll(startRetryBook(server).due(gameTick, remaining));
+            for (UUID targetId : work) {
+                List<NinthFormProgressionSync.SyncResult> results =
+                        NinthFormProgressionSync.replayTarget(server, targetId);
+                reconcileProofResults(retryBook(server), targetId, gameTick, results);
+                awardDefeatToast(server, targetId);
+                ServerPlayer target = server.getPlayerList().getPlayer(targetId);
+                if (target != null) {
+                    StartResult start = startIfEligible(target);
+                    reconcileStartResult(startRetryBook(server), targetId, gameTick, start.status());
+                } else {
+                    startRetryBook(server).clear(targetId);
+                }
             }
         }
 
         Collection<NinthFormEncounter> active =
                 NinthFormEncounterData.get(server).activeEncounters();
         for (NinthFormEncounter encounter : active) {
-            reconcile(server, encounter.encounterId());
+            HeraldorSafetyMode required = encounter.rehearsal()
+                    ? HeraldorSafetyMode.MANUAL
+                    : HeraldorSafetyMode.AUTO;
+            if (HeraldorSafetyController.allows(server, required)) {
+                reconcile(server, encounter.encounterId());
+            }
         }
     }
 
@@ -180,6 +202,58 @@ public final class NinthFormEncounterManager {
         requireServerThread(server);
         NinthFormEncounterData.get(server).activeFor(targetId)
                 .ifPresent(encounter -> suspendEncounter(server, encounter));
+    }
+
+    /**
+     * Emergency abort. Each record is suspended before its projection is touched and is only
+     * erased after an exact successful/absent discard; failures remain durable and retriable.
+     */
+    public static AbortSummary abortAll(MinecraftServer server) {
+        requireServerThread(server);
+        NinthFormEncounterData data = NinthFormEncounterData.get(server);
+        List<NinthFormEncounter> encounters = List.copyOf(data.activeEncounters());
+        NinthFormEntityGateway gateway = NinthFormGatewayRegistry.current(server);
+        int aborted = 0;
+        int unresolved = 0;
+        for (NinthFormEncounter encounter : encounters) {
+            NinthFormEncounterData.MutationResult suspended =
+                    data.suspend(encounter.identity(), encounter.entityId());
+            if (suspended != NinthFormEncounterData.MutationResult.APPLIED
+                    && suspended != NinthFormEncounterData.MutationResult.IDEMPOTENT) {
+                unresolved++;
+                continue;
+            }
+            NinthFormEntityGateway.ControlResult discarded =
+                    gateway.discardLoaded(encounter.identity(), encounter.entityId());
+            if (discarded.status() != NinthFormEntityGateway.Status.APPLIED
+                    && discarded.status() != NinthFormEntityGateway.Status.NOT_FOUND) {
+                unresolved++;
+                continue;
+            }
+            if (data.abortSuspended(encounter.identity(), encounter.entityId())
+                    == NinthFormEncounterData.MutationResult.APPLIED) {
+                aborted++;
+            } else {
+                unresolved++;
+            }
+        }
+        QUEUED_TARGETS.remove(server);
+        PROOF_RETRIES.remove(server);
+        START_RETRIES.remove(server);
+        return new AbortSummary(aborted, unresolved);
+    }
+
+    public static int activeCount(MinecraftServer server) {
+        requireServerThread(server);
+        return NinthFormEncounterData.get(server).activeEncounters().size();
+    }
+
+    public record AbortSummary(int aborted, int unresolved) {
+        public AbortSummary {
+            if (aborted < 0 || unresolved < 0) {
+                throw new IllegalArgumentException("abort counts cannot be negative");
+            }
+        }
     }
 
     public static void onServerStarted(MinecraftServer server) {
@@ -209,6 +283,14 @@ public final class NinthFormEncounterManager {
             return StartResult.failed(StartStatus.NO_SERVER, "target has no server");
         }
         requireServerThread(server);
+        HeraldorSafetyMode required = rehearsal
+                ? HeraldorSafetyMode.MANUAL
+                : HeraldorSafetyMode.AUTO;
+        if (!HeraldorSafetyController.allows(server, required)) {
+            return StartResult.failed(
+                    StartStatus.DATA_UNAVAILABLE,
+                    HeraldorSafetyController.denial(server, required));
+        }
         if (STOPPING_SERVERS.contains(server)) {
             return StartResult.failed(StartStatus.SERVER_STOPPING, "server is stopping");
         }

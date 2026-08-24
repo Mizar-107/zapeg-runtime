@@ -1,6 +1,8 @@
 package io.github.mizar107.zapegruntime.director;
 
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyController;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyMode;
 import io.github.mizar107.zapegruntime.servant.ServantArchetype;
 import io.github.mizar107.zapegruntime.servant.ServantEncounter;
 import io.github.mizar107.zapegruntime.servant.ServantEncounterData;
@@ -51,6 +53,9 @@ public final class CampaignServantScheduler {
         Objects.requireNonNull(target, "target");
         if (!server.isSameThread()) {
             throw new IllegalStateException("campaign Servant scheduling requires the server thread");
+        }
+        if (!HeraldorSafetyController.allows(server, HeraldorSafetyMode.AUTO)) {
+            return new ScheduleResult(ScheduleStatus.DATA_UNAVAILABLE, null, 0L);
         }
         Optional<Plan> planned = plan(campaign, story, node);
         if (planned.isEmpty() || target.getServer() != server) {

@@ -1,6 +1,8 @@
 package io.github.mizar107.zapegruntime.servant;
 
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyController;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyMode;
 import java.util.Collections;
 import java.util.Optional;
 import java.util.Set;
@@ -60,6 +62,15 @@ public final class ServantEncounterManager {
         MinecraftServer server = target.getServer();
         if (server == null) {
             return StartResult.failed(StartStatus.NO_SERVER, encounterId, "target has no server");
+        }
+        HeraldorSafetyMode required = rehearsal
+                ? HeraldorSafetyMode.MANUAL
+                : HeraldorSafetyMode.LIVE;
+        if (!HeraldorSafetyController.allows(server, required)) {
+            return StartResult.failed(
+                    StartStatus.INVALID_REQUEST,
+                    encounterId,
+                    HeraldorSafetyController.denial(server, required));
         }
         ServantEncounterData data = ServantEncounterData.get(server);
         if (!data.supportsCurrentSchema()) {
@@ -178,6 +189,12 @@ public final class ServantEncounterManager {
         }
         long now = server.overworld().getGameTime();
         for (ServantEncounter encounter : data.activeEncounters()) {
+            HeraldorSafetyMode required = encounter.rehearsal()
+                    ? HeraldorSafetyMode.MANUAL
+                    : HeraldorSafetyMode.LIVE;
+            if (!HeraldorSafetyController.allows(server, required)) {
+                continue;
+            }
             if (encounter.isExpired(now)) {
                 close(server, encounter, CloseReason.EXPIRED);
             }
@@ -186,6 +203,12 @@ public final class ServantEncounterManager {
             return;
         }
         for (ServantEncounter encounter : data.activeEncounters()) {
+            HeraldorSafetyMode required = encounter.rehearsal()
+                    ? HeraldorSafetyMode.MANUAL
+                    : HeraldorSafetyMode.LIVE;
+            if (!HeraldorSafetyController.allows(server, required)) {
+                continue;
+            }
             reconcile(server, encounter);
         }
     }
@@ -196,6 +219,12 @@ public final class ServantEncounterManager {
             return;
         }
         MinecraftServer server = level.getServer();
+        HeraldorSafetyMode required = servant.rehearsal()
+                ? HeraldorSafetyMode.MANUAL
+                : HeraldorSafetyMode.LIVE;
+        if (!HeraldorSafetyController.allows(server, required)) {
+            return;
+        }
         ServantEncounterData data = ServantEncounterData.get(server);
         ServantEncounterData.FinishResult result = data.finishVictory(
                 servant.encounterId(), servant.getUUID(), killerId, servant.archetype());
@@ -258,6 +287,21 @@ public final class ServantEncounterManager {
             CloseReason reason) {
         Optional<ServantEncounter> active = ServantEncounterData.get(server).activeFor(targetId);
         return active.isPresent() && close(server, active.get(), reason);
+    }
+
+    /** Closes all durable active records before discarding their loaded projections. */
+    public static int cancelAll(MinecraftServer server, CloseReason reason) {
+        int closed = 0;
+        for (ServantEncounter encounter : ServantEncounterData.get(server).activeEncounters()) {
+            if (close(server, encounter, reason)) {
+                closed++;
+            }
+        }
+        return closed;
+    }
+
+    public static int activeCount(MinecraftServer server) {
+        return ServantEncounterData.get(server).activeEncounters().size();
     }
 
     public static Optional<ServantEncounter> activeFor(MinecraftServer server, UUID targetId) {

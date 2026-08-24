@@ -1,5 +1,7 @@
 package io.github.mizar107.zapegruntime.story;
 
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyController;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyMode;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,6 +18,11 @@ public final class StoryService {
         Objects.requireNonNull(server, "server");
         Objects.requireNonNull(fact, "fact");
         requireServerThread(server);
+        if (!HeraldorSafetyController.allows(server, HeraldorSafetyMode.AUTO)) {
+            return unavailable(
+                    SubmissionStatus.DATA_UNAVAILABLE,
+                    HeraldorSafetyController.denial(server, HeraldorSafetyMode.AUTO));
+        }
         Optional<StoryCampaignDefinition> campaign =
                 StoryCampaignRegistry.current().find(fact.campaignId());
         if (campaign.isEmpty()) {
@@ -47,6 +54,11 @@ public final class StoryService {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(subject, "subject");
         requireServerThread(server);
+        if (!HeraldorSafetyController.allows(server, HeraldorSafetyMode.AUTO)) {
+            return unavailable(
+                    SubmissionStatus.DATA_UNAVAILABLE,
+                    HeraldorSafetyController.denial(server, HeraldorSafetyMode.AUTO));
+        }
 
         Optional<StoryCampaignDefinition> loaded =
                 StoryCampaignRegistry.current().find(campaignId);

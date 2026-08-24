@@ -1,5 +1,8 @@
 package io.github.mizar107.zapegruntime.servant;
 
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyController;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyMode;
+
 import java.util.UUID;
 import javax.annotation.Nullable;
 import net.minecraft.core.particles.ParticleTypes;
@@ -200,6 +203,18 @@ public final class HeraldorServant extends WitherSkeleton {
         if (!(level() instanceof ServerLevel serverLevel)) {
             super.setTarget(null);
             super.customServerAiStep();
+            return;
+        }
+        HeraldorSafetyMode required = rehearsal
+                ? HeraldorSafetyMode.MANUAL
+                : HeraldorSafetyMode.LIVE;
+        if (!HeraldorSafetyController.allows(serverLevel.getServer(), required)) {
+            // Same-tick backstop for an entity whose manager cleanup has not reached it yet.
+            super.setTarget(null);
+            getNavigation().stop();
+            setDeltaMovement(0.0D, 0.0D, 0.0D);
+            entityData.set(SYNCED_TELEGRAPHING, false);
+            setGlowingTag(false);
             return;
         }
         Player resolved = designatedTargetId == null

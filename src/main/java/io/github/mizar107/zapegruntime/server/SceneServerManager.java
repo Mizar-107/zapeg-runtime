@@ -218,6 +218,9 @@ public final class SceneServerManager {
                 || !target.getUUID().equals(replayIdentity.targetId())) {
             return TimelineDispatchStatus.REJECTED;
         }
+        if (!HeraldorSafetyController.allows(server, HeraldorSafetyMode.LIVE)) {
+            return TimelineDispatchStatus.REJECTED;
+        }
         TimelineReplayData replayData = TimelineReplayData.get(server);
         TimelineReplayData.DispatchClaim claim = replayData.claimForDispatch(
                 replayIdentity, SceneLedgerData.get(server).contains(eventId));
@@ -269,6 +272,12 @@ public final class SceneServerManager {
         MinecraftServer server = target.getServer();
         if (server == null) {
             return failure("server unavailable", eventId);
+        }
+        HeraldorSafetyMode required = directorIdentity != null
+                ? HeraldorSafetyMode.AUTO
+                : rehearsal ? HeraldorSafetyMode.MANUAL : HeraldorSafetyMode.LIVE;
+        if (!HeraldorSafetyController.allows(server, required)) {
+            return failure(HeraldorSafetyController.denial(server, required), eventId);
         }
         if (directorIdentity != null
                 && (!eventId.equals(directorIdentity.eventId())
@@ -515,14 +524,26 @@ public final class SceneServerManager {
     }
 
     public static boolean cancel(CancelReason reason) {
+        return cancelAll(reason) > 0;
+    }
+
+    /** Cancels every in-memory scene and returns the exact number removed. */
+    public static int cancelAll(CancelReason reason) {
         if (activeByTarget.isEmpty()) {
-            return false;
+            return 0;
         }
         MinecraftServer server = net.minecraftforge.server.ServerLifecycleHooks.getCurrentServer();
+        int cancelled = 0;
         for (UUID targetId : new ArrayList<>(activeByTarget.keySet())) {
-            cancelOne(targetId, reason, server);
+            if (cancelOne(targetId, reason, server)) {
+                cancelled++;
+            }
         }
-        return true;
+        return cancelled;
+    }
+
+    public static int activeCount() {
+        return activeByTarget.size();
     }
 
     private static boolean cancelOne(

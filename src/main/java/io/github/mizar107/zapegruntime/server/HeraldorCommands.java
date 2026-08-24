@@ -32,6 +32,7 @@ public final class HeraldorCommands {
             RegisterCommandsEvent event,
             Consumer<LiteralArgumentBuilder<CommandSourceStack>> childAttacher) {
         LiteralArgumentBuilder<CommandSourceStack> root = createRoot();
+        HeraldorSafetyCommands.attach(root);
         StoryCommands.attach(root);
         JournalCommands.attach(root);
         childAttacher.accept(root);

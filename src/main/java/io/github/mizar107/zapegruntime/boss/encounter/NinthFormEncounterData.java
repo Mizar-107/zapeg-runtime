@@ -416,6 +416,23 @@ public final class NinthFormEncounterData extends SavedData {
         return List.copyOf(result);
     }
 
+    /** Removes one exact suspended authority without manufacturing progression proof. */
+    public MutationResult abortSuspended(NinthFormIdentity identity, UUID entityId) {
+        if (!writable()) {
+            return MutationResult.DATA_UNAVAILABLE;
+        }
+        NinthFormEncounter encounter = exactActive(identity, entityId).orElse(null);
+        if (encounter == null) {
+            return MutationResult.IDENTITY_MISMATCH;
+        }
+        if (encounter.lifecycle() != NinthFormEncounter.Lifecycle.SUSPENDED) {
+            return MutationResult.STATE_MISMATCH;
+        }
+        activeByTarget.remove(encounter.targetId());
+        setDirty();
+        return MutationResult.APPLIED;
+    }
+
     public List<NinthFormBarrier> immutableBarriers() {
         if (!writable()) {
             return List.of();
