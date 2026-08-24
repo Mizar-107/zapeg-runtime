@@ -81,6 +81,34 @@ class HeraldorCommandsTest {
                 true, false, false, true, true));
     }
 
+    @Test
+    void safetyStopAndArmUseDifferentTrustBoundaries() {
+        // Direct OP player can inspect, stop, and arm.
+        assertTrue(CommandSourcePolicy.allowsSafetyShape(
+                true, true, true, false, false, false, false));
+        assertTrue(CommandSourcePolicy.allowsSafetyShape(
+                true, true, true, false, false, false, true));
+        // Director RCON can pull the brake, but cannot release it.
+        assertTrue(CommandSourcePolicy.allowsSafetyShape(
+                true, false, false, true, true, false, false));
+        assertFalse(CommandSourcePolicy.allowsSafetyShape(
+                true, false, false, true, true, false, true));
+        // Physical host console can do both through /heraldorsafety.
+        assertTrue(CommandSourcePolicy.allowsSafetyShape(
+                true, false, false, true, false, true, false));
+        assertTrue(CommandSourcePolicy.allowsSafetyShape(
+                true, false, false, true, false, true, true));
+        // Command blocks/redirected identities and under-permissioned sources never qualify.
+        assertFalse(CommandSourcePolicy.allowsSafetyShape(
+                true, false, false, false, false, false, false));
+        assertFalse(CommandSourcePolicy.allowsSafetyShape(
+                false, false, false, true, false, true, false));
+
+        var safety = HeraldorSafetyCommands.createTree("heraldorsafety").build();
+        assertNotNull(safety.getChild("stop"));
+        assertNotNull(safety.getChild("arm"));
+    }
+
     private static EntityArgument playerArgument(CommandNode<CommandSourceStack> branch) {
         var target = assertInstanceOf(
                 ArgumentCommandNode.class,

@@ -37,6 +37,7 @@ public final class HeraldorCommands {
         JournalCommands.attach(root);
         childAttacher.accept(root);
         event.getDispatcher().register(root);
+        HeraldorSafetyCommands.registerDedicated(event);
     }
 
     public static LiteralArgumentBuilder<CommandSourceStack> createRoot() {

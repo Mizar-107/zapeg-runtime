@@ -142,6 +142,57 @@ public final class HeraldorSafetyData extends SavedData {
         return incidentId;
     }
 
+    /** Exact persistence/journal comparison for every piece of mutable safety authority. */
+    AuthoritySnapshot authoritySnapshot() {
+        return new AuthoritySnapshot(
+                configuredMode(), generation, nonce, incidentId, lastNonce, lastRequest);
+    }
+
+    AuthoritySnapshot quarantineBarrierSnapshot() {
+        AuthoritySnapshot current = authoritySnapshot();
+        return new AuthoritySnapshot(
+                HeraldorSafetyMode.QUARANTINED,
+                current.generation(),
+                current.nonce(),
+                current.incidentId(),
+                current.lastNonce(),
+                current.lastRequest());
+    }
+
+    boolean sameAuthorization(HeraldorSafetyData other) {
+        return other != null
+                && writable()
+                && other.writable()
+                && loadedSchemaVersion == other.loadedSchemaVersion
+                && authoritySnapshot().equals(other.authoritySnapshot());
+    }
+
+    boolean exactDuplicate(HeraldorSafetyMode requested, UUID offeredNonce) {
+        return writable()
+                && requested != null
+                && offeredNonce != null
+                && offeredNonce.equals(lastNonce)
+                && requested == lastRequest
+                && configuredMode == requested;
+    }
+
+    TransitionStatus previewTransition(HeraldorSafetyMode requested, UUID offeredNonce) {
+        Objects.requireNonNull(requested, "requested");
+        Objects.requireNonNull(offeredNonce, "offeredNonce");
+        if (!writable()) {
+            return TransitionStatus.DATA_UNAVAILABLE;
+        }
+        if (exactDuplicate(requested, offeredNonce)) {
+            return TransitionStatus.DUPLICATE;
+        }
+        if (!offeredNonce.equals(nonce)) {
+            return TransitionStatus.STALE_NONCE;
+        }
+        return generation == Long.MAX_VALUE
+                ? TransitionStatus.GENERATION_EXHAUSTED
+                : TransitionStatus.APPLIED;
+    }
+
     public SchemaStatus schemaStatus() {
         return new SchemaStatus(
                 loadedSchemaVersion,
@@ -157,19 +208,9 @@ public final class HeraldorSafetyData extends SavedData {
     public TransitionResult transition(HeraldorSafetyMode requested, UUID offeredNonce) {
         Objects.requireNonNull(requested, "requested");
         Objects.requireNonNull(offeredNonce, "offeredNonce");
-        if (!writable()) {
-            return new TransitionResult(TransitionStatus.DATA_UNAVAILABLE, configuredMode(), generation);
-        }
-        if (offeredNonce.equals(lastNonce)
-                && requested == lastRequest
-                && configuredMode == requested) {
-            return new TransitionResult(TransitionStatus.DUPLICATE, configuredMode, generation);
-        }
-        if (!offeredNonce.equals(nonce)) {
-            return new TransitionResult(TransitionStatus.STALE_NONCE, configuredMode, generation);
-        }
-        if (generation == Long.MAX_VALUE) {
-            return new TransitionResult(TransitionStatus.GENERATION_EXHAUSTED, configuredMode, generation);
+        TransitionStatus preview = previewTransition(requested, offeredNonce);
+        if (preview != TransitionStatus.APPLIED) {
+            return new TransitionResult(preview, configuredMode(), generation);
         }
         HeraldorSafetyMode previous = configuredMode;
         lastNonce = nonce;
@@ -288,4 +329,19 @@ public final class HeraldorSafetyData extends SavedData {
 
     public record SchemaStatus(
             int loadedVersion, int currentVersion, boolean writable, String detail) {}
+
+    record AuthoritySnapshot(
+            HeraldorSafetyMode configuredMode,
+            long generation,
+            UUID nonce,
+            UUID incidentId,
+            UUID lastNonce,
+            HeraldorSafetyMode lastRequest) {
+
+        AuthoritySnapshot {
+            Objects.requireNonNull(configuredMode, "configuredMode");
+            Objects.requireNonNull(nonce, "nonce");
+            Objects.requireNonNull(incidentId, "incidentId");
+        }
+    }
 }

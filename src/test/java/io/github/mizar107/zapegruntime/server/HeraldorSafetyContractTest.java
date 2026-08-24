@@ -28,10 +28,14 @@ class HeraldorSafetyContractTest {
     void stopFlushesQuarantineBeforeTheFirstCleanupMutation() throws IOException {
         String source = source("server/HeraldorSafetyController.java");
         int stop = source.indexOf("public static StopOutcome emergencyStop");
-        int flush = source.indexOf("flushSafetyAuthority(server)", stop);
+        int barrier = source.indexOf("data.quarantineBarrierSnapshot()", stop);
+        int mutation = source.indexOf("data.emergencyQuarantine()", stop);
         int cleanup = source.indexOf("cleanup(server, persistenceFailures)", stop);
-        assertTrue(stop >= 0 && flush > stop && cleanup > flush);
-        assertTrue(source.contains("server.overworld().getDataStorage().save()"));
+        assertTrue(stop >= 0 && barrier > stop && mutation > barrier && cleanup > mutation);
+        assertTrue(source.contains("HeraldorSafetyPersistence.flushAndVerify(server, data)"));
+        String persistence = source("server/HeraldorSafetyPersistence.java");
+        assertTrue(persistence.contains("NbtIo.readCompressed"));
+        assertTrue(persistence.contains("channel.force(true)"));
     }
 
     @Test
@@ -45,6 +49,18 @@ class HeraldorSafetyContractTest {
         assertTrue(source("server/SceneServerEvents.java").contains("HeraldorSafetyController.enforce"));
         assertTrue(source("server/SceneServerEvents.java").contains("ServerStartedEvent"));
         assertTrue(source("server/SceneServerEvents.java").contains("HeraldorSafetyController.forget"));
+        String servant = source("servant/ServantProgressionSync.java");
+        assertTrue(servant.contains("HeraldorSafetyMode.AUTO"));
+        String servantManager = source("servant/ServantEncounterManager.java");
+        int servantStartup = servantManager.indexOf("public static void onServerStarted");
+        int startupEnforce = servantManager.indexOf(
+                "HeraldorSafetyController.enforce(server)", servantStartup);
+        int startupReplay = servantManager.indexOf(
+                "ServantProgressionSync.replayAll(server)", servantStartup);
+        assertTrue(servantStartup >= 0 && startupEnforce > servantStartup
+                && startupReplay > startupEnforce);
+        assertTrue(source("servant/HeraldorServant.java").contains("safetyAllowsCombat()"));
+        assertTrue(source("servant/ServantLoadedEntitySweep.java").contains("getAllLevels()"));
     }
 
     private static String source(String relative) throws IOException {

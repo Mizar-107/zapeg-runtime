@@ -188,14 +188,16 @@ public final class HeraldorServant extends WitherSkeleton {
 
     @Override
     public void setTarget(@Nullable LivingEntity candidate) {
-        if (candidate == null || isDesignatedTarget(candidate)) {
+        if (candidate == null || (safetyAllowsCombat() && isDesignatedTarget(candidate))) {
             super.setTarget(candidate);
         }
     }
 
     @Override
     public boolean canAttack(LivingEntity candidate) {
-        return isDesignatedTarget(candidate) && super.canAttack(candidate);
+        return safetyAllowsCombat()
+                && isDesignatedTarget(candidate)
+                && super.canAttack(candidate);
     }
 
     @Override
@@ -205,10 +207,7 @@ public final class HeraldorServant extends WitherSkeleton {
             super.customServerAiStep();
             return;
         }
-        HeraldorSafetyMode required = rehearsal
-                ? HeraldorSafetyMode.MANUAL
-                : HeraldorSafetyMode.LIVE;
-        if (!HeraldorSafetyController.allows(serverLevel.getServer(), required)) {
+        if (!safetyAllowsCombat()) {
             // Same-tick backstop for an entity whose manager cleanup has not reached it yet.
             super.setTarget(null);
             getNavigation().stop();
@@ -242,7 +241,9 @@ public final class HeraldorServant extends WitherSkeleton {
 
     @Override
     public boolean doHurtTarget(Entity victim) {
-        return isDesignatedTarget(victim) && super.doHurtTarget(victim);
+        return safetyAllowsCombat()
+                && isDesignatedTarget(victim)
+                && super.doHurtTarget(victim);
     }
 
     @Override
@@ -286,7 +287,8 @@ public final class HeraldorServant extends WitherSkeleton {
 
     @Override
     public boolean isPreventingPlayerRest(Player player) {
-        return ServantCombatPolicy.preventsRest(designatedTargetId, player.getUUID())
+        return safetyAllowsCombat()
+                && ServantCombatPolicy.preventsRest(designatedTargetId, player.getUUID())
                 && super.isPreventingPlayerRest(player);
     }
 
@@ -359,6 +361,7 @@ public final class HeraldorServant extends WitherSkeleton {
     private boolean canUseLoadedPursuit() {
         LivingEntity target = getTarget();
         if (!(level() instanceof ServerLevel serverLevel)
+                || !safetyAllowsCombat()
                 || target == null
                 || !isDesignatedTarget(target)
                 || !target.isAlive()
@@ -377,6 +380,16 @@ public final class HeraldorServant extends WitherSkeleton {
                         getAttributeValue(Attributes.FOLLOW_RANGE))
                 && ServantLoadedChunks.pathNodesLoaded(
                         serverLevel, getNavigation().getPath());
+    }
+
+    private boolean safetyAllowsCombat() {
+        if (!(level() instanceof ServerLevel serverLevel)) {
+            return false;
+        }
+        HeraldorSafetyMode required = rehearsal
+                ? HeraldorSafetyMode.MANUAL
+                : HeraldorSafetyMode.LIVE;
+        return HeraldorSafetyController.allows(serverLevel.getServer(), required);
     }
 
     private void tickSpecial(ServerLevel level, @Nullable ServerPlayer target) {

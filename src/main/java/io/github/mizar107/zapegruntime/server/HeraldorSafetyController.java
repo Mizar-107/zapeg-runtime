@@ -7,25 +7,47 @@ import io.github.mizar107.zapegruntime.quest.QuestServerEvents;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
 import io.github.mizar107.zapegruntime.servant.ServantEncounterManager;
 import io.github.mizar107.zapegruntime.timeline.TimelineServerManager;
+import java.io.IOException;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.function.IntSupplier;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.level.storage.LevelResource;
 
 /** One fail-closed authority query and one ordered emergency-cleanup coordinator. */
 public final class HeraldorSafetyController {
 
+    /** JVM-local proof that this exact generation was sanitized in this process. */
     private static final Map<MinecraftServer, Long> ENFORCED_GENERATIONS = new WeakHashMap<>();
+    /** Last disk inspection; refreshed by every safety enforcement tick. */
+    private static final Map<MinecraftServer, HeraldorSafetyFuse.Inspection> AUTHORITY_STATES =
+            new WeakHashMap<>();
 
     private HeraldorSafetyController() {}
 
+    /**
+     * Effective permission requires all three authorities: current SavedData, an exact persistent
+     * mirror, and a zero-active cleanup certificate created in this JVM.
+     */
     public static HeraldorSafetyMode effectiveMode(MinecraftServer server) {
         if (server == null) {
             return HeraldorSafetyMode.QUARANTINED;
         }
-        return HeraldorSafetyData.get(server).effectiveMode(HeraldorSafetyCeiling.current());
+        HeraldorSafetyData data = HeraldorSafetyData.get(server);
+        HeraldorSafetyFuse.Inspection authority = authorityState(server);
+        if (!authority.matches(data)) {
+            return HeraldorSafetyMode.QUARANTINED;
+        }
+        HeraldorSafetyMode configured =
+                data.effectiveMode(HeraldorSafetyCeiling.current());
+        if (configured == HeraldorSafetyMode.QUARANTINED
+                || !isEnforced(server, data.generation())) {
+            return HeraldorSafetyMode.QUARANTINED;
+        }
+        return configured;
     }
 
     public static boolean allows(MinecraftServer server, HeraldorSafetyMode required) {
@@ -41,12 +63,32 @@ public final class HeraldorSafetyController {
         Objects.requireNonNull(server, "server");
         HeraldorSafetyData data = HeraldorSafetyData.get(server);
         HeraldorSafetyMode ceiling = HeraldorSafetyCeiling.current();
-        return "heraldor_safety mode=" + data.effectiveMode(ceiling).serializedName()
+        HeraldorSafetyFuse.Inspection authority = authorityState(server);
+        boolean writableAuthority = data.schemaStatus().writable()
+                && authority.matches(data)
+                && isEnforced(server, data.generation());
+        return formatStatus(
+                effectiveMode(server),
+                ceiling,
+                data.generation(),
+                data.nonce(),
+                data.incidentId(),
+                writableAuthority);
+    }
+
+    static String formatStatus(
+            HeraldorSafetyMode mode,
+            HeraldorSafetyMode ceiling,
+            long generation,
+            UUID nonce,
+            UUID incidentId,
+            boolean writable) {
+        return "heraldor_safety mode=" + mode.serializedName()
                 + " ceiling=" + ceiling.serializedName()
-                + " generation=" + data.generation()
-                + " nonce=" + data.nonce()
-                + " incident=" + data.incidentId()
-                + " writable=" + (data.schemaStatus().writable() ? 1 : 0);
+                + " generation=" + generation
+                + " nonce=" + nonce
+                + " incident=" + incidentId
+                + " writable=" + (writable ? 1 : 0);
     }
 
     /** Arms an explicit mode using the current one-time world nonce. */
@@ -55,70 +97,153 @@ public final class HeraldorSafetyController {
         Objects.requireNonNull(server, "server");
         Objects.requireNonNull(requested, "requested");
         Objects.requireNonNull(nonce, "nonce");
+        requireServerThread(server);
         HeraldorSafetyData data = HeraldorSafetyData.get(server);
         HeraldorSafetyMode ceiling = HeraldorSafetyCeiling.current();
-        HeraldorSafetyMode previous = data.effectiveMode(ceiling);
         if (requested == HeraldorSafetyMode.QUARANTINED) {
-            return ActionOutcome.refused("invalid_mode", data, ceiling);
+            return ActionOutcome.refused("invalid_mode", data, ceiling, server);
         }
         if (!ceiling.allows(requested)) {
-            return ActionOutcome.refused("ceiling_refused", data, ceiling);
+            return ActionOutcome.refused("ceiling_refused", data, ceiling, server);
         }
+
+        HeraldorSafetyData.TransitionStatus preview = data.previewTransition(requested, nonce);
+        if (preview != HeraldorSafetyData.TransitionStatus.APPLIED
+                && preview != HeraldorSafetyData.TransitionStatus.DUPLICATE) {
+            return ActionOutcome.refused(
+                    preview.name().toLowerCase(Locale.ROOT), data, ceiling, server);
+        }
+
+        boolean duplicate = preview == HeraldorSafetyData.TransitionStatus.DUPLICATE;
+        long priorGeneration = data.generation();
+        if (duplicate && !isEnforced(server, priorGeneration)) {
+            return ActionOutcome.refused(
+                    "duplicate_cleanup_uncertified", data, ceiling, server);
+        }
+        if (!isEnforced(server, priorGeneration)) {
+            CleanupCounts prerequisite = cleanup(server, 0);
+            if (prerequisite.unresolved() != 0) {
+                clearEnforced(server);
+                return ActionOutcome.refused("cleanup_unresolved", data, ceiling, server);
+            }
+            markEnforced(server, priorGeneration);
+        }
+
+        HeraldorSafetyMode previousConfigured = data.effectiveMode(ceiling);
+        boolean barrierInstalled = false;
+        if (!duplicate && effectiveMode(server) != HeraldorSafetyMode.QUARANTINED) {
+            try {
+                rememberAuthority(server, authorityStore(server).install(
+                        data.quarantineBarrierSnapshot()));
+                barrierInstalled = true;
+            } catch (IOException | RuntimeException failure) {
+                rememberAuthority(
+                        server, HeraldorSafetyFuse.Inspection.unsafe("barrier_install_failed"));
+                ZapeGRuntime.LOGGER.error(
+                        "Failed to install Heraldor arm transition barrier", failure);
+                return ActionOutcome.refused(
+                        "barrier_persistence_failed", data, ceiling, server);
+            }
+        }
+
         HeraldorSafetyData.TransitionResult transition = data.transition(requested, nonce);
         if (!transition.accepted()) {
+            // Preview and mutation are on the same server thread; reaching this branch means an
+            // internal invariant failed. A previously installed barrier remains fail-closed.
+            clearEnforced(server);
             return ActionOutcome.refused(
-                    transition.status().name().toLowerCase(java.util.Locale.ROOT), data, ceiling);
+                    "transition_invariant_failed", data, ceiling, server);
         }
+        if (transition.status() == HeraldorSafetyData.TransitionStatus.APPLIED) {
+            clearEnforced(server);
+        }
+
         try {
-            flushSafetyAuthority(server);
+            HeraldorSafetyPersistence.flushAndVerify(server, data);
         } catch (RuntimeException persistenceFailure) {
+            clearEnforced(server);
+            if (!barrierInstalled) {
+                rememberAuthority(
+                        server, HeraldorSafetyFuse.Inspection.unsafe("saved_data_unverified"));
+            }
             ZapeGRuntime.LOGGER.error(
-                    "Failed to persist Heraldor safety arm; applying emergency quarantine",
-                    persistenceFailure);
-            data.emergencyQuarantine();
-            try {
-                flushSafetyAuthority(server);
-            } catch (RuntimeException quarantineFailure) {
-                ZapeGRuntime.LOGGER.error(
-                        "Failed to persist fallback Heraldor quarantine", quarantineFailure);
-            }
-            cleanup(server, 1);
-            return ActionOutcome.refused("persistence_failed", data, ceiling);
+                    "Failed to persist and verify Heraldor safety arm", persistenceFailure);
+            return ActionOutcome.refused("persistence_failed", data, ceiling, server);
         }
-        if (requested.ordinal() < previous.ordinal()) {
-            CleanupCounts downshiftCleanup = cleanup(server, 0);
-            if (downshiftCleanup.unresolved() == 0) {
-                markEnforced(server, data.generation());
+
+        if (transition.status() == HeraldorSafetyData.TransitionStatus.APPLIED) {
+            if (requested.ordinal() < previousConfigured.ordinal()) {
+                CleanupCounts downshift = cleanup(server, 0);
+                if (downshift.unresolved() != 0) {
+                    clearEnforced(server);
+                    return ActionOutcome.refused("cleanup_unresolved", data, ceiling, server);
+                }
             }
-        } else {
+            // An upshift inherits a certified zero-active predecessor. A downshift just proved
+            // its own cleanup above.
             markEnforced(server, data.generation());
         }
+
+        try {
+            rememberAuthority(server, authorityStore(server).install(data));
+        } catch (IOException | RuntimeException authorityFailure) {
+            rememberAuthority(
+                    server, HeraldorSafetyFuse.Inspection.unsafe("authority_install_failed"));
+            ZapeGRuntime.LOGGER.error(
+                    "Failed to install verified Heraldor arm authority", authorityFailure);
+            // Keep the cleanup certificate: an exact duplicate may retry only the final atomic
+            // install, but effectiveMode remains quarantined until the mirror matches.
+            return ActionOutcome.refused("authority_install_failed", data, ceiling, server);
+        }
+
         return new ActionOutcome(
                 true,
-                transition.status().name().toLowerCase(java.util.Locale.ROOT),
-                data.effectiveMode(ceiling),
+                transition.status().name().toLowerCase(Locale.ROOT),
+                effectiveMode(server),
                 ceiling,
                 data.generation(),
                 data.nonce());
     }
 
     /**
-     * Nonce-free emergency brake. The quarantine authority is synchronously flushed before the
-     * first cancellation call, so a crash at that boundary restarts fail-closed.
+     * Nonce-free emergency brake. A quarantine barrier is atomically installed before SavedData
+     * mutation or cleanup, so every successfully crossed crash boundary restarts fail-closed.
      */
     public static StopOutcome emergencyStop(MinecraftServer server) {
         Objects.requireNonNull(server, "server");
+        requireServerThread(server);
         HeraldorSafetyData data = HeraldorSafetyData.get(server);
-        data.emergencyQuarantine();
         clearEnforced(server);
         int persistenceFailures = 0;
         try {
-            flushSafetyAuthority(server);
-        } catch (RuntimeException failure) {
-            persistenceFailures = 1;
+            rememberAuthority(server, authorityStore(server).install(
+                    data.quarantineBarrierSnapshot()));
+        } catch (IOException | RuntimeException barrierFailure) {
+            persistenceFailures++;
+            rememberAuthority(
+                    server, HeraldorSafetyFuse.Inspection.unsafe("stop_barrier_failed"));
             ZapeGRuntime.LOGGER.error(
-                    "Emergency quarantine could not be flushed before cleanup", failure);
+                    "Emergency quarantine barrier could not be installed", barrierFailure);
         }
+
+        data.emergencyQuarantine();
+        try {
+            rememberAuthority(server, authorityStore(server).install(data));
+        } catch (IOException | RuntimeException authorityFailure) {
+            persistenceFailures++;
+            rememberAuthority(
+                    server, HeraldorSafetyFuse.Inspection.unsafe("stop_authority_failed"));
+            ZapeGRuntime.LOGGER.error(
+                    "Emergency quarantine authority could not be installed", authorityFailure);
+        }
+        try {
+            HeraldorSafetyPersistence.flushAndVerify(server, data);
+        } catch (RuntimeException failure) {
+            persistenceFailures++;
+            ZapeGRuntime.LOGGER.error(
+                    "Emergency quarantine SavedData could not be verified", failure);
+        }
+
         CleanupCounts counts = cleanup(server, persistenceFailures);
         if (counts.unresolved() == 0) {
             markEnforced(server, data.generation());
@@ -129,51 +254,83 @@ public final class HeraldorSafetyController {
     /** Repeats transient cleanup without changing mode, generation, nonce, or incident. */
     public static CleanupOutcome cleanup(MinecraftServer server) {
         Objects.requireNonNull(server, "server");
+        requireServerThread(server);
         CleanupCounts counts = cleanup(server, 0);
         if (counts.unresolved() == 0) {
             markEnforced(server, HeraldorSafetyData.get(server).generation());
+        } else {
+            clearEnforced(server);
         }
         return new CleanupOutcome(effectiveMode(server), counts);
     }
 
     /**
-     * First-END-tick crash recovery. Any generation not observed in this process is sanitized
-     * before it may continue below AUTO; unresolved cleanup is retried on every later END tick.
+     * Startup/event-order barrier. No mode, including AUTO, is admitted in a new JVM until this
+     * exact generation has been verified and all transient authorities have been sanitized.
      */
     public static boolean enforce(MinecraftServer server) {
         Objects.requireNonNull(server, "server");
+        requireServerThread(server);
         HeraldorSafetyData data = HeraldorSafetyData.get(server);
         HeraldorSafetyMode ceiling = HeraldorSafetyCeiling.current();
+        HeraldorSafetyFuse.Inspection diskAuthority = refreshAuthority(server);
         HeraldorSafetyData.TransitionResult ceilingReconciliation =
                 data.reconcileCeiling(ceiling);
-        if (ceilingReconciliation.status() == HeraldorSafetyData.TransitionStatus.APPLIED) {
-            clearEnforced(server);
+
+        if (diskAuthority.matches(data)
+                && ceilingReconciliation.status()
+                        != HeraldorSafetyData.TransitionStatus.APPLIED
+                && isEnforced(server, data.generation())) {
+            return effectiveMode(server) != HeraldorSafetyMode.QUARANTINED;
+        }
+
+        clearEnforced(server);
+        int persistenceFailures = 0;
+        boolean mirrorMismatch = !diskAuthority.matches(data);
+        if (ceilingReconciliation.status() == HeraldorSafetyData.TransitionStatus.APPLIED
+                || mirrorMismatch) {
+            // Missing/corrupt/mismatched authority never heals into an armed mode. Destroy hidden
+            // authority and require a fresh explicit arm.
+            if (data.schemaStatus().writable()
+                    && data.configuredMode() != HeraldorSafetyMode.QUARANTINED) {
+                data.emergencyQuarantine();
+            }
             try {
-                // Destroy hidden authority durably before any cleanup or producer may run.
-                flushSafetyAuthority(server);
-            } catch (RuntimeException failure) {
+                rememberAuthority(server, authorityStore(server).install(data));
+            } catch (IOException | RuntimeException authorityFailure) {
+                persistenceFailures++;
+                rememberAuthority(
+                        server, HeraldorSafetyFuse.Inspection.unsafe("startup_authority_failed"));
                 ZapeGRuntime.LOGGER.error(
-                        "Ceiling-forced Heraldor quarantine could not be flushed", failure);
-                cleanup(server, 1);
-                return false;
+                        "Fail-closed Heraldor startup authority could not be installed",
+                        authorityFailure);
             }
         }
-        long generation = data.generation();
+
+        if (data.schemaStatus().writable()) {
+            try {
+                HeraldorSafetyPersistence.flushAndVerify(server, data);
+            } catch (RuntimeException persistenceFailure) {
+                persistenceFailures++;
+                rememberAuthority(
+                        server, HeraldorSafetyFuse.Inspection.unsafe("startup_saved_data_failed"));
+                ZapeGRuntime.LOGGER.error(
+                        "Heraldor startup safety SavedData could not be verified",
+                        persistenceFailure);
+            }
+        }
+
+        CleanupCounts counts = cleanup(server, persistenceFailures);
+        if (counts.unresolved() == 0) {
+            markEnforced(server, data.generation());
+        }
+        return effectiveMode(server) != HeraldorSafetyMode.QUARANTINED;
+    }
+
+    private static boolean isEnforced(MinecraftServer server, long generation) {
         synchronized (ENFORCED_GENERATIONS) {
-            if (Objects.equals(ENFORCED_GENERATIONS.get(server), generation)) {
-                return data.effectiveMode(ceiling) != HeraldorSafetyMode.QUARANTINED;
-            }
+            return Objects.equals(ENFORCED_GENERATIONS.get(server), generation);
         }
-        HeraldorSafetyMode effective = data.effectiveMode(ceiling);
-        if (effective != HeraldorSafetyMode.AUTO) {
-            CleanupCounts counts = cleanup(server, 0);
-            if (counts.unresolved() == 0) {
-                markEnforced(server, generation);
-            }
-        } else {
-            markEnforced(server, generation);
-        }
-        return effective != HeraldorSafetyMode.QUARANTINED;
     }
 
     private static void markEnforced(MinecraftServer server, long generation) {
@@ -188,48 +345,96 @@ public final class HeraldorSafetyController {
         }
     }
 
-    public static void forget(MinecraftServer server) {
-        if (server != null) {
-            clearEnforced(server);
+    private static HeraldorSafetyFuse authorityStore(MinecraftServer server) {
+        return new HeraldorSafetyFuse(server.getWorldPath(LevelResource.ROOT));
+    }
+
+    private static HeraldorSafetyFuse.Inspection authorityState(MinecraftServer server) {
+        synchronized (AUTHORITY_STATES) {
+            HeraldorSafetyFuse.Inspection known = AUTHORITY_STATES.get(server);
+            if (known != null) {
+                return known;
+            }
+        }
+        return refreshAuthority(server);
+    }
+
+    private static HeraldorSafetyFuse.Inspection refreshAuthority(MinecraftServer server) {
+        HeraldorSafetyFuse.Inspection inspected = authorityStore(server).inspect();
+        rememberAuthority(server, inspected);
+        return inspected;
+    }
+
+    private static void rememberAuthority(
+            MinecraftServer server, HeraldorSafetyFuse.Inspection inspection) {
+        synchronized (AUTHORITY_STATES) {
+            AUTHORITY_STATES.put(server, inspection);
         }
     }
 
-    private static void flushSafetyAuthority(MinecraftServer server) {
-        server.overworld().getDataStorage().save();
+    public static void forget(MinecraftServer server) {
+        if (server == null) {
+            return;
+        }
+        clearEnforced(server);
+        synchronized (AUTHORITY_STATES) {
+            AUTHORITY_STATES.remove(server);
+        }
     }
 
     private static CleanupCounts cleanup(MinecraftServer server, int priorUnresolved) {
         Counter unresolved = new Counter(priorUnresolved);
-        int scenes = safely("scenes", unresolved,
-                () -> SceneServerManager.cancelAll(CancelReason.OPERATOR));
-        int timelines = safely("timelines", unresolved,
-                () -> TimelineServerManager.cancelAll(server));
-        int servants = safely("servants", unresolved,
+        int scenes = safely(
+                "scenes", unresolved, () -> SceneServerManager.cancelAll(CancelReason.OPERATOR));
+        int timelines = safely(
+                "timelines", unresolved, () -> TimelineServerManager.cancelAll(server));
+        int closedServants = safely(
+                "servant records",
+                unresolved,
                 () -> ServantEncounterManager.cancelAll(
                         server, ServantEncounterManager.CloseReason.OPERATOR));
+        int sweptServants = safely(
+                "loaded servant sweep", unresolved, () -> ServantEncounterManager.discardAllLoaded(server));
+        int servants = saturatedAdd(closedServants, sweptServants);
+
         NinthFormEncounterManager.AbortSummary bossSummary;
         try {
             bossSummary = NinthFormEncounterManager.abortAll(server);
-            unresolved.value += bossSummary.unresolved();
+            unresolved.value = saturatedAdd(unresolved.value, bossSummary.unresolved());
         } catch (RuntimeException failure) {
-            unresolved.value++;
+            unresolved.value = saturatedAdd(unresolved.value, 1);
             bossSummary = new NinthFormEncounterManager.AbortSummary(0, 0);
             ZapeGRuntime.LOGGER.error("Heraldor safety cleanup failed for bosses", failure);
         }
         safely("director queues", unresolved, () -> HeraldorDirector.clearForSafety(server));
         safely("quest sessions", unresolved, QuestServerEvents::clearForSafety);
 
-        unresolved.value += safelyCountRemaining("scenes", unresolved, SceneServerManager::activeCount);
-        unresolved.value += safelyCountRemaining(
-                "timelines", unresolved, () -> TimelineServerManager.activeCount(server));
-        unresolved.value += safelyCountRemaining(
-                "servants", unresolved, () -> ServantEncounterManager.activeCount(server));
+        unresolved.value = saturatedAdd(
+                unresolved.value,
+                safelyCountRemaining("scenes", SceneServerManager::activeCount));
+        unresolved.value = saturatedAdd(
+                unresolved.value,
+                safelyCountRemaining(
+                        "timelines", () -> TimelineServerManager.activeCount(server)));
+        unresolved.value = saturatedAdd(
+                unresolved.value,
+                safelyCountRemaining(
+                        "servant records", () -> ServantEncounterManager.activeCount(server)));
+        unresolved.value = saturatedAdd(
+                unresolved.value,
+                safelyCountRemaining(
+                        "loaded servants",
+                        () -> ServantEncounterManager.loadedEntityCount(server)));
 
+        // Best-effort subsystem save. Its IOException is swallowed by vanilla, so it is not used
+        // as a safety certificate. Every new JVM sanitizes all modes again before admission.
         try {
             server.overworld().getDataStorage().save();
-        } catch (RuntimeException failure) {
-            unresolved.value++;
-            ZapeGRuntime.LOGGER.error("Heraldor cleanup state could not be flushed", failure);
+        } catch (RuntimeException unexpectedSaveFailure) {
+            unresolved.value = saturatedAdd(unresolved.value, 1);
+            ZapeGRuntime.LOGGER.error(
+                    "Heraldor cleanup state save raised an unexpected failure",
+                    unexpectedSaveFailure);
         }
         return new CleanupCounts(
                 scenes, timelines, servants, bossSummary.aborted(), unresolved.value);
@@ -239,22 +444,33 @@ public final class HeraldorSafetyController {
         try {
             return Math.max(0, operation.getAsInt());
         } catch (RuntimeException failure) {
-            unresolved.value++;
+            unresolved.value = saturatedAdd(unresolved.value, 1);
             ZapeGRuntime.LOGGER.error(
                     "Heraldor safety cleanup failed for {}", subsystem, failure);
             return 0;
         }
     }
 
-    private static int safelyCountRemaining(
-            String subsystem, Counter unresolved, IntSupplier operation) {
+    private static int safelyCountRemaining(String subsystem, IntSupplier operation) {
         try {
             return Math.max(0, operation.getAsInt());
         } catch (RuntimeException failure) {
-            unresolved.value++;
             ZapeGRuntime.LOGGER.error(
                     "Heraldor safety could not verify {} cleanup", subsystem, failure);
-            return 0;
+            // A failed verification is itself one unresolved item. Returning it keeps the
+            // caller's single saturated addition monotonic and prevents a cleanup certificate.
+            return 1;
+        }
+    }
+
+    private static int saturatedAdd(int left, int right) {
+        long sum = (long) left + right;
+        return sum >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) Math.max(0L, sum);
+    }
+
+    private static void requireServerThread(MinecraftServer server) {
+        if (!server.isSameThread()) {
+            throw new IllegalStateException("Heraldor safety mutation requires the server thread");
         }
     }
 
@@ -262,7 +478,7 @@ public final class HeraldorSafetyController {
         private int value;
 
         private Counter(int value) {
-            this.value = value;
+            this.value = Math.max(0, value);
         }
     }
 
@@ -278,11 +494,14 @@ public final class HeraldorSafetyController {
             UUID nextNonce) {
 
         private static ActionOutcome refused(
-                String reason, HeraldorSafetyData data, HeraldorSafetyMode ceiling) {
+                String reason,
+                HeraldorSafetyData data,
+                HeraldorSafetyMode ceiling,
+                MinecraftServer server) {
             return new ActionOutcome(
                     false,
                     reason,
-                    data.effectiveMode(ceiling),
+                    HeraldorSafetyController.effectiveMode(server),
                     ceiling,
                     data.generation(),
                     data.nonce());

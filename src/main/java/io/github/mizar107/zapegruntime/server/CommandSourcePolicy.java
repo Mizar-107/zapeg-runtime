@@ -26,6 +26,32 @@ public final class CommandSourcePolicy {
                 source.source instanceof RconConsoleSource);
     }
 
+    /** Break-glass stop/status/cleanup authority, including the physical host console. */
+    public static boolean safetyStopper(CommandSourceStack source) {
+        boolean effectivePlayer = source.getEntity() instanceof ServerPlayer;
+        return allowsSafetyShape(
+                source.hasPermission(REQUIRED_PERMISSION_LEVEL),
+                effectivePlayer,
+                effectivePlayer && source.source == source.getEntity(),
+                source.getEntity() == null,
+                source.source instanceof RconConsoleSource,
+                source.getEntity() == null && source.source == source.getServer(),
+                false);
+    }
+
+    /** Arming excludes the campaign Director's RCON credential. */
+    public static boolean safetyArmer(CommandSourceStack source) {
+        boolean effectivePlayer = source.getEntity() instanceof ServerPlayer;
+        return allowsSafetyShape(
+                source.hasPermission(REQUIRED_PERMISSION_LEVEL),
+                effectivePlayer,
+                effectivePlayer && source.source == source.getEntity(),
+                source.getEntity() == null,
+                source.source instanceof RconConsoleSource,
+                source.getEntity() == null && source.source == source.getServer(),
+                true);
+    }
+
     /** Pure policy seam used to exhaustively test source-shape decisions. */
     static boolean allowsTrustedShape(
             boolean hasPermission,
@@ -40,5 +66,29 @@ public final class CommandSourcePolicy {
             return directPlayerSource;
         }
         return entityAbsent && rconSource;
+    }
+
+    /** Pure safety-policy seam for exhaustive source-shape tests. */
+    static boolean allowsSafetyShape(
+            boolean hasPermission,
+            boolean effectivePlayer,
+            boolean directPlayerSource,
+            boolean entityAbsent,
+            boolean rconSource,
+            boolean hostConsole,
+            boolean arming) {
+        if (!hasPermission) {
+            return false;
+        }
+        if (effectivePlayer) {
+            return directPlayerSource;
+        }
+        if (!entityAbsent) {
+            return false;
+        }
+        if (hostConsole) {
+            return true;
+        }
+        return !arming && rconSource;
     }
 }

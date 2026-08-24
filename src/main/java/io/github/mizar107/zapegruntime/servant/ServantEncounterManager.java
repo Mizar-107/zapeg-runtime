@@ -261,9 +261,15 @@ public final class ServantEncounterManager {
      * A later-loaded pre-recovery entity fails the exact entity-UUID match.
      */
     public static boolean acceptsJoinedEntity(HeraldorServant servant, ServerLevel level) {
+        HeraldorSafetyMode required = servant.rehearsal()
+                ? HeraldorSafetyMode.MANUAL
+                : HeraldorSafetyMode.LIVE;
+        if (!HeraldorSafetyController.allows(level.getServer(), required)) {
+            return false;
+        }
         ServantEncounterData data = ServantEncounterData.get(level.getServer());
         if (!data.supportsCurrentSchema()) {
-            return true;
+            return false;
         }
         UUID encounterId = servant.encounterId();
         if (encounterId == null) {
@@ -302,6 +308,14 @@ public final class ServantEncounterManager {
 
     public static int activeCount(MinecraftServer server) {
         return ServantEncounterData.get(server).activeEncounters().size();
+    }
+
+    public static int discardAllLoaded(MinecraftServer server) {
+        return ServantLoadedEntitySweep.discardAll(server);
+    }
+
+    public static int loadedEntityCount(MinecraftServer server) {
+        return ServantLoadedEntitySweep.activeCount(server);
     }
 
     public static Optional<ServantEncounter> activeFor(MinecraftServer server, UUID targetId) {
@@ -343,7 +357,13 @@ public final class ServantEncounterManager {
 
     public static void onServerStarted(MinecraftServer server) {
         STOPPING_SERVERS.remove(server);
-        ServantProgressionSync.replayAll(server);
+        // Forge does not guarantee this subscriber runs after SceneServerEvents. Establish the
+        // startup cleanup certificate here as well so AUTO replay is neither unauthorized nor
+        // accidentally skipped solely because of listener registration order.
+        HeraldorSafetyController.enforce(server);
+        if (HeraldorSafetyController.allows(server, HeraldorSafetyMode.AUTO)) {
+            ServantProgressionSync.replayAll(server);
+        }
     }
 
     public static void onServerStopping(MinecraftServer server) {

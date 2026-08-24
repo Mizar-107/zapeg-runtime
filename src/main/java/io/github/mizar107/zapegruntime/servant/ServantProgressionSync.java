@@ -1,6 +1,8 @@
 package io.github.mizar107.zapegruntime.servant;
 
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyController;
+import io.github.mizar107.zapegruntime.server.HeraldorSafetyMode;
 import io.github.mizar107.zapegruntime.server.HeraldorWorldData;
 import io.github.mizar107.zapegruntime.story.StoryCampaignRegistry;
 import io.github.mizar107.zapegruntime.story.StoryFactType;
@@ -22,6 +24,9 @@ public final class ServantProgressionSync {
      * current node.
      */
     public static void replayAll(MinecraftServer server) {
+        if (!HeraldorSafetyController.allows(server, HeraldorSafetyMode.AUTO)) {
+            return;
+        }
         for (ServantEncounterData.LiveVictory barrier
                 : ServantEncounterData.get(server).liveVictories()) {
             syncLegacyBarrier(server, barrier);
@@ -41,6 +46,9 @@ public final class ServantProgressionSync {
     public static boolean syncLegacyBarrier(
             MinecraftServer server,
             ServantEncounterData.LiveVictory barrier) {
+        if (!HeraldorSafetyController.allows(server, HeraldorSafetyMode.AUTO)) {
+            return false;
+        }
         HeraldorWorldData worldData = HeraldorWorldData.get(server);
         boolean legacyApplied = false;
         try {

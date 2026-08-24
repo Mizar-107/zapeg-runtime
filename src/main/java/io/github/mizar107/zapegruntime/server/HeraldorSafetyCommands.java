@@ -6,6 +6,7 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.UuidArgument;
 import net.minecraft.network.chat.Component;
+import net.minecraftforge.event.RegisterCommandsEvent;
 
 /** Minimal operator surface: inspect, arm with a one-time nonce, or stop without one. */
 public final class HeraldorSafetyCommands {
@@ -14,7 +15,17 @@ public final class HeraldorSafetyCommands {
 
     public static LiteralArgumentBuilder<CommandSourceStack> attach(
             LiteralArgumentBuilder<CommandSourceStack> root) {
-        return root.then(Commands.literal("safety")
+        return root.then(createTree("safety"));
+    }
+
+    /** Host-console alias; the normal /heraldor root intentionally excludes local console. */
+    public static void registerDedicated(RegisterCommandsEvent event) {
+        event.getDispatcher().register(createTree("heraldorsafety"));
+    }
+
+    static LiteralArgumentBuilder<CommandSourceStack> createTree(String literal) {
+        return Commands.literal(literal)
+                .requires(CommandSourcePolicy::safetyStopper)
                 .then(Commands.literal("status")
                         .executes(HeraldorSafetyCommands::status))
                 .then(Commands.literal("stop")
@@ -22,9 +33,10 @@ public final class HeraldorSafetyCommands {
                 .then(Commands.literal("cleanup")
                         .executes(HeraldorSafetyCommands::cleanup))
                 .then(Commands.literal("arm")
+                        .requires(CommandSourcePolicy::safetyArmer)
                         .then(armMode("manual", HeraldorSafetyMode.MANUAL))
                         .then(armMode("live", HeraldorSafetyMode.LIVE))
-                        .then(armMode("auto", HeraldorSafetyMode.AUTO))));
+                        .then(armMode("auto", HeraldorSafetyMode.AUTO)));
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> armMode(
