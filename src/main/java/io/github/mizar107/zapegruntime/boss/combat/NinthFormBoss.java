@@ -36,6 +36,7 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.entity.PartEntity;
 
 /**
@@ -103,6 +104,8 @@ public final class NinthFormBoss extends LivingEntity {
             SynchedEntityData.defineId(NinthFormBoss.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Float> SYNCED_DAMAGE_SCALE =
             SynchedEntityData.defineId(NinthFormBoss.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> SYNCED_ATTACK_YAW =
+            SynchedEntityData.defineId(NinthFormBoss.class, EntityDataSerializers.FLOAT);
 
     private final NinthFormPart[] parts;
     private final ServerBossEvent bossBar = new ServerBossEvent(
@@ -113,7 +116,11 @@ public final class NinthFormBoss extends LivingEntity {
     @Nullable private NinthFormIdentity encounterIdentity;
     private boolean authorityRejected;
     private double healthScale = 1.0D;
-    private Consumer<NinthFormCombatSignal> signalSink = ignored -> {};
+    @Nullable private Consumer<NinthFormCombatSignal> signalSink;
+    @Nullable private Vec3 attackAnchor;
+    private boolean phaseSignalEmitted;
+    private boolean defeatSignalEmitted;
+    private boolean suspendedSignalEmitted;
 
     public NinthFormBoss(EntityType<? extends NinthFormBoss> type, Level level) {
         super(type, level);
@@ -152,6 +159,7 @@ public final class NinthFormBoss extends LivingEntity {
         entityData.define(SYNCED_STARBOARD_HEALTH, 1.0F);
         entityData.define(SYNCED_PARTICIPANTS, 1);
         entityData.define(SYNCED_DAMAGE_SCALE, 1.0F);
+        entityData.define(SYNCED_ATTACK_YAW, Float.NaN);
     }
 
     /** Installs one immutable encounter identity and its authoritative recovery snapshot. */
@@ -164,13 +172,24 @@ public final class NinthFormBoss extends LivingEntity {
         if (request.vitalState().parentHealthFraction() <= 0.0D) {
             throw new IllegalArgumentException("a live Ninth Form requires positive parent health");
         }
+        double expectedScale = NinthFormScaling.healthScale(request.participantCount());
+        if (Math.abs(request.healthScale() - expectedScale) > 1.0E-9D) {
+            throw new IllegalArgumentException("Ninth Form health scale conflicts with participants");
+        }
+        double expectedDamageScale = NinthFormScaling.damageScale(request.participantCount());
+        if (Math.abs(request.damageScale() - expectedDamageScale) > 1.0E-9D) {
+            throw new IllegalArgumentException("Ninth Form damage scale conflicts with participants");
+        }
         encounterIdentity = request.identity();
         authorityRejected = false;
         healthScale = request.healthScale();
+        requirePhaseState(request.phase(), request.combatState().brokenPointMask());
         entityData.set(SYNCED_PHASE, request.phase().ordinal());
         entityData.set(SYNCED_PARTICIPANTS, request.participantCount());
         entityData.set(SYNCED_DAMAGE_SCALE, (float) request.damageScale());
-        applyCombatState(request.combatState(), request.vitalState());
+        applyCombatState(
+                NinthFormRecoveryPolicy.restartAtWindup(request.combatState()),
+                request.vitalState());
 
         AttributeInstance maximum = getAttribute(Attributes.MAX_HEALTH);
         if (maximum == null) {
@@ -189,18 +208,48 @@ public final class NinthFormBoss extends LivingEntity {
         signalSink = Objects.requireNonNull(sink, "sink");
     }
 
-    void emitCombatSignal(NinthFormCombatSignal.Kind kind, NinthFormPhase signalPhase) {
+    boolean hasSignalSink() {
+        return signalSink != null;
+    }
+
+    boolean emitCombatSignal(NinthFormCombatSignal.Kind kind, NinthFormPhase signalPhase) {
         NinthFormIdentity identity = encounterIdentity;
-        if (identity == null || level().isClientSide) {
-            return;
+        Consumer<NinthFormCombatSignal> sink = signalSink;
+        if (identity == null || sink == null || level().isClientSide) {
+            return false;
         }
-        signalSink.accept(new NinthFormCombatSignal(
+        sink.accept(new NinthFormCombatSignal(
                 kind,
                 identity,
                 getUUID(),
                 signalPhase,
                 identity.targetId(),
                 Math.max(0L, level().getGameTime())));
+        return true;
+    }
+
+    boolean phaseSignalEmitted() {
+        return phaseSignalEmitted;
+    }
+
+    void markPhaseSignalEmitted() {
+        phaseSignalEmitted = true;
+    }
+
+    boolean defeatSignalEmitted() {
+        return defeatSignalEmitted;
+    }
+
+    void markDefeatSignalEmitted() {
+        defeatSignalEmitted = true;
+    }
+
+    boolean suspendedSignalEmitted() {
+        return suspendedSignalEmitted;
+    }
+
+    void setSuspendedSignalEmitted(boolean emitted) {
+        suspendedSignalEmitted = emitted;
     }
 
     public boolean identityMatches(NinthFormIdentity expected, UUID entityId) {
@@ -239,6 +288,10 @@ public final class NinthFormBoss extends LivingEntity {
         return entityData.get(SYNCED_DAMAGE_SCALE);
     }
 
+    double healthScale() {
+        return healthScale;
+    }
+
     public double weakPointHealth(NinthFormPartKind kind) {
         return switch (kind) {
             case PROW_LANTERN -> entityData.get(SYNCED_PROW_HEALTH);
@@ -246,6 +299,15 @@ public final class NinthFormBoss extends LivingEntity {
             case STARBOARD_MOORING -> entityData.get(SYNCED_STARBOARD_HEALTH);
             default -> 0.0D;
         };
+    }
+
+    public Optional<Vec3> attackAnchor() {
+        return Optional.ofNullable(attackAnchor);
+    }
+
+    public Optional<Float> attackYaw() {
+        float yaw = entityData.get(SYNCED_ATTACK_YAW);
+        return Float.isFinite(yaw) ? Optional.of(yaw) : Optional.empty();
     }
 
     public NinthFormCombatSnapshot snapshot(long observedGameTick) {
@@ -278,10 +340,16 @@ public final class NinthFormBoss extends LivingEntity {
     }
 
     public boolean transition(NinthFormPhase expected, NinthFormPhase next) {
-        if (combatPhase() != expected || !expected.canAdvanceTo(next)) {
+        if (combatPhase() != expected
+                || !expected.canAdvanceTo(next)
+                || ((next == NinthFormPhase.INTERLUDE
+                                || next == NinthFormPhase.FINAL
+                                || next == NinthFormPhase.BANISHED)
+                        && brokenPointMask() != 0b111)) {
             return false;
         }
         entityData.set(SYNCED_PHASE, next.ordinal());
+        setAttackState(attackCycle(), "idle", 0);
         if (next.terminal()) {
             setHealth(0.0F);
         }
@@ -289,13 +357,112 @@ public final class NinthFormBoss extends LivingEntity {
         return true;
     }
 
-    /** Shell routing seam; deterministic weak-point policy replaces this in the combat commit. */
     boolean hurtPart(NinthFormPartKind kind, DamageSource source, float amount) {
         return encounterIdentity != null
                 && !authorityRejected
-                && amount > 0.0F
-                && Float.isFinite(amount)
-                && super.hurt(source, amount);
+                && NinthFormCombatEngine.hurtPart(this, kind, source, amount);
+    }
+
+    @Override
+    public boolean hurt(DamageSource source, float amount) {
+        return encounterIdentity != null
+                && !authorityRejected
+                && NinthFormCombatEngine.hurtParent(this, source, amount);
+    }
+
+    void setWeakPointHealth(NinthFormPartKind kind, double fraction) {
+        if (!kind.weakPoint()
+                || !Double.isFinite(fraction)
+                || fraction < 0.0D
+                || fraction > 1.0D) {
+            throw new IllegalArgumentException("invalid Ninth Form weak-point vitality");
+        }
+        float synchronizedFraction = (float) fraction;
+        switch (kind) {
+            case PROW_LANTERN -> entityData.set(SYNCED_PROW_HEALTH, synchronizedFraction);
+            case PORT_MOORING -> entityData.set(SYNCED_PORT_HEALTH, synchronizedFraction);
+            case STARBOARD_MOORING ->
+                    entityData.set(SYNCED_STARBOARD_HEALTH, synchronizedFraction);
+            default -> throw new IllegalArgumentException("part is not a weak point");
+        }
+        if (synchronizedFraction == 0.0F) {
+            entityData.set(SYNCED_BROKEN_MASK, brokenPointMask() | kind.weakPointBit());
+        }
+    }
+
+    void applyParentDamage(double amount) {
+        if (!Double.isFinite(amount) || amount <= 0.0D) {
+            throw new IllegalArgumentException("invalid Ninth Form parent damage");
+        }
+        setHealth((float) Math.max(0.0D, getHealth() - amount));
+        updateBossBar();
+        if (getHealth() == 0.0F && combatPhase() == NinthFormPhase.FINAL) {
+            entityData.set(SYNCED_PHASE, NinthFormPhase.BANISHED.ordinal());
+            setAttackState(attackCycle(), "idle", 0);
+            if (!defeatSignalEmitted
+                    && emitCombatSignal(
+                            NinthFormCombatSignal.Kind.DEFEATED,
+                            NinthFormPhase.BANISHED)) {
+                defeatSignalEmitted = true;
+            }
+        }
+    }
+
+    void showDamageFeedback() {
+        hurtTime = 10;
+        hurtDuration = 10;
+        hurtMarked = true;
+        level().broadcastEntityEvent(this, (byte) 2);
+    }
+
+    void setAttackState(long cycle, String attack, int tick) {
+        NinthFormCombatSnapshot.CombatState validated =
+                new NinthFormCombatSnapshot.CombatState(
+                        brokenPointMask(), cycle, attack, tick);
+        entityData.set(SYNCED_ATTACK_CYCLE, validated.attackCycle());
+        entityData.set(SYNCED_ATTACK_ID, validated.attackId());
+        entityData.set(SYNCED_ATTACK_TICK, validated.attackTick());
+        if (tick == 0) {
+            clearAttackAnchor();
+            entityData.set(SYNCED_ATTACK_YAW, Float.NaN);
+        }
+    }
+
+    void lockAttackAnchor(Vec3 anchor) {
+        Objects.requireNonNull(anchor, "anchor");
+        if (!Double.isFinite(anchor.x)
+                || !Double.isFinite(anchor.y)
+                || !Double.isFinite(anchor.z)) {
+            throw new IllegalArgumentException("attack anchor must be finite");
+        }
+        attackAnchor = anchor;
+    }
+
+    void setAttackYaw(float yaw) {
+        if (!Float.isFinite(yaw)) {
+            throw new IllegalArgumentException("attack yaw must be finite");
+        }
+        entityData.set(SYNCED_ATTACK_YAW, yaw);
+        applyAttackYaw(yaw);
+    }
+
+    void applyAttackYaw(float yaw) {
+        if (!Float.isFinite(yaw)) {
+            throw new IllegalArgumentException("attack yaw must be finite");
+        }
+        setYRot(yaw);
+        setYBodyRot(yaw);
+        setYHeadRot(yaw);
+    }
+
+    private void clearAttackAnchor() {
+        attackAnchor = null;
+    }
+
+    void resetAttackToWindup() {
+        if (attackTick() != 0) {
+            setAttackState(attackCycle(), attackId(), 0);
+        }
     }
 
     @Override
@@ -309,6 +476,7 @@ public final class NinthFormBoss extends LivingEntity {
                 return;
             }
             updateBossBar();
+            NinthFormCombatEngine.tick(this, (net.minecraft.server.level.ServerLevel) level());
         }
     }
 
@@ -526,14 +694,23 @@ public final class NinthFormBoss extends LivingEntity {
         if (loadedParticipants < 1 || loadedParticipants > 8) {
             throw new IllegalArgumentException("invalid Ninth Form participant count");
         }
+        if (Math.abs(loadedHealthScale - NinthFormScaling.healthScale(loadedParticipants))
+                > 1.0E-9D) {
+            throw new IllegalArgumentException("Ninth Form participant scale is inconsistent");
+        }
+        if (Math.abs(loadedDamageScale - NinthFormScaling.damageScale(loadedParticipants))
+                > 1.0E-9D) {
+            throw new IllegalArgumentException("Ninth Form damage scale is inconsistent");
+        }
         if (loadedPhase.terminal() != (getHealth() == 0.0F)) {
             throw new IllegalArgumentException("Ninth Form phase conflicts with parent vitality");
         }
+        requirePhaseState(loadedPhase, combat.brokenPointMask());
         healthScale = loadedHealthScale;
         entityData.set(SYNCED_PHASE, loadedPhase.ordinal());
         entityData.set(SYNCED_PARTICIPANTS, loadedParticipants);
         entityData.set(SYNCED_DAMAGE_SCALE, (float) loadedDamageScale);
-        applyCombatState(combat, vitality);
+        applyCombatState(NinthFormRecoveryPolicy.restartAtWindup(combat), vitality);
     }
 
     private void applyCombatState(
@@ -544,9 +721,21 @@ public final class NinthFormBoss extends LivingEntity {
         entityData.set(SYNCED_ATTACK_CYCLE, combat.attackCycle());
         entityData.set(SYNCED_ATTACK_ID, combat.attackId());
         entityData.set(SYNCED_ATTACK_TICK, combat.attackTick());
+        clearAttackAnchor();
+        entityData.set(SYNCED_ATTACK_YAW, Float.NaN);
         entityData.set(SYNCED_PROW_HEALTH, (float) vitality.prowHealthFraction());
         entityData.set(SYNCED_PORT_HEALTH, (float) vitality.portHealthFraction());
         entityData.set(SYNCED_STARBOARD_HEALTH, (float) vitality.starboardHealthFraction());
+    }
+
+    private static void requirePhaseState(NinthFormPhase phase, int brokenMask) {
+        if ((phase == NinthFormPhase.PRELUDE && brokenMask != 0)
+                || ((phase == NinthFormPhase.INTERLUDE
+                                || phase == NinthFormPhase.FINAL
+                                || phase == NinthFormPhase.BANISHED)
+                        && brokenMask != 0b111)) {
+            throw new IllegalArgumentException("Ninth Form phase conflicts with weak-point mask");
+        }
     }
 
     private double healthFraction() {
