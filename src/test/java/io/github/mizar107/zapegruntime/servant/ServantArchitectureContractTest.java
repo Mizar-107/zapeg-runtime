@@ -85,10 +85,13 @@ class ServantArchitectureContractTest {
         String sync = Files.readString(SOURCE_ROOT.resolve("ServantProgressionSync.java"));
         String manager = Files.readString(SOURCE_ROOT.resolve("ServantEncounterManager.java"));
 
-        assertTrue(sync.contains("ServantEncounterData.get(server).liveVictories()"));
         assertTrue(sync.contains("worldData.recordVictory("));
         assertTrue(manager.contains("ServantProgressionSync.replayAll(server)"));
         assertTrue(manager.contains("ServantProgressionSync.syncBarrier("));
+        assertTrue(sync.contains("ServantEncounterData.get(server).liveVictories()"));
+        assertTrue(sync.contains("StoryService.submitIfExpected("));
+        assertTrue(sync.contains("StoryFactType.SERVANT_DEFEATED"));
+        assertTrue(sync.contains("storySubject(barrier.archetype())"));
         assertTrue(sync.contains("barrier.archetype()"));
     }
 

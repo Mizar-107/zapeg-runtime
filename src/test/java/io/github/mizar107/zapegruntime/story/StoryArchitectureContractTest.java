@@ -51,7 +51,9 @@ class StoryArchitectureContractTest {
         assertTrue(fact.contains("long progressEpoch"));
         assertTrue(fact.contains("String expectedNodeId"));
         assertTrue(service.contains("submitIfExpected("));
-        assertTrue(service.contains("hasProcessedFact(playerId, factId)"));
+        assertTrue(fact.contains("replayIdentityFingerprint("));
+        assertTrue(service.contains("preflightReceipt("));
+        assertFalse(service.contains("hasProcessedFact(playerId, factId)"));
         assertTrue(service.contains("StoryFactGate.prepare("));
         assertFalse(allSources.contains("performCommand"));
         assertFalse(allSources.contains("Commands.perform"));

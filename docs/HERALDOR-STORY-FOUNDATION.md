@@ -5,8 +5,9 @@ does not implement the journal screen, servant archetypes, a Director, or the
 boss. Those systems submit evidence through `StoryService`; they do not mutate
 story NBT directly. Durable barrier reconcilers should use
 `StoryService.submitIfExpected`, which leaves out-of-order barriers unconsumed,
-recognizes already processed fact UUIDs, and constructs the epoch-bound fact on
-the server thread. Its top-level result distinguishes applied, already applied,
+recognizes an already processed fact only when its target and payload receipt
+match, and constructs the epoch-bound fact on the server thread. Its top-level
+result distinguishes applied, already applied,
 not expected, state unavailable, capacity exhausted, and fact-ID conflict, so a
 reconciler cannot accidentally treat a refused transition as success.
 
@@ -33,8 +34,11 @@ progress epoch, expected node ID, closed `StoryFactType`, and resource-location
 subject. The engine records every relevant submission before evaluating it. A
 stale-node fact is also recorded, so replaying it after progress changes cannot
 make it valid. Each receipt stores a canonical SHA-256 identity over the fact
-UUID, target UUID, definition, epoch, expected node, type, and subject; UUID
-reuse with another target or payload is a conflict, not a certified replay.
+UUID, target UUID, campaign ID and revision, type, and subject; UUID reuse with
+another target or payload is a conflict, not a certified replay. Recovery epoch
+and expected node guard first consumption but are deliberately excluded from
+the durable replay identity, because receipt preservation across recovery is a
+core invariant.
 Applied state and its receipt live in one `SavedData` mutation.
 
 Persistence is bounded to 2,048 player entries, 256 fact receipts per player,
@@ -45,9 +49,14 @@ story package performs no block, entity, level-position, or chunk query.
 
 ## Save schema and recovery
 
-Current saved-data schema is 2. An empty unversioned root and strict schema 1
-data migrate to schema 2. Unknown versions and malformed current data are kept
-losslessly and made read-only; an in-game command never overwrites that root.
+Current saved-data schema is 2, first shipped by the `0.7.0-b3` artifact; no
+earlier release wrote schema 2, so its stable replay-identity algorithm is part
+of this initial compatibility boundary. An empty unversioned root and strict
+schema 1 data migrate to schema 2. Schema-1 receipts lack payload identities and
+therefore remain preserved but explicitly unverifiable: they fail closed as a
+fact-ID conflict instead of certifying arbitrary payloads. Unknown versions and
+malformed current data are kept losslessly and made read-only; an in-game
+command never overwrites that root.
 Structurally valid but stale or inconsistent player entries can be repaired by
 an explicit, idempotent operation UUID:
 

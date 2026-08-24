@@ -10,9 +10,11 @@ import net.minecraft.resources.ResourceLocation;
 /**
  * Stable, server-authored evidence submitted to the story engine.
  *
- * <p>The recovery epoch and expected node make delayed delivery fail closed.
+ * <p>The recovery epoch and expected node make first delivery fail closed.
  * The fact UUID is a replay key; player identity is always a UUID and never a
- * display name.
+ * display name. Replay identity deliberately describes the underlying durable
+ * evidence rather than the recovery envelope, so a receipt remains authoritative
+ * after an operator recovery rotates the epoch.
  */
 public record StoryFact(
         UUID factId,
@@ -44,16 +46,38 @@ public record StoryFact(
         return new StoryTrigger(type, subject);
     }
 
-    /** Canonical payload identity used to distinguish replay from UUID conflict. */
+    /** Canonical durable-evidence identity used to distinguish replay from UUID conflict. */
     public String identityFingerprint() {
+        return replayIdentityFingerprint(
+                factId, playerId, campaignId, campaignRevision, type, subject);
+    }
+
+    /**
+     * Computes the replay identity before an epoch-bound {@link StoryFact} is
+     * constructed. Epoch and expected node guard first consumption; they are not
+     * part of durable evidence identity because recovery preserves receipts.
+     */
+    public static String replayIdentityFingerprint(
+            UUID factId,
+            UUID playerId,
+            ResourceLocation campaignId,
+            int campaignRevision,
+            StoryFactType type,
+            ResourceLocation subject) {
+        Objects.requireNonNull(factId, "factId");
+        Objects.requireNonNull(playerId, "playerId");
+        Objects.requireNonNull(campaignId, "campaignId");
+        Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(subject, "subject");
+        if (campaignRevision < 1) {
+            throw new IllegalArgumentException("campaign revision must be positive");
+        }
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             append(digest, factId.toString());
             append(digest, playerId.toString());
             append(digest, campaignId.toString());
             append(digest, Integer.toString(campaignRevision));
-            append(digest, Long.toString(progressEpoch));
-            append(digest, expectedNodeId);
             append(digest, type.serializedName());
             append(digest, subject.toString());
             return toHex(digest.digest());

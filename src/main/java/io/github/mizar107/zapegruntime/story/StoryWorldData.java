@@ -255,6 +255,40 @@ public final class StoryWorldData extends SavedData {
         return Optional.of(state != null && state.processedFacts.containsKey(factId));
     }
 
+    /**
+     * Globally classifies a fact UUID without creating player state. A caller
+     * may certify a replay only when both target UUID and payload identity match.
+     */
+    public ReceiptStatus receiptStatus(
+            UUID playerId,
+            UUID factId,
+            ResourceLocation campaignId,
+            int campaignRevision,
+            StoryFactType type,
+            ResourceLocation subject) {
+        Objects.requireNonNull(playerId, "playerId");
+        Objects.requireNonNull(factId, "factId");
+        String offeredIdentity = StoryFact.replayIdentityFingerprint(
+                factId, playerId, campaignId, campaignRevision, type, subject);
+        if (!writable()) {
+            return ReceiptStatus.DATA_UNAVAILABLE;
+        }
+        ReceiptOwner owner = factOwners.get(factId);
+        if (owner == null) {
+            return ReceiptStatus.ABSENT;
+        }
+        if (!owner.playerId().equals(playerId)) {
+            return ReceiptStatus.CONFLICT;
+        }
+        if (owner.identity().equals(LEGACY_FACT_IDENTITY)) {
+            return ReceiptStatus.UNVERIFIABLE;
+        }
+        if (owner.identity().equals(offeredIdentity)) {
+            return ReceiptStatus.EXACT;
+        }
+        return ReceiptStatus.CONFLICT;
+    }
+
     public ApplyResult applyFact(StoryCampaignDefinition campaign, StoryFact fact) {
         Objects.requireNonNull(campaign, "campaign");
         Objects.requireNonNull(fact, "fact");
@@ -290,18 +324,27 @@ public final class StoryWorldData extends SavedData {
                     "persisted player story prefix is inconsistent");
         }
         String factIdentity = fact.identityFingerprint();
-        ReceiptOwner existingReceipt = factOwners.get(fact.factId());
-        if (existingReceipt != null) {
-            boolean samePlayer = existingReceipt.playerId().equals(fact.playerId());
-            boolean sameIdentity = existingReceipt.identity().equals(LEGACY_FACT_IDENTITY)
-                    || existingReceipt.identity().equals(factIdentity);
-            if (!samePlayer || !sameIdentity) {
+        ReceiptStatus receipt = receiptStatus(
+                fact.playerId(),
+                fact.factId(),
+                fact.campaignId(),
+                fact.campaignRevision(),
+                fact.type(),
+                fact.subject());
+        if (receipt != ReceiptStatus.ABSENT) {
+            if (receipt == ReceiptStatus.CONFLICT
+                    || receipt == ReceiptStatus.UNVERIFIABLE) {
                 return new ApplyResult(
                         ApplyStatus.FACT_ID_CONFLICT,
                         state.currentNode,
                         state.currentNode,
-                        "fact UUID was previously bound to another target or payload",
+                        receipt == ReceiptStatus.UNVERIFIABLE
+                                ? "legacy fact receipt cannot prove target and payload identity"
+                                : "fact UUID was previously bound to another target or payload",
                         Optional.of(state.snapshot()));
+            }
+            if (receipt == ReceiptStatus.DATA_UNAVAILABLE) {
+                return ApplyResult.failure(ApplyStatus.DATA_UNAVAILABLE, healthDetail);
             }
             return new ApplyResult(
                     ApplyStatus.DUPLICATE,
@@ -687,6 +730,14 @@ public final class StoryWorldData extends SavedData {
         INVALID_STATE,
         PLAYER_CAPACITY_EXHAUSTED,
         FACT_CAPACITY_EXHAUSTED
+    }
+
+    public enum ReceiptStatus {
+        ABSENT,
+        EXACT,
+        CONFLICT,
+        UNVERIFIABLE,
+        DATA_UNAVAILABLE
     }
 
     public record ApplyResult(

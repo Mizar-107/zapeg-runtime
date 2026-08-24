@@ -21,7 +21,7 @@ class HeraldorDiagnosticsTest {
                 new HeraldorDiagnostics.PlayerDiagnostic(
                         "Mizar__107",
                         playerId,
-                        "0.6.0-b2",
+                        "0.7.0-b3",
                         "9",
                         "minecraft:overworld",
                         "active=0",
@@ -31,7 +31,7 @@ class HeraldorDiagnosticsTest {
         assertEquals(
                 "heraldor target=Mizar__107"
                         + " uuid=12345678-1234-5678-9abc-def012345678"
-                        + " runtime=0.6.0-b2 protocol=9"
+                        + " runtime=0.7.0-b3 protocol=9"
                         + " dimension=minecraft:overworld"
                         + " scene={active=0}"
                         + " state={loaded_schema=1 current_schema=1"
@@ -47,7 +47,7 @@ class HeraldorDiagnosticsTest {
                 new HeraldorDiagnostics.PlayerDiagnostic(
                         "Mizar__107",
                         UUID.fromString("12345678-1234-5678-9abc-def012345678"),
-                        "0.6.0-b2",
+                        "0.7.0-b3",
                         "9",
                         "minecraft:overworld",
                         "active=0",

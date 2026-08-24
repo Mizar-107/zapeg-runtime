@@ -49,6 +49,15 @@ class StoryWorldDataTest {
         assertEquals(
                 StoryWorldData.ApplyStatus.ADVANCED,
                 data.applyFact(campaign, original).status());
+        assertEquals(
+                StoryWorldData.ReceiptStatus.EXACT,
+                data.receiptStatus(
+                        PLAYER,
+                        factId,
+                        original.campaignId(),
+                        original.campaignRevision(),
+                        original.type(),
+                        original.subject()));
 
         StoryNode second = campaign.nodes().get(1);
         StoryFact mutatedPayload = new StoryFact(
@@ -63,6 +72,15 @@ class StoryWorldDataTest {
         assertEquals(
                 StoryWorldData.ApplyStatus.FACT_ID_CONFLICT,
                 data.applyFact(campaign, mutatedPayload).status());
+        assertEquals(
+                StoryWorldData.ReceiptStatus.CONFLICT,
+                data.receiptStatus(
+                        PLAYER,
+                        factId,
+                        mutatedPayload.campaignId(),
+                        mutatedPayload.campaignRevision(),
+                        mutatedPayload.type(),
+                        mutatedPayload.subject()));
 
         UUID anotherPlayer = UUID.fromString("00000000-0000-0000-0000-000000000108");
         StoryNode entry = campaign.nodes().get(0);
@@ -78,7 +96,52 @@ class StoryWorldDataTest {
         assertEquals(
                 StoryWorldData.ApplyStatus.FACT_ID_CONFLICT,
                 data.applyFact(campaign, retargeted).status());
+        assertEquals(
+                StoryWorldData.ReceiptStatus.CONFLICT,
+                data.receiptStatus(
+                        anotherPlayer,
+                        factId,
+                        retargeted.campaignId(),
+                        retargeted.campaignRevision(),
+                        retargeted.type(),
+                        retargeted.subject()));
+        assertEquals(
+                StoryWorldData.ReceiptStatus.ABSENT,
+                data.receiptStatus(
+                        PLAYER,
+                        uuid("not-recorded"),
+                        original.campaignId(),
+                        original.campaignRevision(),
+                        original.type(),
+                        original.subject()));
         assertTrue(data.snapshot(anotherPlayer).isEmpty());
+    }
+
+    @Test
+    void replayIdentitySurvivesRecoveryEnvelopeButBindsPayload() {
+        StoryCampaignDefinition campaign = StoryCampaignTestFixtures.campaign();
+        StoryFact original = matchingFact(campaign, 0, uuid("durable-barrier"), 0L);
+        StoryFact recreatedAfterRecovery = new StoryFact(
+                original.factId(),
+                PLAYER,
+                campaign.id(),
+                campaign.revision(),
+                99L,
+                "operator_recovered_node",
+                original.type(),
+                original.subject());
+        StoryFact mutatedSubject = new StoryFact(
+                original.factId(),
+                PLAYER,
+                campaign.id(),
+                campaign.revision(),
+                99L,
+                "operator_recovered_node",
+                original.type(),
+                StoryCampaignTestFixtures.id("different_subject"));
+
+        assertEquals(original.identityFingerprint(), recreatedAfterRecovery.identityFingerprint());
+        assertFalse(original.identityFingerprint().equals(mutatedSubject.identityFingerprint()));
     }
 
     @Test
@@ -298,6 +361,27 @@ class StoryWorldDataTest {
         assertTrue(migrated.isDirty());
         assertEquals("voice_without_air", migrated.snapshot(PLAYER).orElseThrow().currentNodeId());
         assertEquals(0L, migrated.snapshot(PLAYER).orElseThrow().progressEpoch());
+        StoryFact changedOffer = new StoryFact(
+                uuid("legacy-fact"),
+                PLAYER,
+                campaign.id(),
+                campaign.revision(),
+                0L,
+                campaign.nodes().get(1).id(),
+                StoryFactType.WORLD_DISCOVERY,
+                StoryCampaignTestFixtures.id("changed_legacy_payload"));
+        assertEquals(
+                StoryWorldData.ReceiptStatus.UNVERIFIABLE,
+                migrated.receiptStatus(
+                        changedOffer.playerId(),
+                        changedOffer.factId(),
+                        changedOffer.campaignId(),
+                        changedOffer.campaignRevision(),
+                        changedOffer.type(),
+                        changedOffer.subject()));
+        assertEquals(
+                StoryWorldData.ApplyStatus.FACT_ID_CONFLICT,
+                migrated.applyFact(campaign, changedOffer).status());
         CompoundTag upgraded = migrated.save(new CompoundTag());
         assertEquals(StoryWorldData.CURRENT_SCHEMA_VERSION, upgraded.getInt("SchemaVersion"));
         assertTrue(upgraded.getList("Players", net.minecraft.nbt.Tag.TAG_COMPOUND)

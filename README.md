@@ -25,7 +25,16 @@ world and deployment migration.
 See [docs/BREACH-01.md](docs/BREACH-01.md) for the timing, resource hashes and
 integration contract.
 
-## Batch 3 native Servant archetypes (development)
+## Batch 3 (`0.7.0-b3`) story and native Servants
+
+- a strict datapack defines one linear 30-node hidden-journal campaign. Atomic
+  reload rejects malformed or incomplete graphs instead of publishing a
+  partial story;
+- UUID-scoped progress, definition fingerprints, recovery epochs and
+  target/payload-bound fact receipts are server-authoritative, restart-safe and
+  fail closed on corruption or future schemas;
+- durable encounter barriers feed typed story facts directly. Advisory Forge
+  events and sidecars never advance the campaign;
 
 - `stalker`, `herald`, and `binder` are the complete archetype set. Each uses
   one visible server entity, UUID-owned targeting, shared sound/particle/glow
@@ -42,7 +51,9 @@ integration contract.
   awarding a victory.
 
 See [docs/SERVANT-ARCHETYPES.md](docs/SERVANT-ARCHETYPES.md) for mechanics,
-operator commands, and the durable integration contract.
+operator commands, and the durable integration contract. See
+[docs/HERALDOR-STORY-FOUNDATION.md](docs/HERALDOR-STORY-FOUNDATION.md) for the
+campaign schema, replay identity and recovery contract.
 
 ## Batch 1 (`0.5.0-b1`) compatibility history
 
@@ -351,8 +362,8 @@ See [ROADMAP.md](ROADMAP.md) for the reality-distortion and later combat plan.
 .\gradlew.bat test build
 ```
 
-The Batch-2 artifact is
-`build/libs/zapeg-runtime-forge-1.20.1-0.6.0-b2.jar`. Protocol 9 is
+The Batch-3 artifact is
+`build/libs/zapeg-runtime-forge-1.20.1-0.7.0-b3.jar`. Protocol 9 is
 wire-incompatible: server, tracked
 `overrides/mods` jar and every client artifact must be replaced atomically
 with the same build.

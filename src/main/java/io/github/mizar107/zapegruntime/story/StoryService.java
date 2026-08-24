@@ -62,10 +62,10 @@ public final class StoryService {
                     SubmissionStatus.DATA_UNAVAILABLE,
                     "story saved data is not writable: " + schema.detail());
         }
-        if (data.hasProcessedFact(playerId, factId).orElse(false)) {
-            return unavailable(
-                    SubmissionStatus.ALREADY_PROCESSED,
-                    "durable fact was already processed");
+        Optional<SubmissionResult> receiptResult = preflightReceipt(
+                data, campaign, factId, playerId, type, subject);
+        if (receiptResult.isPresent()) {
+            return receiptResult.get();
         }
 
         StoryFactGate.Decision gate = StoryFactGate.prepare(
@@ -79,6 +79,40 @@ public final class StoryService {
         StoryFact fact = gate.fact().orElseThrow();
         StoryWorldData.ApplyResult applied = data.applyFact(campaign, fact);
         return classifyExpected(applied);
+    }
+
+    /** Pure receipt coordinator kept executable without a live server fixture. */
+    static Optional<SubmissionResult> preflightReceipt(
+            StoryWorldData data,
+            StoryCampaignDefinition campaign,
+            UUID factId,
+            UUID playerId,
+            StoryFactType type,
+            ResourceLocation subject) {
+        Objects.requireNonNull(data, "data");
+        Objects.requireNonNull(campaign, "campaign");
+        StoryWorldData.ReceiptStatus receipt = data.receiptStatus(
+                playerId,
+                factId,
+                campaign.id(),
+                campaign.revision(),
+                type,
+                subject);
+        return switch (receipt) {
+            case ABSENT -> Optional.empty();
+            case EXACT -> Optional.of(unavailable(
+                    SubmissionStatus.ALREADY_PROCESSED,
+                    "durable fact and payload were already processed"));
+            case CONFLICT -> Optional.of(unavailable(
+                    SubmissionStatus.FACT_ID_CONFLICT,
+                    "fact UUID was previously bound to another target or payload"));
+            case UNVERIFIABLE -> Optional.of(unavailable(
+                    SubmissionStatus.FACT_ID_CONFLICT,
+                    "legacy fact receipt cannot prove target and payload identity"));
+            case DATA_UNAVAILABLE -> Optional.of(unavailable(
+                    SubmissionStatus.DATA_UNAVAILABLE,
+                    "story receipt ledger is unavailable"));
+        };
     }
 
     public static Optional<StoryWorldData.PlayerSnapshot> snapshot(
