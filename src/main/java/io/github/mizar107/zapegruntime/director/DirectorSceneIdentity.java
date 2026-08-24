@@ -64,6 +64,18 @@ public record DirectorSceneIdentity(
 
     /** Stable scene seed with the binding variant encoded into the owned audio choices. */
     public long visualSeed() {
+        return authoredVisualSeed(eventId, presentationVariant);
+    }
+
+    /**
+     * Reuses the exact Director presentation-variant encoding without creating
+     * or carrying a Director proof identity.
+     */
+    public static long authoredVisualSeed(UUID eventId, int presentationVariant) {
+        Objects.requireNonNull(eventId, "eventId");
+        if (presentationVariant < 0 || presentationVariant > 15) {
+            throw new IllegalArgumentException("invalid Director presentation variant");
+        }
         long mixed = mix64(eventId.getMostSignificantBits()
                 ^ Long.rotateLeft(eventId.getLeastSignificantBits(), 23));
         return (mixed & ~0xffL) | presentationVariantByte(presentationVariant);

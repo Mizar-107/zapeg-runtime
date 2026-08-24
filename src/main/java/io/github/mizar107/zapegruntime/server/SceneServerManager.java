@@ -3,6 +3,8 @@ package io.github.mizar107.zapegruntime.server;
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
 import io.github.mizar107.zapegruntime.director.DirectorSceneIdentity;
 import io.github.mizar107.zapegruntime.director.HeraldorDirector;
+import io.github.mizar107.zapegruntime.director.VoiceRehearsalManager;
+import io.github.mizar107.zapegruntime.director.VoiceRehearsalPlan;
 import io.github.mizar107.zapegruntime.network.SceneAckC2S;
 import io.github.mizar107.zapegruntime.network.SceneNetwork;
 import io.github.mizar107.zapegruntime.network.OsScareStatusC2S;
@@ -136,6 +138,30 @@ public final class SceneServerManager {
                 hintZ,
                 stage,
                 null,
+                null,
+                null,
+                null);
+    }
+
+    /**
+     * Exact authored Voice presentation with rehearsal authority only. The
+     * descriptor is explicitly rehearsal-marked and carries neither timeline
+     * replay identity nor Director proof identity.
+     */
+    public static DispatchResult dispatchVoiceRehearsal(
+            ServerPlayer target,
+            UUID eventId,
+            VoiceRehearsalPlan plan) {
+        return dispatchInternal(
+                target,
+                eventId,
+                plan.profile(),
+                true,
+                plan.ttlTicks(),
+                null,
+                null,
+                plan.stage(),
+                plan.visualSeed(eventId),
                 null,
                 null,
                 null);
@@ -394,6 +420,8 @@ public final class SceneServerManager {
         }
         activeByTarget.put(
                 sender.getUUID(), current.withAcknowledgement(message.acknowledgement()));
+        VoiceRehearsalManager.onAcknowledgement(
+                sender.getUUID(), message.eventId(), message.acknowledgement());
         ZapeGRuntime.LOGGER.info(
                 "Scene {} acknowledgement={} target={}",
                 message.eventId(),
@@ -516,6 +544,8 @@ public final class SceneServerManager {
         if (server != null && current.directorIdentity != null) {
             HeraldorDirector.onCancelled(server, current.directorIdentity, reason);
         }
+        VoiceRehearsalManager.onCancelled(
+                targetId, current.descriptor.eventId(), reason);
         return true;
     }
 

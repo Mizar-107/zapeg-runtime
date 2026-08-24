@@ -278,6 +278,12 @@ public final class ServantEncounterManager {
                 : -1;
     }
 
+    /** Empty means the durable Servant schema is unsupported, not zero victories. */
+    public static Optional<ServantEncounterData.GlobalVictoryCounts> globalVictoryCounts(
+            MinecraftServer server) {
+        return ServantEncounterData.get(server).globalVictoryCounts();
+    }
+
     public static Optional<HeraldorServant.CombatSnapshot> combatSnapshot(
             MinecraftServer server,
             ServantEncounter encounter) {

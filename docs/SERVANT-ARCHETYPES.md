@@ -33,12 +33,35 @@ argument; names are never interpolated into another command.
 /heraldor servant awaken <target> <stalker|herald|binder> event <uuid>
 /heraldor servant status <target>
 /heraldor servant dismiss <target>
+/heraldor servant victories
 ```
 
 `rehearse` uses a fresh event UUID but never awards progression. `status`
 reports archetype, rehearsal flag, entity/load state, telegraph timing, total
 campaign victories, and durable per-archetype victory counts. The legacy
 `awaken <target> ...` forms remain aliases for Stalker.
+
+`victories` takes no player input and emits exactly one bounded, machine-readable
+line from the durable Servant ledger:
+
+```text
+servant_victories schema=2/2 writable=1 live_victories=3 stalker_victories=1 herald_victories=1 binder_victories=1
+```
+
+The values are global live-victory counts; rehearsals are never included. The
+command exposes no UUIDs or per-player data. If the saved-data schema is newer
+or otherwise unsupported, it fails instead of reporting a misleading zero:
+
+```text
+servant_victories schema=unsupported writable=0
+```
+
+The separate KubeJS `/zapeg-lore servant ...` subtree is retired. The runtime
+cancels that already-parsed subtree and prints the native replacements; it does
+not forward the old command or interpolate its target. Use `/heraldor servant
+rehearse <online_player> stalker` for a safe smoke test, then `/heraldor servant
+status <online_player>` or `/heraldor servant dismiss <online_player>`. Other
+`/zapeg-lore` children are not changed by this migration guard.
 
 ## Loaded-chunk and lifecycle contract
 

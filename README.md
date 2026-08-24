@@ -130,12 +130,16 @@ RCON source (not through `/execute` or a command block):
 ```text
 /heraldor status Mizar__107
 /heraldor diagnose Mizar__107
+/heraldor voice rehearse Mizar__107
+/heraldor voice rehearse Mizar__107 voice_02
+/heraldor voice status Mizar__107
 /heraldor servant status Mizar__107
 /heraldor servant awaken Mizar__107 rehearsal
 /heraldor servant rehearse Mizar__107 stalker
 /heraldor servant rehearse Mizar__107 herald
 /heraldor servant rehearse Mizar__107 binder
 /heraldor servant dismiss Mizar__107
+/heraldor servant victories
 /zapegscene rehearse Mizar__107 visitation_01
 /zapegscene diagnose Mizar__107
 ```
@@ -148,6 +152,30 @@ again. `dismiss` removes either kind without awarding a victory. The visitation
 diagnostic reports each popup/title/motion/taskbar capability, primary result,
 in-game fallback and cleanup independently; packet receipt alone is not an
 `applied` result.
+
+`/heraldor servant victories` is a no-argument, RCON-compatible aggregate over
+the bounded durable victory ledger. Its fixed single-line response includes
+schema/writability plus global live and per-archetype counts; it exposes no
+player identifiers and fails instead of returning zero for an unsupported
+schema.
+
+The old `/zapeg-lore voice rehearse` command tested an optional external
+Discord voice channel and is retired. Its native replacement above rehearses
+the exact target-private `voice_01` or `voice_02` BREACH presentation; omitting
+the final literal selects `voice_01`. It never advances the campaign. For the
+privacy smoke, keep a second client beside the target: only the named target
+may receive the sound/render sequence, while `voice status` must expose the
+event, exact variant, acknowledgement, and whether `VISIBLE` was observed.
+
+The runtime intercepts the retired `/zapeg-lore servant ...` and
+`/zapeg-lore voice ...` subtrees and returns a migration message only. It never
+forwards or rebuilds the command, so a player name cannot become command text.
+Use `/heraldor servant rehearse <online_player> stalker`, `/heraldor servant
+status <online_player>`, or `/heraldor servant dismiss <online_player>` for
+Servant testing. Use `/heraldor voice rehearse <online_player>`, `/heraldor
+voice rehearse <online_player> voice_02`, or `/heraldor voice status
+<online_player>` for Voice testing. Every other `/zapeg-lore` child is left
+unchanged.
 
 ## Batch 2 timeline foundation
 

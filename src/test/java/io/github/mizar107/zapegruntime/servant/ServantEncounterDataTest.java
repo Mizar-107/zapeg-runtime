@@ -89,6 +89,46 @@ class ServantEncounterDataTest {
     }
 
     @Test
+    void globalVictoryCountsIncludeEveryArchetypeAndSurvivePersistence() {
+        ServantEncounterData data = new ServantEncounterData();
+        for (ServantArchetype archetype : ServantArchetype.values()) {
+            ServantEncounter live = encounter(
+                    UUID.randomUUID(), TARGET, UUID.randomUUID(), false, archetype);
+            assertEquals(ServantEncounterData.BeginStatus.STARTED, data.begin(live).status());
+            assertEquals(
+                    ServantEncounterData.FinishResult.LIVE_CREDITED,
+                    data.finishVictory(
+                            live.encounterId(),
+                            live.servantId(),
+                            live.targetId(),
+                            archetype));
+        }
+        ServantEncounter rehearsal = encounter(
+                UUID.randomUUID(), TARGET, UUID.randomUUID(), true, ServantArchetype.STALKER);
+        assertEquals(ServantEncounterData.BeginStatus.STARTED, data.begin(rehearsal).status());
+        assertEquals(
+                ServantEncounterData.FinishResult.REHEARSAL_COMPLETE,
+                data.finishVictory(
+                        rehearsal.encounterId(),
+                        rehearsal.servantId(),
+                        rehearsal.targetId(),
+                        rehearsal.archetype()));
+
+        ServantEncounterData.GlobalVictoryCounts expected =
+                new ServantEncounterData.GlobalVictoryCounts(
+                        ServantEncounterData.CURRENT_SCHEMA_VERSION, 3, 1, 1, 1);
+        ServantEncounterData.GlobalVictoryCounts beforeSave =
+                data.globalVictoryCounts().orElseThrow();
+        assertEquals(expected, beforeSave);
+        for (ServantArchetype archetype : ServantArchetype.values()) {
+            assertEquals(1, beforeSave.forArchetype(archetype));
+        }
+
+        ServantEncounterData loaded = ServantEncounterData.load(data.save(new CompoundTag()));
+        assertEquals(expected, loaded.globalVictoryCounts().orElseThrow());
+    }
+
+    @Test
     void closeAndRehearsalCompletionLeaveEventRetryable() {
         ServantEncounterData data = new ServantEncounterData();
         UUID event = UUID.randomUUID();
@@ -167,6 +207,7 @@ class ServantEncounterDataTest {
         assertEquals(
                 ServantEncounterData.BeginStatus.UNSUPPORTED_SCHEMA,
                 loaded.begin(encounter(UUID.randomUUID(), TARGET, UUID.randomUUID(), false)).status());
+        assertTrue(loaded.globalVictoryCounts().isEmpty());
         CompoundTag preserved = loaded.save(new CompoundTag());
         assertEquals(future, preserved);
         assertEquals("do-not-destroy", preserved.getString("FutureField"));

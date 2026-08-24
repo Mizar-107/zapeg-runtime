@@ -3,6 +3,8 @@ package io.github.mizar107.zapegruntime.server;
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
 import io.github.mizar107.zapegruntime.boss.encounter.NinthFormCommands;
 import io.github.mizar107.zapegruntime.director.DirectorCommands;
+import io.github.mizar107.zapegruntime.director.VoiceCommands;
+import io.github.mizar107.zapegruntime.director.VoiceRehearsalManager;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
 import io.github.mizar107.zapegruntime.servant.ServantCommands;
 import io.github.mizar107.zapegruntime.timeline.TimelineCommands;
@@ -28,6 +30,7 @@ public final class SceneServerEvents {
         SceneCommands.register(event);
         HeraldorCommands.register(event, root -> {
             DirectorCommands.attach(root);
+            VoiceCommands.attach(root);
             ServantCommands.attach(root);
             TimelineCommands.attach(root);
             NinthFormCommands.attach(root);
@@ -54,6 +57,7 @@ public final class SceneServerEvents {
                     event.getEntity().getServer(), event.getEntity().getUUID());
         }
         SceneServerManager.cancelForPlayer(event.getEntity().getUUID(), CancelReason.LOGOUT);
+        VoiceRehearsalManager.clearTarget(event.getEntity().getUUID());
     }
 
     @SubscribeEvent
@@ -65,6 +69,7 @@ public final class SceneServerEvents {
         SceneServerManager.cancelForPlayer(
                 event.getEntity().getUUID(),
                 CancelReason.DIMENSION_CHANGE);
+        VoiceRehearsalManager.clearTarget(event.getEntity().getUUID());
     }
 
     @SubscribeEvent
@@ -74,6 +79,7 @@ public final class SceneServerEvents {
                 TimelineServerManager.onDeath(player.getServer(), player);
             }
             SceneServerManager.cancelForPlayer(player.getUUID(), CancelReason.DEATH);
+            VoiceRehearsalManager.clearTarget(player.getUUID());
         }
     }
 
@@ -81,5 +87,6 @@ public final class SceneServerEvents {
     public static void onServerStopping(ServerStoppingEvent event) {
         TimelineServerManager.onServerStopping(event.getServer());
         SceneServerManager.shutdown();
+        VoiceRehearsalManager.shutdown();
     }
 }

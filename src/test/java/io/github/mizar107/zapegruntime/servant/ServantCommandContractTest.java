@@ -1,14 +1,17 @@
 package io.github.mizar107.zapegruntime.servant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.tree.CommandNode;
+import java.util.Optional;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
-import com.mojang.brigadier.tree.CommandNode;
 import org.junit.jupiter.api.Test;
 
 class ServantCommandContractTest {
@@ -51,7 +54,43 @@ class ServantCommandContractTest {
         }
         assertNotNull(servant.getChild("status"));
         assertNotNull(servant.getChild("dismiss"));
+        CommandNode<CommandSourceStack> victories = servant.getChild("victories");
+        assertNotNull(victories);
+        assertNotNull(victories.getCommand());
+        assertTrue(victories.getChildren().isEmpty(),
+                "aggregate victory query accepts no user input");
+        assertTrue(victories.getRequirement().test(null),
+                "victories adds no child policy and inherits the trusted root");
         assertNotNull(awakenTarget.getChild("rehearsal"),
                 "legacy Stalker rehearsal syntax remains available");
+    }
+
+    @Test
+    void victoryQueryHasOneStrictBoundedSuccessLine() {
+        ServantCommands.VictoryQueryResponse response = ServantCommands.victoryQueryResponse(
+                Optional.of(new ServantEncounterData.GlobalVictoryCounts(
+                        ServantEncounterData.CURRENT_SCHEMA_VERSION, 4, 2, 1, 1)));
+
+        assertTrue(response.success());
+        assertEquals(1, response.commandResult());
+        assertEquals(
+                "servant_victories schema=2/2 writable=1 live_victories=4 "
+                        + "stalker_victories=2 herald_victories=1 binder_victories=1",
+                response.line());
+        assertFalse(response.line().contains("\n"));
+        assertFalse(response.line().contains("\r"));
+        assertFalse(response.line().contains("uuid"));
+    }
+
+    @Test
+    void victoryQueryFailsClosedWhenSchemaIsUnsupported() {
+        ServantCommands.VictoryQueryResponse response =
+                ServantCommands.victoryQueryResponse(Optional.empty());
+
+        assertFalse(response.success());
+        assertEquals(0, response.commandResult());
+        assertEquals(
+                "servant_victories schema=unsupported writable=0",
+                response.line());
     }
 }

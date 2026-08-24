@@ -10,9 +10,9 @@ runtime evidence before the release can be called finished.
 | --- | --- |
 | Version | `1.0.0` |
 | Artifact | `zapeg-runtime-forge-1.20.1-1.0.0.jar` |
-| Size | `1,144,742` bytes |
-| SHA-256 | `BC9A74A7B07376299DD6FCE4EF3654911559A0CAC481A65596921FCE53BDD903` |
-| Automated tests | `522` tests across `126` suites |
+| Size | `1,172,303` bytes |
+| SHA-256 | `1FFBF9CF794F18D29B13A5775DF7C58D16DC80C862BAAC8A943A51F8A9E1DFBE` |
+| Automated tests | `545` tests across `132` suites |
 
 Two clean builds completed successfully. Their release JARs were byte-for-byte
 identical, including the recorded size and SHA-256 above. This establishes exact
@@ -37,7 +37,7 @@ separate RCON gate.
 
 - [x] Version set to `1.0.0`.
 - [x] Two clean builds completed.
-- [x] Automated result recorded: `522` tests in `126` suites.
+- [x] Automated result recorded: `545` tests in `132` suites.
 - [x] Both clean builds produced the exact artifact size and SHA-256 above.
 - [x] Dedicated Forge `47.4.10` server reached `Done`.
 - [x] Dedicated-server resource reload completed.

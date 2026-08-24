@@ -303,6 +303,34 @@ public final class ServantEncounterData extends SavedData {
         return List.copyOf(snapshot);
     }
 
+    /**
+     * Returns one bounded snapshot of every durable live victory.
+     *
+     * <p>An empty result means the on-disk schema is unsupported and must be
+     * treated as unavailable, never as zero victories.</p>
+     */
+    public Optional<GlobalVictoryCounts> globalVictoryCounts() {
+        if (!supportsCurrentSchema()) {
+            return Optional.empty();
+        }
+        int stalkerVictories = 0;
+        int heraldVictories = 0;
+        int binderVictories = 0;
+        for (LiveVictory victory : liveVictoriesByEvent.values()) {
+            switch (victory.archetype()) {
+                case STALKER -> stalkerVictories++;
+                case HERALD -> heraldVictories++;
+                case BINDER -> binderVictories++;
+            }
+        }
+        return Optional.of(new GlobalVictoryCounts(
+                CURRENT_SCHEMA_VERSION,
+                liveVictoriesByEvent.size(),
+                stalkerVictories,
+                heraldVictories,
+                binderVictories));
+    }
+
     public int victoryCount(UUID targetId) {
         if (!supportsCurrentSchema()) {
             return 0;
@@ -396,6 +424,42 @@ public final class ServantEncounterData extends SavedData {
     }
 
     public record BeginResult(BeginStatus status, ServantEncounter encounter) {}
+
+    /** Fixed-width aggregate suitable for diagnostics without player identity disclosure. */
+    public record GlobalVictoryCounts(
+            int schemaVersion,
+            int liveVictories,
+            int stalkerVictories,
+            int heraldVictories,
+            int binderVictories) {
+
+        public GlobalVictoryCounts {
+            if (schemaVersion != CURRENT_SCHEMA_VERSION) {
+                throw new IllegalArgumentException("victory counts require the current schema");
+            }
+            if (liveVictories < 0
+                    || stalkerVictories < 0
+                    || heraldVictories < 0
+                    || binderVictories < 0
+                    || liveVictories > MAX_LIVE_VICTORIES
+                    || stalkerVictories > MAX_LIVE_VICTORIES
+                    || heraldVictories > MAX_LIVE_VICTORIES
+                    || binderVictories > MAX_LIVE_VICTORIES
+                    || liveVictories
+                            != stalkerVictories + heraldVictories + binderVictories) {
+                throw new IllegalArgumentException("invalid victory counts");
+            }
+        }
+
+        public int forArchetype(ServantArchetype archetype) {
+            Objects.requireNonNull(archetype, "archetype");
+            return switch (archetype) {
+                case STALKER -> stalkerVictories;
+                case HERALD -> heraldVictories;
+                case BINDER -> binderVictories;
+            };
+        }
+    }
 
     public record LiveVictory(
             UUID encounterId,

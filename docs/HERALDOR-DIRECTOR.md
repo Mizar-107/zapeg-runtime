@@ -117,6 +117,41 @@ pass continues from the following entry. The cursor cannot starve a finite
 ledger and is reset safely on server stop. Startup performs a complete scan
 again after a restart.
 
+## Voice compatibility rehearsal
+
+The old `/zapeg-lore voice rehearse` operator command queued an optional
+external Discord test-channel clip. That sidecar delivery path is retired; it
+is not a hidden dependency of the native campaign. The supported replacement
+rehearses the exact in-game, target-private BREACH binding already used by the
+automatic Director:
+
+```text
+/heraldor voice rehearse <online_player>
+/heraldor voice rehearse <online_player> voice_01
+/heraldor voice rehearse <online_player> voice_02
+/heraldor voice status <online_player>
+```
+
+The short form selects `voice_01`. The two literals are a closed allowlist and
+resolve the current published Heraldor catalog, including its exact TTL, stage,
+and presentation variant. A missing, changed-to-non-BREACH, or otherwise
+invalid binding fails closed. The generated event is always marked rehearsal
+and carries neither Director proof identity nor timeline replay identity, so
+`VISIBLE`, `TIMEOUT`, expiry, and operator cancellation cannot submit a story
+fact or consume live campaign proof.
+
+Status retains one bounded JVM-local outcome per target. `RECEIVED` means only
+that the client decoded the packet; `visible=1` is reported only after its
+accepted `VISIBLE` acknowledgement, and terminal timeout/rejection/cancellation
+remain distinguishable. Logout, death, dimension change, and server stop clear
+the target's retained result. A repeated command preserves the active
+rehearsal, and any unrelated active scene is reported busy rather than replaced.
+
+Privacy smoke: join with the target and a nearby observer, run both variants,
+then query status during and after each sequence. Only the named target may hear
+or render it. The observer must receive no Voice scene, and rehearsals must
+leave the target's Director/story status unchanged.
+
 ## Operator diagnostics
 
 The commands are read-only, trusted-root children and accept UUIDs only:

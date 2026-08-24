@@ -73,6 +73,8 @@ public final class ServantCommands {
                 .then(Commands.literal("dismiss")
                         .then(Commands.argument("target", EntityArgument.player())
                                 .executes(ServantCommands::dismiss)))
+                .then(Commands.literal("victories")
+                        .executes(ServantCommands::victories))
                 .then(Commands.literal("status")
                         .then(Commands.argument("target", EntityArgument.player())
                                 .executes(ServantCommands::status))));
@@ -119,6 +121,35 @@ public final class ServantCommands {
                 false);
         audit(context.getSource(), "dismiss", target, null, null, Boolean.toString(removed));
         return removed ? 1 : 0;
+    }
+
+    private static int victories(CommandContext<CommandSourceStack> context) {
+        VictoryQueryResponse response = victoryQueryResponse(
+                ServantEncounterManager.globalVictoryCounts(context.getSource().getServer()));
+        Component reply = Component.literal(response.line());
+        if (response.success()) {
+            context.getSource().sendSuccess(() -> reply, false);
+        } else {
+            context.getSource().sendFailure(reply);
+        }
+        return response.commandResult();
+    }
+
+    static VictoryQueryResponse victoryQueryResponse(
+            Optional<ServantEncounterData.GlobalVictoryCounts> counts) {
+        if (counts.isEmpty()) {
+            return new VictoryQueryResponse(
+                    false, "servant_victories schema=unsupported writable=0");
+        }
+        ServantEncounterData.GlobalVictoryCounts value = counts.get();
+        return new VictoryQueryResponse(
+                true,
+                "servant_victories schema=" + value.schemaVersion()
+                        + "/" + ServantEncounterData.CURRENT_SCHEMA_VERSION
+                        + " writable=1 live_victories=" + value.liveVictories()
+                        + " stalker_victories=" + value.stalkerVictories()
+                        + " herald_victories=" + value.heraldVictories()
+                        + " binder_victories=" + value.binderVictories());
     }
 
     private static int status(CommandContext<CommandSourceStack> context)
@@ -190,5 +221,18 @@ public final class ServantCommands {
                 encounterId,
                 archetype == null ? "none" : archetype.id(),
                 result);
+    }
+
+    record VictoryQueryResponse(boolean success, String line) {
+
+        VictoryQueryResponse {
+            if (line == null || line.isBlank() || line.contains("\n") || line.contains("\r")) {
+                throw new IllegalArgumentException("victory query response must be one line");
+            }
+        }
+
+        int commandResult() {
+            return success ? 1 : 0;
+        }
     }
 }
