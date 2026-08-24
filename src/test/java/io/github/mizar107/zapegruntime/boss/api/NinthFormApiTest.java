@@ -43,16 +43,24 @@ class NinthFormApiTest {
         NinthFormCombatSnapshot snapshot = new NinthFormCombatSnapshot(
                 IDENTITY, ENTITY, NinthFormPhase.FIRST, "minecraft:overworld",
                 10.0D, 64.0D, -10.0D, 450.0D, 900.0D, 8,
-                new NinthFormCombatSnapshot.CombatState(0b011, 7L, "keel_sweep", 18), 42L);
+                new NinthFormCombatSnapshot.CombatState(0b011, 7L, "keel_sweep", 18),
+                new NinthFormCombatSnapshot.VitalState(0.5D, 0.0D, 0.0D, 0.4D),
+                42L);
         assertEquals(8, snapshot.participantCount());
         assertThrows(IllegalArgumentException.class, () -> new NinthFormCombatSnapshot(
                 IDENTITY, ENTITY, NinthFormPhase.FIRST, "minecraft:overworld",
                 10.0D, 64.0D, -10.0D, 901.0D, 900.0D, 1,
-                new NinthFormCombatSnapshot.CombatState(0, 0L, "idle", 0), 42L));
+                new NinthFormCombatSnapshot.CombatState(0, 0L, "idle", 0),
+                NinthFormCombatSnapshot.VitalState.pristine(), 42L));
         assertThrows(IllegalArgumentException.class, () -> new NinthFormCombatSnapshot(
                 IDENTITY, ENTITY, NinthFormPhase.BANISHED, "minecraft:overworld",
                 10.0D, 64.0D, -10.0D, 1.0D, 900.0D, 1,
-                new NinthFormCombatSnapshot.CombatState(0b111, 10L, "idle", 0), 42L));
+                new NinthFormCombatSnapshot.CombatState(0b111, 10L, "idle", 0),
+                new NinthFormCombatSnapshot.VitalState(0.0D, 0.0D, 0.0D, 0.0D),
+                42L));
+        assertThrows(IllegalArgumentException.class, () -> new NinthFormCombatSnapshot.VitalState(
+                        0.5D, 0.0D, 0.5D, 0.5D)
+                .validateMask(0));
     }
 
     @Test
@@ -64,7 +72,8 @@ class NinthFormApiTest {
         NinthFormEntityGateway.SpawnRequest request = new NinthFormEntityGateway.SpawnRequest(
                 IDENTITY, ENTITY, "minecraft:overworld", 0.0D, 70.0D, 0.0D,
                 NinthFormPhase.FINAL, 4, 1.75D, 1.30D,
-                new NinthFormCombatSnapshot.CombatState(0b111, 4L, "idle", 0));
+                new NinthFormCombatSnapshot.CombatState(0b111, 4L, "idle", 0),
+                new NinthFormCombatSnapshot.VitalState(0.6D, 0.0D, 0.0D, 0.0D));
         assertEquals(4, request.participantCount());
     }
 

@@ -34,7 +34,8 @@ public interface NinthFormEntityGateway {
             int participantCount,
             double healthScale,
             double damageScale,
-            NinthFormCombatSnapshot.CombatState combatState) {
+            NinthFormCombatSnapshot.CombatState combatState,
+            NinthFormCombatSnapshot.VitalState vitalState) {
 
         public SpawnRequest {
             Objects.requireNonNull(identity, "identity");
@@ -58,6 +59,8 @@ public interface NinthFormEntityGateway {
             requireScale(healthScale, "healthScale");
             requireScale(damageScale, "damageScale");
             Objects.requireNonNull(combatState, "combatState");
+            Objects.requireNonNull(vitalState, "vitalState");
+            vitalState.validateMask(combatState.brokenPointMask());
         }
 
         private static void requireCoordinate(double value, String name) {
