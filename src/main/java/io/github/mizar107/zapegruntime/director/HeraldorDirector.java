@@ -75,6 +75,7 @@ public final class HeraldorDirector {
             reconciliationStatus.remove(server);
         }
         ServantBarrierReconciler.clear(server);
+        CampaignServantScheduler.clear(server);
     }
 
     public static void tick(MinecraftServer server) {
@@ -237,14 +238,22 @@ public final class HeraldorDirector {
         Optional<StoryWorldData.PlayerSnapshot> snapshot = StoryService.snapshot(
                 server, target.getUUID());
         if (loaded.isEmpty() || snapshot.isEmpty()) {
+            CampaignServantScheduler.clearTarget(server, target.getUUID());
             return;
         }
         StoryCampaignDefinition campaign = loaded.get();
         StoryNode node = campaign.node(snapshot.get().currentNodeId());
-        if (node == null
-                || node.terminal()
-                || (node.advanceOn().type() != StoryFactType.SCENE_COMPLETED
-                        && node.advanceOn().type() != StoryFactType.SCENE_PRESENTED)) {
+        if (node == null || node.terminal()) {
+            CampaignServantScheduler.clearTarget(server, target.getUUID());
+            return;
+        }
+        if (node.advanceOn().type() == StoryFactType.SERVANT_DEFEATED) {
+            CampaignServantScheduler.drive(server, target, campaign, snapshot.get(), node);
+            return;
+        }
+        CampaignServantScheduler.clearTarget(server, target.getUUID());
+        if (node.advanceOn().type() != StoryFactType.SCENE_COMPLETED
+                && node.advanceOn().type() != StoryFactType.SCENE_PRESENTED) {
             return;
         }
         Optional<DirectorSceneBinding> binding = DirectorSceneRegistry.current()

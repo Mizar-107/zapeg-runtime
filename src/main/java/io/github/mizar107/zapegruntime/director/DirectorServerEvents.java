@@ -44,6 +44,32 @@ public final class DirectorServerEvents {
     }
 
     @SubscribeEvent
+    public static void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity().getServer() != null) {
+            CampaignServantScheduler.clearTarget(
+                    event.getEntity().getServer(), event.getEntity().getUUID());
+        }
+    }
+
+    @SubscribeEvent
+    public static void onPlayerChangedDimension(PlayerEvent.PlayerChangedDimensionEvent event) {
+        if (event.getEntity().getServer() != null) {
+            CampaignServantScheduler.clearTarget(
+                    event.getEntity().getServer(), event.getEntity().getUUID());
+        }
+    }
+
+    @SubscribeEvent
+    public static void onPlayerClone(PlayerEvent.Clone event) {
+        if (event.getEntity().getServer() != null) {
+            CampaignServantScheduler.clearTarget(
+                    event.getEntity().getServer(), event.getOriginal().getUUID());
+            CampaignServantScheduler.clearTarget(
+                    event.getEntity().getServer(), event.getEntity().getUUID());
+        }
+    }
+
+    @SubscribeEvent
     public static void onServerStarted(ServerStartedEvent event) {
         HeraldorDirector.onServerStarted(event.getServer());
     }

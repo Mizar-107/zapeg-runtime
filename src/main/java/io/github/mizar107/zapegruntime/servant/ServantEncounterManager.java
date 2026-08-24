@@ -157,9 +157,9 @@ public final class ServantEncounterManager {
         }
 
         ZapeGRuntime.LOGGER.info(
-                "Servant started encounter={} target={} entity={} archetype={} rehearsal={} deadline={}",
+                "Servant started encounter={} target_uuid={} entity={} archetype={} rehearsal={} deadline={}",
                 encounterId,
-                target.getGameProfile().getName(),
+                target.getUUID(),
                 servant.getUUID(),
                 archetype.id(),
                 rehearsal,

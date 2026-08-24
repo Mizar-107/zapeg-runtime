@@ -6,10 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.google.gson.JsonParser;
 import io.github.mizar107.zapegruntime.director.DirectorSceneCatalog;
 import io.github.mizar107.zapegruntime.director.DirectorSceneJsonParser;
+import io.github.mizar107.zapegruntime.director.CampaignServantScheduler;
 import io.github.mizar107.zapegruntime.journal.JournalAction;
 import io.github.mizar107.zapegruntime.quest.QuestAction;
-import io.github.mizar107.zapegruntime.servant.ServantArchetype;
-import io.github.mizar107.zapegruntime.servant.ServantProgressionSync;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
@@ -38,10 +37,8 @@ class StoryProducerCoverageTest {
             assertTrue(produced.add(new StoryTrigger(
                     StoryFactType.JOURNAL_DISCOVERY, action.subject())), action.name());
         }
-        for (ServantArchetype archetype : ServantArchetype.values()) {
-            assertTrue(produced.add(new StoryTrigger(
-                    StoryFactType.SERVANT_DEFEATED,
-                    ServantProgressionSync.storySubject(archetype))), archetype.name());
+        for (StoryTrigger trigger : CampaignServantScheduler.automaticTriggers()) {
+            assertTrue(produced.add(trigger), trigger.toString());
         }
         DirectorSceneCatalog director = director();
         for (StoryTrigger trigger : director.bindings().keySet()) {

@@ -104,12 +104,30 @@ class DirectorArchitectureContractTest {
             throws IOException {
         String director = source("director", "HeraldorDirector.java");
         String reconciler = source("director", "ServantBarrierReconciler.java");
+        String scheduler = source("director", "CampaignServantScheduler.java");
         assertTrue(director.contains("ScanMode.FULL"));
         assertTrue(director.contains("ScanMode.CURSOR"));
         assertTrue(reconciler.contains("PERIODIC_SCAN_BUDGET = 64"));
         assertTrue(reconciler.contains("MAX_CHAINED_ADVANCES = 4"));
         assertTrue(reconciler.contains("ReconcileStatus.SCAN_LIMIT"));
         assertTrue(director.contains("servant_reconcile="));
+        assertTrue(director.indexOf("ServantBarrierReconciler.reconcile(")
+                        < director.indexOf("CampaignServantScheduler.drive("),
+                "durable victories must reconcile before automatic scheduling");
+        assertTrue(scheduler.contains("ServantEncounterData.get(server)"));
+        assertTrue(scheduler.contains("data.activeFor(target.getUUID())"));
+        assertTrue(scheduler.contains("data.liveVictory(plan.encounterId())"));
+        assertTrue(scheduler.contains("ServantEncounterManager.awaken("));
+        assertFalse(scheduler.contains("cancelForTarget("));
+        assertFalse(scheduler.contains("getChunk("));
+        assertFalse(scheduler.contains("performCommand"));
+        assertFalse(scheduler.contains("getGameProfile().getName()"));
+        String events = source("director", "DirectorServerEvents.java");
+        assertTrue(events.contains("PlayerLoggedOutEvent"));
+        assertTrue(events.contains("PlayerChangedDimensionEvent"));
+        assertTrue(events.contains("PlayerEvent.Clone"));
+        assertTrue(events.contains("CampaignServantScheduler.clearTarget("));
+        assertTrue(director.contains("CampaignServantScheduler.clear(server)"));
     }
 
     @Test
