@@ -1,6 +1,7 @@
 package io.github.mizar107.zapegruntime.quest;
 
 import io.github.mizar107.zapegruntime.story.StoryService;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -34,6 +35,7 @@ import net.minecraft.world.level.block.TripWireHookBlock;
 import net.minecraft.world.level.block.entity.BellBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.entity.EntityTypeTest;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.eventbus.api.Event;
@@ -42,6 +44,7 @@ import net.minecraftforge.eventbus.api.Event;
 final class QuestActionManager {
 
     static final int MAX_TRACKED_PLAYERS = 2_048;
+    static final int MAX_WITNESS_RESULTS = 9;
 
     private static final BoundedPlayerState<Session> SESSIONS =
             new BoundedPlayerState<>(MAX_TRACKED_PLAYERS);
@@ -248,11 +251,16 @@ final class QuestActionManager {
                 || !player.getUseItem().is(Items.SPYGLASS)) {
             return null;
         }
-        int witnesses = level.getEntitiesOfClass(
-                        ArmorStand.class,
-                        player.getBoundingBox().inflate(5.0D),
-                        stand -> stand.isAlive() && stand.distanceToSqr(player) <= 25.0D)
-                .size();
+        // Nine is a hard result cap: the predicate only distinguishes exactly
+        // eight from every larger crowd, so allocating a tenth witness is waste.
+        List<ArmorStand> nearby = new ArrayList<>(MAX_WITNESS_RESULTS);
+        level.getEntities(
+                EntityTypeTest.forClass(ArmorStand.class),
+                player.getBoundingBox().inflate(5.0D),
+                stand -> stand.isAlive() && stand.distanceToSqr(player) <= 25.0D,
+                nearby,
+                MAX_WITNESS_RESULTS);
+        int witnesses = nearby.size();
         if (witnesses != 8) {
             return null;
         }

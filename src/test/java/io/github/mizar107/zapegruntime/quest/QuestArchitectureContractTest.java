@@ -39,8 +39,12 @@ class QuestArchitectureContractTest {
         String manager = Files.readString(SOURCE_ROOT.resolve("QuestActionManager.java"));
 
         assertTrue(manager.contains("level.hasChunkAt(pos)"));
-        assertTrue(manager.contains("getEntitiesOfClass("));
+        assertTrue(manager.contains("EntityTypeTest.forClass(ArmorStand.class)"));
         assertTrue(manager.contains("player.getBoundingBox().inflate(5.0D)"));
+        assertTrue(manager.contains("MAX_WITNESS_RESULTS = 9"));
+        assertTrue(manager.contains("new ArrayList<>(MAX_WITNESS_RESULTS)"));
+        assertTrue(manager.contains("MAX_WITNESS_RESULTS);"));
+        assertFalse(manager.contains("getEntitiesOfClass("));
         assertFalse(sources.contains(".getChunk("));
         assertFalse(sources.contains("getChunkSource("));
         assertFalse(sources.contains("forceChunk"));
