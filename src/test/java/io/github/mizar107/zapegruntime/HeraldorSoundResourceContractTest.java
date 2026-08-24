@@ -97,7 +97,7 @@ class HeraldorSoundResourceContractTest {
             assertTrue(value > 0.0D && value <= 0.85D, "unbounded metadata volume");
             count++;
         }
-        assertEquals(ASSETS.size(), count);
+        assertTrue(count >= ASSETS.size(), "all original Heraldor assets need bounded metadata");
         assertTrue(!sounds.contains("minecraft:"), "owned events cannot alias vanilla audio");
         assertTrue(!sounds.contains("http:"));
         assertTrue(!sounds.contains("https:"));

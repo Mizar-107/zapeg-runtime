@@ -40,5 +40,29 @@
     "sounds": [
       { "name": "zapeg_runtime:heraldor/manifestation", "volume": 0.82, "pitch": 1.00 }
     ]
+  },
+  "ninth_form_awakening": {
+    "subtitle": "subtitles.zapeg_runtime.ninth_form.awakening",
+    "sounds": [
+      { "name": "zapeg_runtime:ninth_form/awakening", "volume": 0.76, "pitch": 0.94 }
+    ]
+  },
+  "ninth_form_telegraph": {
+    "subtitle": "subtitles.zapeg_runtime.ninth_form.telegraph",
+    "sounds": [
+      { "name": "zapeg_runtime:ninth_form/telegraph", "volume": 0.68, "pitch": 1.00 }
+    ]
+  },
+  "ninth_form_weakpoint_break": {
+    "subtitle": "subtitles.zapeg_runtime.ninth_form.weakpoint_break",
+    "sounds": [
+      { "name": "zapeg_runtime:ninth_form/weakpoint_break", "volume": 0.74, "pitch": 0.97 }
+    ]
+  },
+  "ninth_form_banish": {
+    "subtitle": "subtitles.zapeg_runtime.ninth_form.banish",
+    "sounds": [
+      { "name": "zapeg_runtime:ninth_form/banish", "volume": 0.78, "pitch": 0.92 }
+    ]
   }
 }
