@@ -47,6 +47,12 @@ class NinthFormGatewayRegistryTest {
         assertSame(first, bindings.current(firstServer).orElseThrow());
         assertSame(second, bindings.current(secondServer).orElseThrow());
         assertTrue(bindings.size() == 2);
+
+        NinthFormGatewayRegistry.Bindings<Object> bounded =
+                new NinthFormGatewayRegistry.Bindings<>(1);
+        assertTrue(bounded.install(firstServer, first));
+        assertFalse(bounded.install(secondServer, second));
+        assertTrue(bounded.size() == 1);
     }
 
     private static final class StubGateway implements NinthFormEntityGateway {

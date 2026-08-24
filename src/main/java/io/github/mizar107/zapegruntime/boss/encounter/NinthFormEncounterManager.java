@@ -42,6 +42,8 @@ public final class NinthFormEncounterManager {
             new WeakHashMap<>();
     private static final Map<MinecraftServer, RetryBook<UUID>> PROOF_RETRIES =
             new WeakHashMap<>();
+    private static final Map<MinecraftServer, RetryBook<UUID>> START_RETRIES =
+            new WeakHashMap<>();
 
     private NinthFormEncounterManager() {}
 
@@ -138,6 +140,7 @@ public final class NinthFormEncounterManager {
         long gameTick = server.overworld().getGameTime();
         LinkedHashSet<UUID> work = new LinkedHashSet<>(drainTargets(server));
         work.addAll(retryBook(server).due(gameTick));
+        work.addAll(startRetryBook(server).due(gameTick));
         for (UUID targetId : work) {
             List<NinthFormProgressionSync.SyncResult> results =
                     NinthFormProgressionSync.replayTarget(server, targetId);
@@ -145,7 +148,12 @@ public final class NinthFormEncounterManager {
             awardDefeatToast(server, targetId);
             ServerPlayer target = server.getPlayerList().getPlayer(targetId);
             if (target != null) {
-                startIfEligible(target);
+                StartResult start = startIfEligible(target);
+                reconcileStartResult(startRetryBook(server), targetId, gameTick, start.status());
+            } else {
+                // Login reconstructs the immediate queue; do not poll an offline
+                // player every reconcile interval.
+                startRetryBook(server).clear(targetId);
             }
         }
 
@@ -187,6 +195,7 @@ public final class NinthFormEncounterManager {
         }
         QUEUED_TARGETS.remove(server);
         PROOF_RETRIES.remove(server);
+        START_RETRIES.remove(server);
     }
 
     private static StartResult start(ServerPlayer target, boolean rehearsal) {
@@ -598,8 +607,32 @@ public final class NinthFormEncounterManager {
         }
     }
 
+    static void reconcileStartResult(
+            RetryBook<UUID> retries,
+            UUID targetId,
+            long gameTick,
+            StartStatus status) {
+        Objects.requireNonNull(retries, "retries");
+        Objects.requireNonNull(targetId, "targetId");
+        Objects.requireNonNull(status, "status");
+        boolean retryable = status == StartStatus.GATEWAY_UNAVAILABLE
+                || status == StartStatus.DATA_UNAVAILABLE
+                || status == StartStatus.STORY_NOT_READY
+                || status == StartStatus.ARENA_UNAVAILABLE;
+        if (retryable) {
+            retries.schedule(targetId, gameTick);
+        } else {
+            retries.clear(targetId);
+        }
+    }
+
     private static RetryBook<UUID> retryBook(MinecraftServer server) {
         return PROOF_RETRIES.computeIfAbsent(
+                server, ignored -> new RetryBook<>(MAX_RETRY_TARGETS, MAX_RETRY_BACKOFF_TICKS));
+    }
+
+    private static RetryBook<UUID> startRetryBook(MinecraftServer server) {
+        return START_RETRIES.computeIfAbsent(
                 server, ignored -> new RetryBook<>(MAX_RETRY_TARGETS, MAX_RETRY_BACKOFF_TICKS));
     }
 

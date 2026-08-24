@@ -22,8 +22,10 @@ import net.minecraft.server.MinecraftServer;
  */
 public final class NinthFormGatewayRegistry {
 
+    public static final int MAX_SERVER_BINDINGS = 8;
     private static final NinthFormEntityGateway UNAVAILABLE = new UnavailableGateway();
-    private static final Bindings<MinecraftServer> BINDINGS = new Bindings<>();
+    private static final Bindings<MinecraftServer> BINDINGS =
+            new Bindings<>(MAX_SERVER_BINDINGS);
 
     private NinthFormGatewayRegistry() {}
 
@@ -52,13 +54,28 @@ public final class NinthFormGatewayRegistry {
 
     /** Pure weak, one-value-per-owner binding table used by executable tests. */
     static final class Bindings<K> {
+        private final int capacity;
         private final Map<K, NinthFormEntityGateway> values = new WeakHashMap<>();
+
+        Bindings() {
+            this(MAX_SERVER_BINDINGS);
+        }
+
+        Bindings(int capacity) {
+            if (capacity < 1) {
+                throw new IllegalArgumentException("binding capacity must be positive");
+            }
+            this.capacity = capacity;
+        }
 
         synchronized boolean install(K owner, NinthFormEntityGateway gateway) {
             Objects.requireNonNull(owner, "owner");
             Objects.requireNonNull(gateway, "gateway");
             NinthFormEntityGateway current = values.get(owner);
             if (current != null && current != gateway) {
+                return false;
+            }
+            if (current == null && values.size() >= capacity) {
                 return false;
             }
             values.put(owner, gateway);
