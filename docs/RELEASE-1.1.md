@@ -63,10 +63,12 @@ touching active projections. Cleanup cancels all server scenes and timelines,
 durable and orphaned loaded Servants, the Ninth Form encounter, Director
 queues, and quest sessions. It preserves story, victory, and incident evidence.
 Unresolved cleanup keeps the generation uncertified and therefore inert.
-If no durable quarantine write can be proved, the command returns
-`stop_failed reason=persistence_failed`; the host procedure must stop Minecraft
-rather than treating that response as containment. A durable quarantine with
-remaining cleanup work likewise returns `stop_failed reason=cleanup_unresolved`.
+If any safety persistence stage fails, the command returns
+`stop_failed reason=persistence_failed` even when another write independently
+proved quarantine; the host procedure must stop Minecraft rather than treating
+that response as containment. `stop_failed reason=cleanup_unresolved` is
+reserved for the case where every persistence stage succeeded but cleanup work
+remains.
 
 Servants also check safety at pursuit, goal-tick, and damage boundaries, reject
 joins when state is unavailable, and are swept across every loaded dimension.

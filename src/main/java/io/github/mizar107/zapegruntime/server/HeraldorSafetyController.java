@@ -285,8 +285,8 @@ public final class HeraldorSafetyController {
                     "Emergency quarantine SavedData could not be verified", failure);
         }
 
-        CleanupCounts counts = cleanup(server, persistenceFailures);
-        if (counts.unresolved() == 0) {
+        CleanupCounts counts = cleanup(server, 0);
+        if (persistenceFailures == 0 && counts.unresolved() == 0) {
             markEnforced(server, data.generation());
         }
         boolean durableRevocation = durableRevocationProven(
@@ -294,7 +294,8 @@ public final class HeraldorSafetyController {
         if (durableRevocation) {
             clearRevocation(server, data.generation());
         }
-        return new StopOutcome(data.incidentId(), counts, durableRevocation);
+        return new StopOutcome(
+                data.incidentId(), counts, durableRevocation, persistenceFailures);
     }
 
     /** Repeats transient cleanup without changing mode, generation, nonce, or incident. */
@@ -639,14 +640,29 @@ public final class HeraldorSafetyController {
         }
     }
 
-    public record StopOutcome(UUID incidentId, CleanupCounts counts, boolean durableRevocation) {
+    public record StopOutcome(
+            UUID incidentId,
+            CleanupCounts counts,
+            boolean durableRevocation,
+            int persistenceFailures) {
+
+        public StopOutcome {
+            Objects.requireNonNull(incidentId, "incidentId");
+            Objects.requireNonNull(counts, "counts");
+            if (persistenceFailures < 0) {
+                throw new IllegalArgumentException("persistenceFailures cannot be negative");
+            }
+        }
+
         public boolean success() {
-            return durableRevocation && counts.unresolved() == 0;
+            return durableRevocation
+                    && persistenceFailures == 0
+                    && counts.unresolved() == 0;
         }
 
         public String machineLine() {
             String prefix;
-            if (!durableRevocation) {
+            if (!durableRevocation || persistenceFailures != 0) {
                 prefix = "heraldor_safety stop_failed reason=persistence_failed";
             } else if (counts.unresolved() != 0) {
                 prefix = "heraldor_safety stop_failed reason=cleanup_unresolved";

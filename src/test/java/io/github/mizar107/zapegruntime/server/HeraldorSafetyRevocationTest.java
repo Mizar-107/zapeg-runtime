@@ -78,6 +78,7 @@ class HeraldorSafetyRevocationTest {
                 boolean finalAuthorityPersisted = (mask & 2) != 0;
                 boolean savedDataPersisted = (mask & 4) != 0;
                 boolean anyDurableWrite = mask != 0;
+                int persistenceFailures = 3 - Integer.bitCount(mask);
 
                 assertEquals(
                         anyDurableWrite,
@@ -150,6 +151,17 @@ class HeraldorSafetyRevocationTest {
                         true);
                 assertEquals(HeraldorSafetyMode.QUARANTINED, restarted);
                 assertFalse(restarted.allows(HeraldorSafetyMode.MANUAL));
+
+                HeraldorSafetyController.StopOutcome receipt =
+                        new HeraldorSafetyController.StopOutcome(
+                                stoppedData.incidentId(),
+                                new HeraldorSafetyController.CleanupCounts(0, 0, 0, 0, 0),
+                                anyDurableWrite,
+                                persistenceFailures);
+                assertEquals(mask == 7, receipt.success());
+                assertTrue(receipt.machineLine().startsWith(mask == 7
+                        ? "heraldor_safety stopped mode=quarantined"
+                        : "heraldor_safety stop_failed reason=persistence_failed mode=quarantined"));
             }
         }
     }
@@ -158,16 +170,28 @@ class HeraldorSafetyRevocationTest {
     void unprovedStopIsAnExplicitCommandFailure() {
         HeraldorSafetyController.StopOutcome failed = new HeraldorSafetyController.StopOutcome(
                 UUID.fromString("22222222-2222-2222-2222-222222222222"),
-                new HeraldorSafetyController.CleanupCounts(0, 0, 0, 0, 3),
-                false);
+                new HeraldorSafetyController.CleanupCounts(0, 0, 0, 0, 0),
+                false,
+                3);
         assertFalse(failed.success());
         assertTrue(failed.machineLine().startsWith(
+                "heraldor_safety stop_failed reason=persistence_failed mode=quarantined"));
+
+        HeraldorSafetyController.StopOutcome redundantWriteFailed =
+                new HeraldorSafetyController.StopOutcome(
+                        UUID.fromString("22222222-2222-2222-2222-222222222222"),
+                        new HeraldorSafetyController.CleanupCounts(0, 0, 0, 0, 0),
+                        true,
+                        1);
+        assertFalse(redundantWriteFailed.success());
+        assertTrue(redundantWriteFailed.machineLine().startsWith(
                 "heraldor_safety stop_failed reason=persistence_failed mode=quarantined"));
 
         HeraldorSafetyController.StopOutcome unresolved = new HeraldorSafetyController.StopOutcome(
                 UUID.fromString("22222222-2222-2222-2222-222222222222"),
                 new HeraldorSafetyController.CleanupCounts(0, 0, 0, 0, 1),
-                true);
+                true,
+                0);
         assertFalse(unresolved.success());
         assertTrue(unresolved.machineLine().startsWith(
                 "heraldor_safety stop_failed reason=cleanup_unresolved mode=quarantined"));
@@ -175,7 +199,8 @@ class HeraldorSafetyRevocationTest {
         HeraldorSafetyController.StopOutcome proved = new HeraldorSafetyController.StopOutcome(
                 UUID.fromString("22222222-2222-2222-2222-222222222222"),
                 new HeraldorSafetyController.CleanupCounts(0, 0, 0, 0, 0),
-                true);
+                true,
+                0);
         assertTrue(proved.success());
         assertTrue(proved.machineLine().startsWith(
                 "heraldor_safety stopped mode=quarantined"));

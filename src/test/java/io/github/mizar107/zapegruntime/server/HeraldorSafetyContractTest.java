@@ -31,9 +31,10 @@ class HeraldorSafetyContractTest {
         int stopRevoke = source.indexOf("latchRevocation(server, data.generation())", stop);
         int barrier = source.indexOf("data.quarantineBarrierSnapshot()", stop);
         int mutation = source.indexOf("data.emergencyQuarantine()", stop);
-        int cleanup = source.indexOf("cleanup(server, persistenceFailures)", stop);
+        int cleanup = source.indexOf("cleanup(server, 0)", stop);
         assertTrue(stop >= 0 && stopRevoke > stop && barrier > stopRevoke
                 && mutation > barrier && cleanup > mutation);
+        assertTrue(source.indexOf("persistenceFailures == 0", cleanup) > cleanup);
         int arm = source.indexOf("public static ActionOutcome arm");
         int armRevoke = source.indexOf("latchRevocation(server, priorGeneration)", arm);
         int armClear = source.indexOf("clearEnforced(server)", armRevoke);
