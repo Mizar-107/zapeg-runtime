@@ -1,6 +1,7 @@
 package io.github.mizar107.zapegruntime.server;
 
 import io.github.mizar107.zapegruntime.ZapeGRuntime;
+import io.github.mizar107.zapegruntime.boss.encounter.NinthFormCommands;
 import io.github.mizar107.zapegruntime.director.DirectorCommands;
 import io.github.mizar107.zapegruntime.scene.CancelReason;
 import io.github.mizar107.zapegruntime.servant.ServantCommands;
@@ -29,6 +30,7 @@ public final class SceneServerEvents {
             DirectorCommands.attach(root);
             ServantCommands.attach(root);
             TimelineCommands.attach(root);
+            NinthFormCommands.attach(root);
         });
     }
 

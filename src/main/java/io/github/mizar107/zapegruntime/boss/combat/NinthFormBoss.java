@@ -5,6 +5,7 @@ import io.github.mizar107.zapegruntime.boss.api.NinthFormCombatSignal;
 import io.github.mizar107.zapegruntime.boss.api.NinthFormEntityGateway;
 import io.github.mizar107.zapegruntime.boss.api.NinthFormIdentity;
 import io.github.mizar107.zapegruntime.boss.api.NinthFormPhase;
+import io.github.mizar107.zapegruntime.boss.presentation.NinthFormSounds;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Objects;
@@ -23,6 +24,7 @@ import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.BossEvent;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
@@ -109,7 +111,7 @@ public final class NinthFormBoss extends LivingEntity {
 
     private final NinthFormPart[] parts;
     private final ServerBossEvent bossBar = new ServerBossEvent(
-            Component.literal("The Ninth Form"),
+            Component.translatable("entity.zapeg_runtime.ninth_form"),
             BossEvent.BossBarColor.PURPLE,
             BossEvent.BossBarOverlay.NOTCHED_10);
 
@@ -285,7 +287,10 @@ public final class NinthFormBoss extends LivingEntity {
     }
 
     public double damageScale() {
-        return entityData.get(SYNCED_DAMAGE_SCALE);
+        // The synchronized value is a client-facing float. Server combat and
+        // NBT always derive the canonical double table value so widening a
+        // float can never corrupt an otherwise valid multiplayer save.
+        return NinthFormScaling.damageScale(participantCount());
     }
 
     double healthScale() {
@@ -399,6 +404,15 @@ public final class NinthFormBoss extends LivingEntity {
         if (getHealth() == 0.0F && combatPhase() == NinthFormPhase.FINAL) {
             entityData.set(SYNCED_PHASE, NinthFormPhase.BANISHED.ordinal());
             setAttackState(attackCycle(), "idle", 0);
+            level().playSound(
+                    null,
+                    getX(),
+                    getY(),
+                    getZ(),
+                    NinthFormSounds.BANISH.get(),
+                    SoundSource.HOSTILE,
+                    2.8F,
+                    0.68F);
             if (!defeatSignalEmitted
                     && emitCombatSignal(
                             NinthFormCombatSignal.Kind.DEFEATED,

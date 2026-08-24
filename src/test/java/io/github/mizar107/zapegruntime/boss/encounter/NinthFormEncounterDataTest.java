@@ -109,6 +109,10 @@ class NinthFormEncounterDataTest {
                 data.recordDefeat(defeatSignal));
         assertTrue(data.activeEncounters().isEmpty());
         assertEquals(2, data.immutableBarriers().size());
+        assertEquals(2, data.immutableBarriersForTarget(finale.targetId()).size());
+        assertEquals(2, data.immutableBarrierCountForTarget(finale.targetId()));
+        assertTrue(data.immutableBarrierTargetIds().contains(finale.targetId()));
+        assertTrue(data.immutableBarriersForTarget(UUID.randomUUID()).isEmpty());
         assertEquals(
                 NinthFormEncounterData.ProofResult.REPLAYED,
                 data.recordDefeat(defeatSignal));
@@ -287,6 +291,36 @@ class NinthFormEncounterDataTest {
     }
 
     @Test
+    void noncanonicalCombatAndFactAuthorityIsPreservedReadOnly() {
+        CompoundTag roundedScale = validActiveRoot();
+        CompoundTag roundedEncounter = roundedScale.getList("Active", 10).getCompound(0);
+        roundedEncounter.putInt("ParticipantCount", 2);
+        roundedEncounter.putDouble("HealthScale", 1.45D);
+        roundedEncounter.putDouble("DamageScale", (double) (float) 1.08D);
+        assertCorruptPreserved(roundedScale);
+
+        CompoundTag invalidPhase = validActiveRoot();
+        invalidPhase.getList("Active", 10).getCompound(0).putString("Phase", "final");
+        assertCorruptPreserved(invalidPhase);
+
+        CompoundTag deadProjection = validActiveRoot();
+        deadProjection.getList("Active", 10).getCompound(0).putDouble("ParentHealth", 0.0D);
+        assertCorruptPreserved(deadProjection);
+
+        CompoundTag arbitraryActiveFact = validActiveRoot();
+        arbitraryActiveFact.getList("Active", 10)
+                .getCompound(0)
+                .putUUID("PhaseFactId", UUID.randomUUID());
+        assertCorruptPreserved(arbitraryActiveFact);
+
+        CompoundTag arbitraryBarrierFact = terminalRoot(1);
+        arbitraryBarrierFact.getList("Barriers", 10)
+                .getCompound(0)
+                .putUUID("FactId", UUID.randomUUID());
+        assertCorruptPreserved(arbitraryBarrierFact);
+    }
+
+    @Test
     void capacitiesRefuseWithoutEvictingImmutableHistory() {
         CompoundTag full = terminalRoot(NinthFormEncounterData.MAX_IMMUTABLE_BARRIERS / 2);
         NinthFormEncounterData data = NinthFormEncounterData.load(full);
@@ -312,12 +346,24 @@ class NinthFormEncounterDataTest {
     }
 
     private static NinthFormEncounter encounter(boolean rehearsal, NinthFormPhase phase) {
+        UUID encounterId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        NinthFormStoryGate.Envelope envelope =
+                new NinthFormStoryGate.Envelope(CAMPAIGN, 1, FINGERPRINT, 4L);
         return new NinthFormEncounter(
+                encounterId,
+                targetId,
                 UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
+                NinthFormFactIds.forProof(
+                        encounterId,
+                        targetId,
+                        envelope,
+                        NinthFormBarrier.Kind.PHASE_ONE_COMPLETED),
+                NinthFormFactIds.forProof(
+                        encounterId,
+                        targetId,
+                        envelope,
+                        NinthFormBarrier.Kind.DEFEATED),
                 0,
                 rehearsal,
                 CAMPAIGN,
@@ -336,6 +382,21 @@ class NinthFormEncounterDataTest {
                 new NinthFormCombatSnapshot.CombatState(0, 0L, "idle", 0),
                 NinthFormCombatSnapshot.VitalState.pristine(),
                 0L);
+    }
+
+    private static CompoundTag validActiveRoot() {
+        NinthFormEncounterData data = new NinthFormEncounterData();
+        assertEquals(
+                NinthFormEncounterData.BeginStatus.STARTED,
+                data.begin(encounter(false, NinthFormPhase.PRELUDE)).status());
+        return data.save(new CompoundTag());
+    }
+
+    private static void assertCorruptPreserved(CompoundTag root) {
+        NinthFormEncounterData loaded = NinthFormEncounterData.load(root);
+        assertEquals(NinthFormEncounterData.DataHealth.CORRUPT, loaded.schemaStatus().health());
+        assertFalse(loaded.schemaStatus().writable());
+        assertEquals(root, loaded.save(new CompoundTag()));
     }
 
     private static NinthFormEncounter beginFirst(
@@ -364,8 +425,14 @@ class NinthFormEncounterDataTest {
             UUID encounter = new UUID(1L, index);
             UUID target = new UUID(2L, index);
             UUID entity = new UUID(3L, index);
+            NinthFormStoryGate.Envelope envelope =
+                    new NinthFormStoryGate.Envelope(CAMPAIGN, 1, FINGERPRINT, 0L);
             barriers.add(new NinthFormBarrier(
-                    new UUID(4L, index),
+                    NinthFormFactIds.forProof(
+                            encounter,
+                            target,
+                            envelope,
+                            NinthFormBarrier.Kind.PHASE_ONE_COMPLETED),
                     encounter,
                     target,
                     entity,
@@ -376,7 +443,11 @@ class NinthFormEncounterDataTest {
                     0L,
                     NinthFormBarrier.Kind.PHASE_ONE_COMPLETED).save());
             barriers.add(new NinthFormBarrier(
-                    new UUID(5L, index),
+                    NinthFormFactIds.forProof(
+                            encounter,
+                            target,
+                            envelope,
+                            NinthFormBarrier.Kind.DEFEATED),
                     encounter,
                     target,
                     entity,

@@ -7,7 +7,9 @@ public enum NinthFormPartKind {
     PROW_LANTERN(0b001, 0.0D, 8.5D, 3.8D, 2.2F, 2.2F),
     PORT_MOORING(0b010, -5.4D, 1.8D, 2.8D, 2.8F, 3.2F),
     STARBOARD_MOORING(0b100, 5.4D, 1.8D, 2.8D, 2.8F, 3.2F),
-    KEEL_HEART(0, 0.0D, 0.4D, 1.2D, 3.8F, 2.6F),
+    // The heart projects beyond the prow-side parent pick box while remaining
+    // above ordinary terrain, so aimed rays reach its phase-two route first.
+    KEEL_HEART(0, 0.0D, 5.8D, 1.2D, 3.8F, 2.6F),
     ARMORED_HULL_AFT(0, 0.0D, -5.2D, 2.7D, 9.5F, 5.8F);
 
     private final int weakPointBit;

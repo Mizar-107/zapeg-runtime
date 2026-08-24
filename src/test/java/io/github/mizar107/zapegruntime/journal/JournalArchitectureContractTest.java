@@ -33,7 +33,7 @@ class JournalArchitectureContractTest {
     @Test
     void channelUsesMainThreadConsumersAndOneExplicitProtocolTen() throws IOException {
         String network = Files.readString(JAVA_ROOT.resolve("network/SceneNetwork.java"));
-        assertTrue(network.contains("public static final String PROTOCOL = \"10\""));
+        assertTrue(network.contains("public static final String PROTOCOL = \"11\""));
         assertTrue(network.contains("consumerMainThread(JournalOpenS2C::handle)"));
         assertTrue(network.contains("consumerMainThread(JournalActionC2S::handle)"));
         assertTrue(network.contains("NetworkDirection.PLAY_TO_CLIENT"));

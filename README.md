@@ -25,6 +25,45 @@ world and deployment migration.
 See [docs/BREACH-01.md](docs/BREACH-01.md) for the timing, resource hashes and
 integration contract.
 
+## Batch 4 (`0.8.0-b4`) Ninth Form
+
+- exact-match protocol `11` registers the original multipart `Ninth Form`
+  boss; protocol-10 clients are refused before entity state can desynchronize;
+- campaign nodes 27 and 28 start one continuous encounter automatically. A
+  bounded retry scheduler waits for a fully resident 48-block virtual arena
+  without loading chunks, placing tickets, editing blocks, or exploding
+  terrain;
+- the 900-health spectral wreck has three phase-one weak points, an exposed
+  phase-two keel-heart, an armored aft surface, and a parent hull. Per-hit
+  multipliers, caps, and the 55% phase-one floor are server-authoritative;
+- health and damage scale through fixed 1–5 player tables and remain capped
+  for larger groups. Any nearby participant may help, but campaign credit is
+  permanently bound to the encounter target UUID;
+- keel sweep, anchorfall, undertow, drowned broadside, wake charge, and
+  ninefold gaze use deterministic cycles with at least 24 ticks of telegraph,
+  locked dodgeable geometry, active windows, and recovery windows;
+- exact encounter identity, generation, phase, weak-point vitality and attack
+  cursor survive restarts. Phase and defeat proofs are immutable, idempotent,
+  target/envelope-bound story barriers; future or corrupt data is preserved
+  read-only;
+- the parent and five Forge-native parts use an original code-built model,
+  exact procedural 512-pixel texture pair, bounded emissive states, four
+  original procedural sounds, English/Turkish text, and a toast-only reward;
+- no Cataclysm or Aquamirae code, asset, namespace, or runtime dependency is
+  used.
+
+Level-2 operators can test without changing campaign progress:
+
+```text
+/heraldor ninth_form rehearse <target>
+/heraldor ninth_form status <target>
+/heraldor ninth_form reconcile <target>
+```
+
+See [docs/NINTH-FORM.md](docs/NINTH-FORM.md) for combat values, recovery
+semantics, and the playtest checklist. Asset hashes and regeneration commands
+are in [docs/NINTH-FORM-ASSETS.md](docs/NINTH-FORM-ASSETS.md).
+
 ## Batch 3 (`0.7.0-b3`) story and native Servants
 
 - a strict datapack defines one linear 30-node hidden-journal campaign. Atomic
@@ -369,8 +408,8 @@ See [ROADMAP.md](ROADMAP.md) for the reality-distortion and later combat plan.
 .\gradlew.bat test build
 ```
 
-The Batch-3 artifact is
-`build/libs/zapeg-runtime-forge-1.20.1-0.7.0-b3.jar`. Protocol 10 is
+The Batch-4 artifact is
+`build/libs/zapeg-runtime-forge-1.20.1-0.8.0-b4.jar`. Protocol 11 is
 wire-incompatible: server, tracked
 `overrides/mods` jar and every client artifact must be replaced atomically
 with the same build.

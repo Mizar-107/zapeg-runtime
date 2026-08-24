@@ -1,6 +1,7 @@
 package io.github.mizar107.zapegruntime.boss.combat;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import io.github.mizar107.zapegruntime.boss.api.NinthFormPhase;
 import org.junit.jupiter.api.Test;
@@ -21,6 +22,14 @@ class NinthFormDamagePolicyTest {
         assertEquals(1.21D, NinthFormScaling.damageScale(4));
         assertEquals(1.27D, NinthFormScaling.damageScale(5));
         assertEquals(1.27D, NinthFormScaling.damageScale(8));
+    }
+
+    @Test
+    void multiplayerDamageScaleMustNotRoundTripThroughSyncedFloatStorage() {
+        for (int participants = 2; participants <= 8; participants++) {
+            double canonical = NinthFormScaling.damageScale(participants);
+            assertNotEquals(canonical, (double) (float) canonical);
+        }
     }
 
     @Test

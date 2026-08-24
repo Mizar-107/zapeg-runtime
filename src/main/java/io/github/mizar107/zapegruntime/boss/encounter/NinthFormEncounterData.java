@@ -42,6 +42,8 @@ public final class NinthFormEncounterData extends SavedData {
 
     private final Map<UUID, NinthFormEncounter> activeByTarget = new HashMap<>();
     private final Map<UUID, NinthFormBarrier> barriersByFact = new HashMap<>();
+    private final Map<BarrierKey, NinthFormBarrier> barriersByKind = new HashMap<>();
+    private final Map<UUID, Map<UUID, NinthFormBarrier>> barriersByTarget = new HashMap<>();
     private final DataHealth health;
     private final String healthDetail;
     private final CompoundTag preservedRoot;
@@ -103,25 +105,20 @@ public final class NinthFormEncounterData extends SavedData {
                 }
             }
 
-            Map<BarrierKey, NinthFormBarrier> barrierKinds = new HashMap<>();
             for (int index = 0; index < barrierTags.size(); index++) {
                 NinthFormBarrier barrier = NinthFormBarrier.load(barrierTags.getCompound(index));
-                if (data.barriersByFact.put(barrier.factId(), barrier) != null) {
-                    throw new IllegalArgumentException("duplicate barrier fact UUID");
-                }
-                BarrierKey key = new BarrierKey(barrier.encounterId(), barrier.kind());
-                if (barrierKinds.put(key, barrier) != null) {
-                    throw new IllegalArgumentException("duplicate barrier kind for encounter");
+                if (!data.indexBarrier(barrier)) {
+                    throw new IllegalArgumentException("duplicate barrier authority");
                 }
             }
-            validateBarrierFamilies(barrierKinds.values());
+            validateBarrierFamilies(data.barriersByKind.values());
             for (NinthFormEncounter encounter : data.activeByTarget.values()) {
-                validateActiveBarrierState(encounter, barrierKinds);
+                validateActiveBarrierState(encounter, data.barriersByKind);
             }
-            for (NinthFormBarrier barrier : barrierKinds.values()) {
+            for (NinthFormBarrier barrier : data.barriersByKind.values()) {
                 if (barrier.kind() == NinthFormBarrier.Kind.PHASE_ONE_COMPLETED
                         && !encounterIds.contains(barrier.encounterId())
-                        && !barrierKinds.containsKey(new BarrierKey(
+                        && !data.barriersByKind.containsKey(new BarrierKey(
                                 barrier.encounterId(), NinthFormBarrier.Kind.DEFEATED))) {
                     throw new IllegalArgumentException("orphan phase barrier has no active attempt");
                 }
@@ -341,7 +338,9 @@ public final class NinthFormEncounterData extends SavedData {
         }
         NinthFormBarrier barrier = NinthFormBarrier.fromEncounter(
                 encounter, NinthFormBarrier.Kind.PHASE_ONE_COMPLETED);
-        barriersByFact.put(barrier.factId(), barrier);
+        if (!indexBarrier(barrier)) {
+            return ProofResult.STATE_MISMATCH;
+        }
         activeByTarget.put(advanced.targetId(), advanced);
         setDirty();
         return ProofResult.RECORDED;
@@ -370,8 +369,8 @@ public final class NinthFormEncounterData extends SavedData {
                 || encounter.phase() != NinthFormPhase.FINAL) {
             return ProofResult.STATE_MISMATCH;
         }
-        activeByTarget.remove(encounter.targetId());
         if (encounter.rehearsal()) {
+            activeByTarget.remove(encounter.targetId());
             setDirty();
             return ProofResult.REHEARSAL;
         }
@@ -384,7 +383,10 @@ public final class NinthFormEncounterData extends SavedData {
         }
         NinthFormBarrier barrier = NinthFormBarrier.fromEncounter(
                 encounter, NinthFormBarrier.Kind.DEFEATED);
-        barriersByFact.put(barrier.factId(), barrier);
+        if (!indexBarrier(barrier)) {
+            return ProofResult.STATE_MISMATCH;
+        }
+        activeByTarget.remove(encounter.targetId());
         setDirty();
         return ProofResult.RECORDED;
     }
@@ -423,14 +425,35 @@ public final class NinthFormEncounterData extends SavedData {
         return List.copyOf(result);
     }
 
+    public List<NinthFormBarrier> immutableBarriersForTarget(UUID targetId) {
+        Objects.requireNonNull(targetId, "targetId");
+        if (!writable()) {
+            return List.of();
+        }
+        Map<UUID, NinthFormBarrier> indexed = barriersByTarget.get(targetId);
+        if (indexed == null) {
+            return List.of();
+        }
+        List<NinthFormBarrier> result = new ArrayList<>(indexed.values());
+        result.sort(Comparator.comparing(item -> item.factId().toString()));
+        return List.copyOf(result);
+    }
+
+    public Set<UUID> immutableBarrierTargetIds() {
+        return writable() ? Set.copyOf(barriersByTarget.keySet()) : Set.of();
+    }
+
+    public int immutableBarrierCountForTarget(UUID targetId) {
+        Objects.requireNonNull(targetId, "targetId");
+        Map<UUID, NinthFormBarrier> indexed = barriersByTarget.get(targetId);
+        return writable() && indexed != null ? indexed.size() : 0;
+    }
+
     public Optional<NinthFormBarrier> barrierFor(UUID encounterId, NinthFormBarrier.Kind kind) {
         if (!writable()) {
             return Optional.empty();
         }
-        return barriersByFact.values().stream()
-                .filter(barrier -> barrier.encounterId().equals(encounterId)
-                        && barrier.kind() == kind)
-                .findFirst();
+        return Optional.ofNullable(barriersByKind.get(new BarrierKey(encounterId, kind)));
     }
 
     public boolean acceptsEntity(NinthFormIdentity identity, UUID entityId) {
@@ -510,6 +533,19 @@ public final class NinthFormEncounterData extends SavedData {
     private void replace(NinthFormEncounter encounter) {
         activeByTarget.put(encounter.targetId(), encounter);
         setDirty();
+    }
+
+    private boolean indexBarrier(NinthFormBarrier barrier) {
+        BarrierKey key = new BarrierKey(barrier.encounterId(), barrier.kind());
+        if (barriersByFact.containsKey(barrier.factId()) || barriersByKind.containsKey(key)) {
+            return false;
+        }
+        barriersByFact.put(barrier.factId(), barrier);
+        barriersByKind.put(key, barrier);
+        barriersByTarget
+                .computeIfAbsent(barrier.targetId(), ignored -> new HashMap<>())
+                .put(barrier.factId(), barrier);
+        return true;
     }
 
     private boolean authorityConflicts(NinthFormEncounter proposed) {

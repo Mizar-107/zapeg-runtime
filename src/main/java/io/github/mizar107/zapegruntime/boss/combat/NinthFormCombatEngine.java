@@ -3,6 +3,7 @@ package io.github.mizar107.zapegruntime.boss.combat;
 import io.github.mizar107.zapegruntime.boss.api.NinthFormCombatSignal;
 import io.github.mizar107.zapegruntime.boss.api.NinthFormIdentity;
 import io.github.mizar107.zapegruntime.boss.api.NinthFormPhase;
+import io.github.mizar107.zapegruntime.boss.presentation.NinthFormSounds;
 import java.util.Optional;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
@@ -29,6 +30,19 @@ final class NinthFormCombatEngine {
         if (installed.isEmpty()) {
             return;
         }
+        NinthFormPhase phase = boss.combatPhase();
+        // Terminal proof must win over target-loss suspension. A BANISHED
+        // entity may tick after its target logs out, and SUSPENDED is not a
+        // valid terminal signal.
+        if (phase == NinthFormPhase.BANISHED) {
+            if (!boss.defeatSignalEmitted()
+                    && boss.emitCombatSignal(
+                            NinthFormCombatSignal.Kind.DEFEATED,
+                            NinthFormPhase.BANISHED)) {
+                boss.markDefeatSignalEmitted();
+            }
+            return;
+        }
         ServerPlayer target = level.getServer().getPlayerList()
                 .getPlayer(installed.get().targetId());
         if (target == null
@@ -47,7 +61,6 @@ final class NinthFormCombatEngine {
         boss.setSuspendedSignalEmitted(false);
         applyConfinement(boss, level);
 
-        NinthFormPhase phase = boss.combatPhase();
         NinthFormPhaseHandshake.Action phaseAction = NinthFormPhaseHandshake.next(
                 phase, boss.brokenPointMask(), boss.phaseSignalEmitted());
         if (phaseAction == NinthFormPhaseHandshake.Action.TRANSITION_TO_INTERLUDE) {
@@ -64,15 +77,6 @@ final class NinthFormCombatEngine {
                             NinthFormCombatSignal.Kind.PHASE_COMPLETED,
                             NinthFormPhase.FIRST)) {
                 boss.markPhaseSignalEmitted();
-            }
-            return;
-        }
-        if (phase == NinthFormPhase.BANISHED) {
-            if (!boss.defeatSignalEmitted()
-                    && boss.emitCombatSignal(
-                            NinthFormCombatSignal.Kind.DEFEATED,
-                            NinthFormPhase.BANISHED)) {
-                boss.markDefeatSignalEmitted();
             }
             return;
         }
@@ -153,7 +157,7 @@ final class NinthFormCombatEngine {
                         boss.getX(),
                         boss.getY() + part.verticalOffset(),
                         boss.getZ(),
-                        SoundEvents.CHAIN_BREAK,
+                        NinthFormSounds.WEAKPOINT_BREAK.get(),
                         SoundSource.HOSTILE,
                         2.0F,
                         0.55F);
@@ -231,7 +235,7 @@ final class NinthFormCombatEngine {
                     boss.getX(),
                     boss.getY(),
                     boss.getZ(),
-                    SoundEvents.ELDER_GUARDIAN_CURSE,
+                    NinthFormSounds.TELEGRAPH.get(),
                     SoundSource.HOSTILE,
                     2.2F,
                     telegraphPitch(attack));

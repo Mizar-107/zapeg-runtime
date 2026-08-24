@@ -147,9 +147,42 @@ public record NinthFormEncounter(
         }
         requireScale(healthScale, "healthScale");
         requireScale(damageScale, "damageScale");
+        NinthFormScalingPolicy.Scale canonicalScale =
+                NinthFormScalingPolicy.forParticipants(participantCount);
+        if (Double.compare(healthScale, canonicalScale.healthScale()) != 0
+                || Double.compare(damageScale, canonicalScale.damageScale()) != 0) {
+            throw new IllegalArgumentException("participant scaling is not canonical");
+        }
         Objects.requireNonNull(combatState, "combatState");
         Objects.requireNonNull(vitalState, "vitalState");
         vitalState.validateMask(combatState.brokenPointMask());
+        if (vitalState.parentHealthFraction() <= 0.0D) {
+            throw new IllegalArgumentException("a live encounter requires positive parent health");
+        }
+        int brokenMask = combatState.brokenPointMask();
+        if ((phase == NinthFormPhase.PRELUDE && (brokenMask != 0
+                        || !combatState.equals(new NinthFormCombatSnapshot.CombatState(
+                                0, 0L, "idle", 0))
+                        || !vitalState.equals(NinthFormCombatSnapshot.VitalState.pristine())))
+                || ((phase == NinthFormPhase.INTERLUDE || phase == NinthFormPhase.FINAL)
+                        && brokenMask != 0b111)
+                || (phase == NinthFormPhase.INTERLUDE
+                        && (!combatState.attackId().equals("idle")
+                                || combatState.attackTick() != 0))) {
+            throw new IllegalArgumentException("phase conflicts with durable combat state");
+        }
+        NinthFormStoryGate.Envelope envelope = new NinthFormStoryGate.Envelope(
+                campaignId, campaignRevision, campaignFingerprint, progressEpoch);
+        UUID expectedPhaseFact = NinthFormFactIds.forProof(
+                encounterId,
+                targetId,
+                envelope,
+                NinthFormBarrier.Kind.PHASE_ONE_COMPLETED);
+        UUID expectedDefeatFact = NinthFormFactIds.forProof(
+                encounterId, targetId, envelope, NinthFormBarrier.Kind.DEFEATED);
+        if (!phaseFactId.equals(expectedPhaseFact) || !defeatFactId.equals(expectedDefeatFact)) {
+            throw new IllegalArgumentException("encounter fact UUIDs are not deterministic");
+        }
         if (lastObservedGameTick < 0L) {
             throw new IllegalArgumentException("lastObservedGameTick cannot be negative");
         }

@@ -91,6 +91,31 @@ class NinthFormCombatArchitectureTest {
         assertTrue(transition >= 0);
         assertTrue(proof > transition);
         assertTrue(engine.contains("phase = NinthFormPhase.INTERLUDE"));
+        int terminalProof = engine.indexOf("NinthFormCombatSignal.Kind.DEFEATED");
+        int suspension = engine.indexOf("NinthFormCombatSignal.Kind.SUSPENDED");
+        int targetLookup = engine.indexOf("ServerPlayer target =");
+        assertTrue(terminalProof >= 0);
+        assertTrue(terminalProof < targetLookup);
+        assertTrue(targetLookup < suspension);
+    }
+
+    @Test
+    void persistedCombatScaleUsesTheCanonicalDoubleTableNotTheSyncedFloat() throws IOException {
+        String boss = source("NinthFormBoss.java");
+        assertTrue(boss.contains("return NinthFormScaling.damageScale(participantCount())"));
+        assertTrue(boss.contains("mirror.putDouble(DAMAGE_SCALE, damageScale())"));
+        assertFalse(boss.contains("return entityData.get(SYNCED_DAMAGE_SCALE)"));
+    }
+
+    @Test
+    void exactCleanupDoesNotDependOnEveryFootprintChunkRemainingLoaded() throws IOException {
+        String gateway = source("ForgeNinthFormEntityGateway.java");
+        int suspend = gateway.indexOf("public ControlResult suspendLoaded");
+        int discard = gateway.indexOf("public ControlResult discardLoaded");
+        int exactHelper = gateway.indexOf("private Checked checkedExact");
+        assertTrue(suspend >= 0 && discard > suspend && exactHelper > discard);
+        assertTrue(gateway.substring(suspend, discard).contains("checkedExact(identity, entityId)"));
+        assertTrue(gateway.substring(discard, exactHelper).contains("checkedExact(identity, entityId)"));
     }
 
     private static String allCombatSource() throws IOException {

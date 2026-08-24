@@ -15,9 +15,10 @@ import net.minecraft.server.MinecraftServer;
  * One typed integration point; the encounter package never touches entity classes.
  *
  * <p>The combat module binds one server-scoped gateway during server start,
- * attaches its signal sink to {@link NinthFormEncounterManager#onCombatSignal},
- * validates every entity join through {@link NinthFormEncounterManager#acceptsEntity},
- * and unbinds the same gateway during server stop. Missing or duplicate bindings
+ * attaches its signal sink to the bounded end-tick inbox, routes callbacks
+ * through {@code NinthFormEncounterManager#onCombatSignal}, validates every
+ * entity join through {@link NinthFormEncounterManager#acceptsEntity}, and
+ * unbinds the same gateway after server stop. Missing or duplicate bindings
  * fail closed.</p>
  */
 public final class NinthFormGatewayRegistry {

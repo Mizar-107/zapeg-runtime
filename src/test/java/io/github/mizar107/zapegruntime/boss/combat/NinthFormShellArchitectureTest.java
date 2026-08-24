@@ -40,7 +40,7 @@ class NinthFormShellArchitectureTest {
     }
 
     @Test
-    void gatewayIsLoadedOnlyAndRegistrationIsNotGloballyWired() throws IOException {
+    void gatewayIsLoadedOnlyAndIntegrationRegistersTheEntity() throws IOException {
         String gateway = combat("ForgeNinthFormEntityGateway.java");
         String loaded = combat("NinthFormLoadedFootprint.java");
         String global = Files.readString(MAIN.resolve("ZapeGRuntime.java"));
@@ -49,7 +49,7 @@ class NinthFormShellArchitectureTest {
         assertFalse(gateway.contains("getChunk("));
         assertFalse(gateway.contains("setChunkForced"));
         assertFalse(gateway.contains("teleportToWithTicket"));
-        assertFalse(global.contains("NinthFormEntities"));
+        assertTrue(global.contains("NinthFormEntities.register(modBus)"));
     }
 
     @Test

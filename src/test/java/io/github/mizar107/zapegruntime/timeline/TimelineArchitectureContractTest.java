@@ -79,7 +79,7 @@ class TimelineArchitectureContractTest {
         assertTrue(events.contains("SceneCommands.register(event)"));
         assertTrue(events.contains("TimelineCommands.attach(root)"));
         assertEquals(1, occurrences(events, "HeraldorCommands.register("));
-        assertTrue(network.contains("public static final String PROTOCOL = \"10\""));
+        assertTrue(network.contains("public static final String PROTOCOL = \"11\""));
     }
 
     @Test

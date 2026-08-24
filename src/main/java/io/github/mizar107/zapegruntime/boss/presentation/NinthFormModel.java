@@ -118,8 +118,8 @@ public final class NinthFormModel extends EntityModel<NinthFormBoss> {
                 box(uv, originX, originY, originZ),
                 PartPose.offset(
                         pixels(kind.lateralOffset()),
-                        modelY(kind.verticalOffset()),
-                        pixels(kind.forwardOffset())));
+                        modelPartCenterY(kind),
+                        modelForward(kind.forwardOffset())));
     }
 
     private static CubeListBuilder box(
@@ -131,6 +131,16 @@ public final class NinthFormModel extends EntityModel<NinthFormBoss> {
 
     private static float pixels(double blocks) {
         return (float) (blocks * PIXELS_PER_BLOCK);
+    }
+
+    /* LivingEntityRenderer turns the model by 180 - yaw, so model +Z is world -forward. */
+    private static float modelForward(double worldForward) {
+        return -pixels(worldForward);
+    }
+
+    /* PartEntity AABBs use [verticalOffset, verticalOffset + height]. */
+    private static float modelPartCenterY(NinthFormPartKind kind) {
+        return modelY(kind.verticalOffset() + kind.height() / 2.0D);
     }
 
     private static float modelY(double worldHeight) {

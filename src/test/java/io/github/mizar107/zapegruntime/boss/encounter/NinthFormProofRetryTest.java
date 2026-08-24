@@ -40,7 +40,7 @@ class NinthFormProofRetryTest {
     }
 
     @Test
-    void permanentEnvelopeMismatchClearsRetryAndTableRefusesOverflow() {
+    void retryableCurrentEpochDominatesStaleMismatchAndTableRefusesOverflow() {
         NinthFormEncounterManager.RetryBook<UUID> retries =
                 new NinthFormEncounterManager.RetryBook<>(1, 1_200L);
         UUID first = UUID.randomUUID();
@@ -54,7 +54,7 @@ class NinthFormProofRetryTest {
                 List.of(
                         result(NinthFormProgressionSync.SyncStatus.NOT_READY),
                         result(NinthFormProgressionSync.SyncStatus.ENVELOPE_MISMATCH)));
-        assertEquals(0, retries.size());
+        assertEquals(1, retries.size());
     }
 
     @Test
@@ -69,6 +69,17 @@ class NinthFormProofRetryTest {
             assertTrue(due - now <= 1_200L);
             now = due;
         }
+    }
+
+    @Test
+    void dueSelectionIsExplicitlyBounded() {
+        NinthFormEncounterManager.RetryBook<UUID> retries =
+                new NinthFormEncounterManager.RetryBook<>(4, 1_200L);
+        for (int index = 0; index < 4; index++) {
+            retries.schedule(UUID.randomUUID(), 0L);
+        }
+        assertEquals(2, retries.due(20L, 2).size());
+        assertTrue(retries.due(20L, 0).isEmpty());
     }
 
     private static NinthFormProgressionSync.SyncResult result(

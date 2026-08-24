@@ -45,7 +45,8 @@ class NinthFormStartRetryTest {
         for (NinthFormEncounterManager.StartStatus status : new NinthFormEncounterManager.StartStatus[] {
                 NinthFormEncounterManager.StartStatus.GATEWAY_UNAVAILABLE,
                 NinthFormEncounterManager.StartStatus.DATA_UNAVAILABLE,
-                NinthFormEncounterManager.StartStatus.STORY_NOT_READY
+                NinthFormEncounterManager.StartStatus.STORY_NOT_READY,
+                NinthFormEncounterManager.StartStatus.CAPACITY_UNAVAILABLE
         }) {
             NinthFormEncounterManager.reconcileStartResult(retries, target, 0L, status);
             assertTrue(retries.size() == 1, status.name());

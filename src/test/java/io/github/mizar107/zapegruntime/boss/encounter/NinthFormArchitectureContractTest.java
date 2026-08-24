@@ -91,4 +91,22 @@ class NinthFormArchitectureContractTest {
         assertFalse(data.contains("barriersByFact.remove"));
         assertTrue(data.contains("return preservedRoot.copy()"));
     }
+
+    @Test
+    void startupReplayIsIndexedTickBoundedAndShutdownDrainsProofsFirst() throws IOException {
+        String manager = Files.readString(ENCOUNTER.resolve("NinthFormEncounterManager.java"));
+        String data = Files.readString(ENCOUNTER.resolve("NinthFormEncounterData.java"));
+        String sync = Files.readString(ENCOUNTER.resolve("NinthFormProgressionSync.java"));
+        String events = Files.readString(ENCOUNTER.resolve("NinthFormServerEvents.java"));
+        assertTrue(manager.contains("MAX_TARGETS_PER_RECONCILE = 32"));
+        assertTrue(manager.contains("takeQueuedTargets(server, MAX_TARGETS_PER_RECONCILE)"));
+        assertFalse(manager.contains("NinthFormProgressionSync.replayAll(server)"));
+        assertTrue(data.contains("barriersByTarget"));
+        assertTrue(data.contains("barriersByKind"));
+        assertTrue(sync.contains("immutableBarriersForTarget(targetId)"));
+        int stopping = events.indexOf("public static void onServerStopping");
+        int drain = events.indexOf("drainSignals(event.getServer())", stopping);
+        int suspend = events.indexOf("NinthFormEncounterManager.onServerStopping", stopping);
+        assertTrue(stopping >= 0 && drain > stopping && suspend > drain);
+    }
 }

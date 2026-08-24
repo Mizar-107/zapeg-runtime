@@ -17,15 +17,28 @@ class NinthFormSuspensionTest {
     @Test
     void exactSuspendDiscardsOnlyTheBoundEntityAndMismatchHasNoCollateral() {
         NinthFormEncounterData data = new NinthFormEncounterData();
+        UUID encounterId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        ResourceLocation campaign = ResourceLocation.tryBuild("zapeg_runtime", "heraldor");
+        NinthFormStoryGate.Envelope envelope =
+                new NinthFormStoryGate.Envelope(campaign, 1, "a".repeat(64), 0L);
         NinthFormEncounter encounter = new NinthFormEncounter(
+                encounterId,
+                targetId,
                 UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
+                NinthFormFactIds.forProof(
+                        encounterId,
+                        targetId,
+                        envelope,
+                        NinthFormBarrier.Kind.PHASE_ONE_COMPLETED),
+                NinthFormFactIds.forProof(
+                        encounterId,
+                        targetId,
+                        envelope,
+                        NinthFormBarrier.Kind.DEFEATED),
                 0,
                 false,
-                ResourceLocation.tryBuild("zapeg_runtime", "heraldor"),
+                campaign,
                 1,
                 "a".repeat(64),
                 0L,

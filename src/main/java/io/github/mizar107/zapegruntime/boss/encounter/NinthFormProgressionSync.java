@@ -21,11 +21,9 @@ public final class NinthFormProgressionSync {
     }
 
     public static List<SyncResult> replayTarget(MinecraftServer server, UUID targetId) {
-        List<NinthFormBarrier> selected = NinthFormEncounterData.get(server).immutableBarriers()
-                .stream()
-                .filter(barrier -> barrier.targetId().equals(targetId))
-                .toList();
-        return replay(server, selected);
+        return replay(
+                server,
+                NinthFormEncounterData.get(server).immutableBarriersForTarget(targetId));
     }
 
     private static List<SyncResult> replay(
@@ -107,9 +105,7 @@ public final class NinthFormProgressionSync {
     }
 
     public static int barrierCountForTarget(MinecraftServer server, UUID targetId) {
-        return Math.toIntExact(NinthFormEncounterData.get(server).immutableBarriers().stream()
-                .filter(barrier -> barrier.targetId().equals(targetId))
-                .count());
+        return NinthFormEncounterData.get(server).immutableBarrierCountForTarget(targetId);
     }
 
     public enum SyncStatus {

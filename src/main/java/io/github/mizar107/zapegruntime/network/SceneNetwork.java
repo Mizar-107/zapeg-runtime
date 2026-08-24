@@ -31,9 +31,9 @@ public final class SceneNetwork {
     // mixed v7/v8 installations must fail the handshake rather than report a
     // false VISIBLE or silently discard diagnostics.
     /** Protocol 9 adds {@code breach_01} and the truthful AVAILABLE fallback state. */
-    // Protocol 10 adds a fixed five-byte authorized journal view and a
-    // one-byte closed journal action. Mixed installations must fail at login.
-    public static final String PROTOCOL = "10";
+    // Protocol 11 adds the Ninth Form's synchronized multipart combat state.
+    // Mixed installations must fail at login.
+    public static final String PROTOCOL = "11";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             ResourceLocation.fromNamespaceAndPath(ZapeGRuntime.MOD_ID, "scenes"),
             () -> PROTOCOL,

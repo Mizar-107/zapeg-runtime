@@ -80,8 +80,8 @@ class NinthFormStoryGateTest {
                 1,
                 1.0D,
                 1.0D,
-                new NinthFormCombatSnapshot.CombatState(0, 0L, "idle", 0),
-                NinthFormCombatSnapshot.VitalState.pristine(),
+                new NinthFormCombatSnapshot.CombatState(0b111, 0L, "idle", 0),
+                new NinthFormCombatSnapshot.VitalState(1.0D, 0.0D, 0.0D, 0.0D),
                 0L);
         assertEquals(
                 NinthFormStoryGate.Status.ELIGIBLE,

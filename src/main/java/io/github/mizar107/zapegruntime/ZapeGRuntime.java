@@ -1,6 +1,8 @@
 package io.github.mizar107.zapegruntime;
 
 import com.mojang.logging.LogUtils;
+import io.github.mizar107.zapegruntime.boss.combat.NinthFormEntities;
+import io.github.mizar107.zapegruntime.boss.presentation.NinthFormSounds;
 import io.github.mizar107.zapegruntime.client.OsScareConfig;
 import io.github.mizar107.zapegruntime.journal.JournalItems;
 import io.github.mizar107.zapegruntime.network.SceneNetwork;
@@ -23,7 +25,9 @@ public final class ZapeGRuntime {
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
         JournalItems.register(modBus);
         ServantEntities.register(modBus);
+        NinthFormEntities.register(modBus);
         HeraldorSounds.register(modBus);
+        NinthFormSounds.register(modBus);
         SceneNetwork.register();
         ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, OsScareConfig.SPEC);
     }

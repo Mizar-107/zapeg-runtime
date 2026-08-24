@@ -73,7 +73,7 @@ class StoryArchitectureContractTest {
 
     @Test
     void journalExtensionOwnsTheSingleBatchThreeProtocolBump() {
-        assertEquals("10", SceneNetwork.PROTOCOL);
+        assertEquals("11", SceneNetwork.PROTOCOL);
     }
 
     @Test

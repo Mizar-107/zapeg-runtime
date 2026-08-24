@@ -11,7 +11,8 @@ import io.github.mizar107.zapegruntime.story.StoryWorldData;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,7 @@ import net.minecraft.world.level.Level;
 public final class NinthFormEncounterManager {
 
     public static final int RECONCILE_INTERVAL_TICKS = 20;
+    public static final int MAX_TARGETS_PER_RECONCILE = 32;
     public static final int MAX_RETRY_TARGETS = 4_096;
     public static final long MAX_RETRY_BACKOFF_TICKS = 1_200L;
 
@@ -138,9 +140,12 @@ public final class NinthFormEncounterManager {
             return;
         }
         long gameTick = server.overworld().getGameTime();
-        LinkedHashSet<UUID> work = new LinkedHashSet<>(drainTargets(server));
-        work.addAll(retryBook(server).due(gameTick));
-        work.addAll(startRetryBook(server).due(gameTick));
+        LinkedHashSet<UUID> work = new LinkedHashSet<>(
+                takeQueuedTargets(server, MAX_TARGETS_PER_RECONCILE));
+        int remaining = MAX_TARGETS_PER_RECONCILE - work.size();
+        work.addAll(retryBook(server).due(gameTick, remaining));
+        remaining = MAX_TARGETS_PER_RECONCILE - work.size();
+        work.addAll(startRetryBook(server).due(gameTick, remaining));
         for (UUID targetId : work) {
             List<NinthFormProgressionSync.SyncResult> results =
                     NinthFormProgressionSync.replayTarget(server, targetId);
@@ -180,10 +185,9 @@ public final class NinthFormEncounterManager {
     public static void onServerStarted(MinecraftServer server) {
         requireServerThread(server);
         STOPPING_SERVERS.remove(server);
-        NinthFormProgressionSync.replayAll(server);
         NinthFormEncounterData data = NinthFormEncounterData.get(server);
         data.activeEncounters().forEach(encounter -> queueTarget(server, encounter.targetId()));
-        data.immutableBarriers().forEach(barrier -> queueTarget(server, barrier.targetId()));
+        data.immutableBarrierTargetIds().forEach(targetId -> queueTarget(server, targetId));
         server.getPlayerList().getPlayers().forEach(player -> queueTarget(server, player.getUUID()));
     }
 
@@ -312,7 +316,13 @@ public final class NinthFormEncounterManager {
         NinthFormEncounterData.BeginResult begun = data.begin(encounter);
         if (begun.status() != NinthFormEncounterData.BeginStatus.STARTED
                 && begun.status() != NinthFormEncounterData.BeginStatus.IDEMPOTENT) {
-            return StartResult.failed(StartStatus.DATA_REFUSED, begun.detail());
+            StartStatus refused = switch (begun.status()) {
+                case ACTIVE_CAPACITY_EXHAUSTED, BARRIER_CAPACITY_EXHAUSTED ->
+                        StartStatus.CAPACITY_UNAVAILABLE;
+                case DATA_UNAVAILABLE -> StartStatus.DATA_UNAVAILABLE;
+                default -> StartStatus.DATA_REFUSED;
+            };
+            return StartResult.failed(refused, begun.detail());
         }
         boolean spawned = spawnPrepared(server, begun.encounter());
         return new StartResult(
@@ -571,20 +581,38 @@ public final class NinthFormEncounterManager {
         if (player == null) {
             return;
         }
-        NinthFormEncounterData.get(server).immutableBarriers().stream()
-                .filter(barrier -> barrier.targetId().equals(targetId)
-                        && barrier.kind() == NinthFormBarrier.Kind.DEFEATED)
+        NinthFormEncounterData.get(server).immutableBarriersForTarget(targetId).stream()
+                .filter(barrier -> barrier.kind() == NinthFormBarrier.Kind.DEFEATED)
                 .findFirst()
                 .ifPresent(barrier -> NinthFormRewardService.award(player, barrier));
     }
 
     private static void queueTarget(MinecraftServer server, UUID targetId) {
-        QUEUED_TARGETS.computeIfAbsent(server, ignored -> new LinkedHashSet<>()).add(targetId);
+        LinkedHashSet<UUID> queued =
+                QUEUED_TARGETS.computeIfAbsent(server, ignored -> new LinkedHashSet<>());
+        if (queued.contains(targetId) || queued.size() < MAX_RETRY_TARGETS) {
+            queued.add(targetId);
+        }
     }
 
-    private static Set<UUID> drainTargets(MinecraftServer server) {
-        LinkedHashSet<UUID> queued = QUEUED_TARGETS.remove(server);
-        return queued == null ? Set.of() : Set.copyOf(queued);
+    private static List<UUID> takeQueuedTargets(MinecraftServer server, int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
+        LinkedHashSet<UUID> queued = QUEUED_TARGETS.get(server);
+        if (queued == null || queued.isEmpty()) {
+            return List.of();
+        }
+        List<UUID> selected = new ArrayList<>(Math.min(limit, queued.size()));
+        Iterator<UUID> iterator = queued.iterator();
+        while (iterator.hasNext() && selected.size() < limit) {
+            selected.add(iterator.next());
+            iterator.remove();
+        }
+        if (queued.isEmpty()) {
+            QUEUED_TARGETS.remove(server);
+        }
+        return List.copyOf(selected);
     }
 
     static void reconcileProofResults(
@@ -595,15 +623,15 @@ public final class NinthFormEncounterManager {
         Objects.requireNonNull(retries, "retries");
         Objects.requireNonNull(targetId, "targetId");
         Objects.requireNonNull(results, "results");
-        boolean permanentMismatch = results.stream().anyMatch(result ->
-                result.status() == NinthFormProgressionSync.SyncStatus.ENVELOPE_MISMATCH);
         boolean retryable = results.stream().anyMatch(result ->
                 result.status() == NinthFormProgressionSync.SyncStatus.NOT_READY
                         || result.status() == NinthFormProgressionSync.SyncStatus.REFUSED);
-        if (permanentMismatch || !retryable) {
-            retries.clear(targetId);
-        } else {
+        // A target may own stale immutable epochs and one current barrier.
+        // A retryable current result must dominate an unrelated stale mismatch.
+        if (retryable) {
             retries.schedule(targetId, gameTick);
+        } else {
+            retries.clear(targetId);
         }
     }
 
@@ -618,7 +646,8 @@ public final class NinthFormEncounterManager {
         boolean retryable = status == StartStatus.GATEWAY_UNAVAILABLE
                 || status == StartStatus.DATA_UNAVAILABLE
                 || status == StartStatus.STORY_NOT_READY
-                || status == StartStatus.ARENA_UNAVAILABLE;
+                || status == StartStatus.ARENA_UNAVAILABLE
+                || status == StartStatus.CAPACITY_UNAVAILABLE;
         if (retryable) {
             retries.schedule(targetId, gameTick);
         } else {
@@ -647,7 +676,7 @@ public final class NinthFormEncounterManager {
     static final class RetryBook<K> {
         private final int capacity;
         private final long maxBackoffTicks;
-        private final Map<K, RetryState> states = new HashMap<>();
+        private final Map<K, RetryState> states = new LinkedHashMap<>();
 
         RetryBook(int capacity, long maxBackoffTicks) {
             if (capacity < 1 || maxBackoffTicks < RECONCILE_INTERVAL_TICKS) {
@@ -679,12 +708,23 @@ public final class NinthFormEncounterManager {
         }
 
         Set<K> due(long gameTick) {
+            return due(gameTick, capacity);
+        }
+
+        Set<K> due(long gameTick, int limit) {
             LinkedHashSet<K> result = new LinkedHashSet<>();
-            states.forEach((key, state) -> {
-                if (state.dueGameTick() <= gameTick) {
+            if (limit <= 0) {
+                return Set.of();
+            }
+            for (Map.Entry<K, RetryState> entry : states.entrySet()) {
+                if (entry.getValue().dueGameTick() <= gameTick) {
+                    K key = entry.getKey();
                     result.add(key);
+                    if (result.size() >= limit) {
+                        break;
+                    }
                 }
-            });
+            }
             return Set.copyOf(result);
         }
 
@@ -710,6 +750,7 @@ public final class NinthFormEncounterManager {
         STORY_NOT_READY,
         NOT_EXPECTED,
         ARENA_UNAVAILABLE,
+        CAPACITY_UNAVAILABLE,
         DATA_REFUSED
     }
 

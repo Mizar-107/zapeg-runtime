@@ -1,8 +1,8 @@
 {
   "display": {
     "icon": {"item": "minecraft:echo_shard"},
-    "title": "After the Ninth",
-    "description": "The Ninth Form is banished, but one page remains warm.",
+    "title": {"translate": "advancements.zapeg_runtime.heraldor.banish_ninth_form.title"},
+    "description": {"translate": "advancements.zapeg_runtime.heraldor.banish_ninth_form.description"},
     "frame": "challenge",
     "show_toast": true,
     "announce_to_chat": false,

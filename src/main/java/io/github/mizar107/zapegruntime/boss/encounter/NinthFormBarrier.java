@@ -71,6 +71,13 @@ public record NinthFormBarrier(
             throw new IllegalArgumentException("progressEpoch cannot be negative");
         }
         Objects.requireNonNull(kind, "kind");
+        NinthFormStoryGate.Envelope envelope = new NinthFormStoryGate.Envelope(
+                campaignId, campaignRevision, campaignFingerprint, progressEpoch);
+        UUID expectedFact = NinthFormFactIds.forProof(
+                encounterId, targetId, envelope, kind);
+        if (!factId.equals(expectedFact)) {
+            throw new IllegalArgumentException("barrier fact UUID is not deterministic");
+        }
     }
 
     static NinthFormBarrier fromEncounter(NinthFormEncounter encounter, Kind kind) {

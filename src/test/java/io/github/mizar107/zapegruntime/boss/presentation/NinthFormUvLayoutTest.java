@@ -42,6 +42,24 @@ class NinthFormUvLayoutTest {
             var visual = visuals.get(kind);
             assertTrue(visual.sizeX() / 16.0F <= kind.width(), kind.serializedName());
             assertTrue(visual.sizeY() / 16.0F <= kind.height(), kind.serializedName());
+            double aabbCenterY = kind.verticalOffset() + kind.height() / 2.0D;
+            double visualHalfHeight = visual.sizeY() / 32.0D;
+            assertTrue(
+                    aabbCenterY - visualHalfHeight >= kind.verticalOffset(),
+                    kind.serializedName());
+            assertTrue(
+                    aabbCenterY + visualHalfHeight
+                            <= kind.verticalOffset() + kind.height(),
+                    kind.serializedName());
         }
+    }
+
+    @Test
+    void finalHeartVisualProjectsBeyondTheOpaqueHullAboveGround() {
+        double hullForwardEdge = NinthFormUvLayout.PARENT_HULL.sizeZ() / 32.0D;
+        double heartNearEdge = NinthFormPartKind.KEEL_HEART.forwardOffset()
+                - NinthFormUvLayout.KEEL_HEART.sizeZ() / 32.0D;
+        assertTrue(heartNearEdge > hullForwardEdge);
+        assertTrue(NinthFormPartKind.KEEL_HEART.verticalOffset() > 0.0D);
     }
 }

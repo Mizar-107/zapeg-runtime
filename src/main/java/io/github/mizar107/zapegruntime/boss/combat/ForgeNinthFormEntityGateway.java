@@ -5,6 +5,7 @@ import io.github.mizar107.zapegruntime.boss.api.NinthFormCombatSignal;
 import io.github.mizar107.zapegruntime.boss.api.NinthFormEntityGateway;
 import io.github.mizar107.zapegruntime.boss.api.NinthFormIdentity;
 import io.github.mizar107.zapegruntime.boss.api.NinthFormPhase;
+import io.github.mizar107.zapegruntime.boss.presentation.NinthFormSounds;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -14,6 +15,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 
@@ -72,7 +74,32 @@ public final class ForgeNinthFormEntityGateway implements NinthFormEntityGateway
             boss.discard();
             return spawnRefused(Status.FAILED, "entity_addition_failed");
         }
+        level.playSound(
+                null,
+                boss.getX(),
+                boss.getY(),
+                boss.getZ(),
+                NinthFormSounds.AWAKENING.get(),
+                SoundSource.HOSTILE,
+                2.5F,
+                0.72F);
         return new SpawnResult(Status.APPLIED, Optional.of(boss.getUUID()), "spawned_loaded");
+    }
+
+    /** Attaches the queued signal sink during an exact, prevalidated entity join. */
+    public boolean attachJoined(
+            NinthFormBoss boss, NinthFormIdentity expected, UUID entityId) {
+        Objects.requireNonNull(boss, "boss");
+        Objects.requireNonNull(expected, "expected");
+        expected.validateEntityId(entityId);
+        if (!server.isSameThread()
+                || !(boss.level() instanceof ServerLevel level)
+                || level.getServer() != server
+                || !boss.identityMatches(expected, entityId)) {
+            return false;
+        }
+        boss.attachSignalSink(signalSink);
+        return true;
     }
 
     @Override
@@ -115,7 +142,7 @@ public final class ForgeNinthFormEntityGateway implements NinthFormEntityGateway
 
     @Override
     public ControlResult suspendLoaded(NinthFormIdentity identity, UUID entityId) {
-        Checked checked = checkedLoaded(identity, entityId);
+        Checked checked = checkedExact(identity, entityId);
         if (checked.status() != Status.APPLIED) {
             return new ControlResult(checked.status(), checked.detail());
         }
@@ -125,7 +152,7 @@ public final class ForgeNinthFormEntityGateway implements NinthFormEntityGateway
 
     @Override
     public ControlResult discardLoaded(NinthFormIdentity identity, UUID entityId) {
-        Checked checked = checkedLoaded(identity, entityId);
+        Checked checked = checkedExact(identity, entityId);
         if (checked.status() != Status.APPLIED) {
             return new ControlResult(checked.status(), checked.detail());
         }
@@ -134,6 +161,21 @@ public final class ForgeNinthFormEntityGateway implements NinthFormEntityGateway
     }
 
     private Checked checkedLoaded(NinthFormIdentity identity, UUID entityId) {
+        Checked exact = checkedExact(identity, entityId);
+        if (exact.status() != Status.APPLIED) {
+            return exact;
+        }
+        Located located = locate(entityId);
+        if (!NinthFormLoadedFootprint.fullyLoaded(
+                located.level(), exact.boss().loadedFootprint())) {
+            return new Checked(Status.NOT_LOADED, null, "entity_footprint_not_loaded");
+        }
+        exact.boss().attachSignalSink(signalSink);
+        return exact;
+    }
+
+    /** Destructive cleanup needs only the exact entity's owning loaded chunk. */
+    private Checked checkedExact(NinthFormIdentity identity, UUID entityId) {
         Objects.requireNonNull(identity, "identity");
         identity.validateEntityId(entityId);
         if (!server.isSameThread()) {
@@ -145,10 +187,6 @@ public final class ForgeNinthFormEntityGateway implements NinthFormEntityGateway
         }
         if (!located.boss().identityMatches(identity, entityId)) {
             return new Checked(Status.IDENTITY_MISMATCH, null, "encounter_identity_mismatch");
-        }
-        if (!NinthFormLoadedFootprint.fullyLoaded(
-                located.level(), located.boss().loadedFootprint())) {
-            return new Checked(Status.NOT_LOADED, null, "entity_footprint_not_loaded");
         }
         located.boss().attachSignalSink(signalSink);
         return new Checked(Status.APPLIED, located.boss(), "loaded");

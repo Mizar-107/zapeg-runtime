@@ -27,7 +27,7 @@ class NinthFormPresentationArchitectureTest {
         assertTrue(renderer.contains("LivingEntityRenderer<NinthFormBoss, NinthFormModel>"));
         assertFalse(global.contains("NinthFormClientEvents"));
         assertFalse(global.contains("NinthFormRenderer"));
-        assertFalse(global.contains("NinthFormSounds"));
+        assertTrue(global.contains("NinthFormSounds.register(modBus)"));
     }
 
     @Test
@@ -42,8 +42,12 @@ class NinthFormPresentationArchitectureTest {
         }
         assertTrue(model.contains("addNativePart("));
         assertTrue(model.contains("kind.lateralOffset()"));
-        assertTrue(model.contains("kind.forwardOffset()"));
-        assertTrue(model.contains("kind.verticalOffset()"));
+        assertTrue(model.contains("modelForward(kind.forwardOffset())"));
+        assertTrue(model.contains("return -pixels(worldForward)"));
+        assertTrue(model.contains("LivingEntityRenderer turns the model by 180 - yaw"));
+        assertTrue(model.contains("modelPartCenterY(kind)"));
+        assertTrue(model.contains("kind.verticalOffset() + kind.height() / 2.0D"));
+        assertTrue(model.contains("PartEntity AABBs use [verticalOffset, verticalOffset + height]"));
         assertFalse(all.contains("cataclysm"));
         assertFalse(all.contains("aquamirae"));
         assertFalse(all.contains("geckolib"));
