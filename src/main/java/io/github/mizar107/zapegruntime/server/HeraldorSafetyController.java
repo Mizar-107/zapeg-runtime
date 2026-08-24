@@ -22,6 +22,10 @@ public final class HeraldorSafetyController {
 
     /** JVM-local proof that this exact generation was sanitized in this process. */
     private static final Map<MinecraftServer, Long> ENFORCED_GENERATIONS = new WeakHashMap<>();
+    /** Generations revoked before a transition barrier is attempted in this JVM. */
+    private static final Map<MinecraftServer, Long> REVOKED_GENERATIONS = new WeakHashMap<>();
+    /** A new JVM must consume its one startup latch before persisted authority is considered. */
+    private static final Map<MinecraftServer, Boolean> STARTUP_LATCHES = new WeakHashMap<>();
     /** Last disk inspection; refreshed by every safety enforcement tick. */
     private static final Map<MinecraftServer, HeraldorSafetyFuse.Inspection> AUTHORITY_STATES =
             new WeakHashMap<>();
@@ -29,8 +33,8 @@ public final class HeraldorSafetyController {
     private HeraldorSafetyController() {}
 
     /**
-     * Effective permission requires all three authorities: current SavedData, an exact persistent
-     * mirror, and a zero-active cleanup certificate created in this JVM.
+     * Effective permission requires the consumed boot latch plus all three authorities: current
+     * SavedData, an exact persistent mirror, and this JVM's zero-active cleanup certificate.
      */
     public static HeraldorSafetyMode effectiveMode(MinecraftServer server) {
         if (server == null) {
@@ -38,16 +42,30 @@ public final class HeraldorSafetyController {
         }
         HeraldorSafetyData data = HeraldorSafetyData.get(server);
         HeraldorSafetyFuse.Inspection authority = authorityState(server);
-        if (!authority.matches(data)) {
-            return HeraldorSafetyMode.QUARANTINED;
-        }
         HeraldorSafetyMode configured =
                 data.effectiveMode(HeraldorSafetyCeiling.current());
-        if (configured == HeraldorSafetyMode.QUARANTINED
-                || !isEnforced(server, data.generation())) {
-            return HeraldorSafetyMode.QUARANTINED;
-        }
-        return configured;
+        return authorizedMode(
+                configured,
+                authority.matches(data),
+                isEnforced(server, data.generation()),
+                isRevoked(server, data.generation()),
+                startupLatchConsumed(server));
+    }
+
+    static HeraldorSafetyMode authorizedMode(
+            HeraldorSafetyMode configured,
+            boolean authorityMatches,
+            boolean cleanupCertified,
+            boolean generationRevoked,
+            boolean startupLatched) {
+        Objects.requireNonNull(configured, "configured");
+        return configured == HeraldorSafetyMode.QUARANTINED
+                        || !authorityMatches
+                        || !cleanupCertified
+                        || generationRevoked
+                        || !startupLatched
+                ? HeraldorSafetyMode.QUARANTINED
+                : configured;
     }
 
     public static boolean allows(MinecraftServer server, HeraldorSafetyMode required) {
@@ -66,7 +84,9 @@ public final class HeraldorSafetyController {
         HeraldorSafetyFuse.Inspection authority = authorityState(server);
         boolean writableAuthority = data.schemaStatus().writable()
                 && authority.matches(data)
-                && isEnforced(server, data.generation());
+                && isEnforced(server, data.generation())
+                && !isRevoked(server, data.generation())
+                && startupLatchConsumed(server);
         return formatStatus(
                 effectiveMode(server),
                 ceiling,
@@ -100,6 +120,9 @@ public final class HeraldorSafetyController {
         requireServerThread(server);
         HeraldorSafetyData data = HeraldorSafetyData.get(server);
         HeraldorSafetyMode ceiling = HeraldorSafetyCeiling.current();
+        if (!startupLatchConsumed(server)) {
+            return ActionOutcome.refused("startup_not_enforced", data, ceiling, server);
+        }
         if (requested == HeraldorSafetyMode.QUARANTINED) {
             return ActionOutcome.refused("invalid_mode", data, ceiling, server);
         }
@@ -120,29 +143,38 @@ public final class HeraldorSafetyController {
             return ActionOutcome.refused(
                     "duplicate_cleanup_uncertified", data, ceiling, server);
         }
-        if (!isEnforced(server, priorGeneration)) {
+        HeraldorSafetyMode previousConfigured = data.effectiveMode(ceiling);
+        boolean sourceWasAuthorized = effectiveMode(server) != HeraldorSafetyMode.QUARANTINED;
+        boolean barrierInstalled = false;
+        if (!duplicate) {
+            // Revoke the source generation in memory before touching the filesystem. Even if an
+            // armed mirror cannot be replaced, neither this tick nor a later enforce may restore
+            // the old authority automatically.
+            if (shouldLatchRevocation(data.configuredMode())) {
+                latchRevocation(server, priorGeneration);
+            }
+            clearEnforced(server);
+            if (sourceWasAuthorized) {
+                try {
+                    rememberAuthority(server, authorityStore(server).install(
+                            data.quarantineBarrierSnapshot()));
+                    barrierInstalled = true;
+                } catch (IOException | RuntimeException failure) {
+                    rememberAuthority(
+                            server, HeraldorSafetyFuse.Inspection.unsafe("barrier_install_failed"));
+                    ZapeGRuntime.LOGGER.error(
+                            "Failed to install Heraldor arm transition barrier", failure);
+                    return ActionOutcome.refused(
+                            "barrier_persistence_failed", data, ceiling, server);
+                }
+            }
+
+            // Certificates are deliberately fresh for every real arm/upshift/downshift. A
+            // duplicate may reuse one, but can never create it.
             CleanupCounts prerequisite = cleanup(server, 0);
             if (prerequisite.unresolved() != 0) {
                 clearEnforced(server);
                 return ActionOutcome.refused("cleanup_unresolved", data, ceiling, server);
-            }
-            markEnforced(server, priorGeneration);
-        }
-
-        HeraldorSafetyMode previousConfigured = data.effectiveMode(ceiling);
-        boolean barrierInstalled = false;
-        if (!duplicate && effectiveMode(server) != HeraldorSafetyMode.QUARANTINED) {
-            try {
-                rememberAuthority(server, authorityStore(server).install(
-                        data.quarantineBarrierSnapshot()));
-                barrierInstalled = true;
-            } catch (IOException | RuntimeException failure) {
-                rememberAuthority(
-                        server, HeraldorSafetyFuse.Inspection.unsafe("barrier_install_failed"));
-                ZapeGRuntime.LOGGER.error(
-                        "Failed to install Heraldor arm transition barrier", failure);
-                return ActionOutcome.refused(
-                        "barrier_persistence_failed", data, ceiling, server);
             }
         }
 
@@ -179,8 +211,8 @@ public final class HeraldorSafetyController {
                     return ActionOutcome.refused("cleanup_unresolved", data, ceiling, server);
                 }
             }
-            // An upshift inherits a certified zero-active predecessor. A downshift just proved
-            // its own cleanup above.
+            // Every transition proved a fresh zero-active predecessor above. A downshift also
+            // proves its post-transition generation here before certification.
             markEnforced(server, data.generation());
         }
 
@@ -213,11 +245,18 @@ public final class HeraldorSafetyController {
         Objects.requireNonNull(server, "server");
         requireServerThread(server);
         HeraldorSafetyData data = HeraldorSafetyData.get(server);
+        boolean barrierPersisted = false;
+        boolean finalAuthorityPersisted = false;
+        boolean savedDataPersisted = false;
+        if (shouldLatchRevocation(data.configuredMode())) {
+            latchRevocation(server, data.generation());
+        }
         clearEnforced(server);
         int persistenceFailures = 0;
         try {
             rememberAuthority(server, authorityStore(server).install(
                     data.quarantineBarrierSnapshot()));
+            barrierPersisted = true;
         } catch (IOException | RuntimeException barrierFailure) {
             persistenceFailures++;
             rememberAuthority(
@@ -229,6 +268,7 @@ public final class HeraldorSafetyController {
         data.emergencyQuarantine();
         try {
             rememberAuthority(server, authorityStore(server).install(data));
+            finalAuthorityPersisted = true;
         } catch (IOException | RuntimeException authorityFailure) {
             persistenceFailures++;
             rememberAuthority(
@@ -238,6 +278,7 @@ public final class HeraldorSafetyController {
         }
         try {
             HeraldorSafetyPersistence.flushAndVerify(server, data);
+            savedDataPersisted = true;
         } catch (RuntimeException failure) {
             persistenceFailures++;
             ZapeGRuntime.LOGGER.error(
@@ -248,7 +289,12 @@ public final class HeraldorSafetyController {
         if (counts.unresolved() == 0) {
             markEnforced(server, data.generation());
         }
-        return new StopOutcome(data.incidentId(), counts);
+        boolean durableRevocation = durableRevocationProven(
+                barrierPersisted, finalAuthorityPersisted, savedDataPersisted);
+        if (durableRevocation) {
+            clearRevocation(server, data.generation());
+        }
+        return new StopOutcome(data.incidentId(), counts, durableRevocation);
     }
 
     /** Repeats transient cleanup without changing mode, generation, nonce, or incident. */
@@ -265,8 +311,8 @@ public final class HeraldorSafetyController {
     }
 
     /**
-     * Startup/event-order barrier. No mode, including AUTO, is admitted in a new JVM until this
-     * exact generation has been verified and all transient authorities have been sanitized.
+     * Startup/event-order barrier. A new JVM demotes every persisted armed mode; only a later
+     * explicit arm may reopen it after startup has sanitized all transient authorities.
      */
     public static boolean enforce(MinecraftServer server) {
         Objects.requireNonNull(server, "server");
@@ -274,10 +320,19 @@ public final class HeraldorSafetyController {
         HeraldorSafetyData data = HeraldorSafetyData.get(server);
         HeraldorSafetyMode ceiling = HeraldorSafetyCeiling.current();
         HeraldorSafetyFuse.Inspection diskAuthority = refreshAuthority(server);
+        boolean firstEnforcement = consumeStartupLatch(server);
+        boolean runtimeRevocation = isRevoked(server, data.generation());
+        boolean bootDemotion = startupMustQuarantine(
+                firstEnforcement, data.configuredMode(), runtimeRevocation);
+        if (bootDemotion && data.schemaStatus().writable()) {
+            latchRevocation(server, data.generation());
+            data.emergencyQuarantine();
+        }
         HeraldorSafetyData.TransitionResult ceilingReconciliation =
                 data.reconcileCeiling(ceiling);
 
         if (diskAuthority.matches(data)
+                && !bootDemotion
                 && ceilingReconciliation.status()
                         != HeraldorSafetyData.TransitionStatus.APPLIED
                 && isEnforced(server, data.generation())) {
@@ -287,7 +342,8 @@ public final class HeraldorSafetyController {
         clearEnforced(server);
         int persistenceFailures = 0;
         boolean mirrorMismatch = !diskAuthority.matches(data);
-        if (ceilingReconciliation.status() == HeraldorSafetyData.TransitionStatus.APPLIED
+        if (bootDemotion
+                || ceilingReconciliation.status() == HeraldorSafetyData.TransitionStatus.APPLIED
                 || mirrorMismatch) {
             // Missing/corrupt/mismatched authority never heals into an armed mode. Destroy hidden
             // authority and require a fresh explicit arm.
@@ -327,6 +383,29 @@ public final class HeraldorSafetyController {
         return effectiveMode(server) != HeraldorSafetyMode.QUARANTINED;
     }
 
+    static boolean startupMustQuarantine(
+            boolean firstEnforcement,
+            HeraldorSafetyMode configuredMode,
+            boolean generationRevoked) {
+        Objects.requireNonNull(configuredMode, "configuredMode");
+        return configuredMode != HeraldorSafetyMode.QUARANTINED
+                && (firstEnforcement || generationRevoked);
+    }
+
+    static boolean shouldLatchRevocation(HeraldorSafetyMode configuredMode) {
+        return Objects.requireNonNull(configuredMode, "configuredMode")
+                != HeraldorSafetyMode.QUARANTINED;
+    }
+
+    static boolean durableRevocationProven(
+            boolean barrierPersisted,
+            boolean finalAuthorityPersisted,
+            boolean savedDataPersisted) {
+        return barrierPersisted
+                || finalAuthorityPersisted
+                || savedDataPersisted;
+    }
+
     private static boolean isEnforced(MinecraftServer server, long generation) {
         synchronized (ENFORCED_GENERATIONS) {
             return Objects.equals(ENFORCED_GENERATIONS.get(server), generation);
@@ -342,6 +421,39 @@ public final class HeraldorSafetyController {
     private static void clearEnforced(MinecraftServer server) {
         synchronized (ENFORCED_GENERATIONS) {
             ENFORCED_GENERATIONS.remove(server);
+        }
+    }
+
+    private static boolean isRevoked(MinecraftServer server, long generation) {
+        synchronized (REVOKED_GENERATIONS) {
+            return Objects.equals(REVOKED_GENERATIONS.get(server), generation);
+        }
+    }
+
+    private static void latchRevocation(MinecraftServer server, long generation) {
+        synchronized (REVOKED_GENERATIONS) {
+            REVOKED_GENERATIONS.put(server, generation);
+        }
+    }
+
+    private static void clearRevocation(MinecraftServer server, long generation) {
+        synchronized (REVOKED_GENERATIONS) {
+            if (Objects.equals(REVOKED_GENERATIONS.get(server), generation)) {
+                REVOKED_GENERATIONS.remove(server);
+            }
+        }
+    }
+
+    /** Returns true exactly once for each server instance/JVM lifetime. */
+    private static boolean consumeStartupLatch(MinecraftServer server) {
+        synchronized (STARTUP_LATCHES) {
+            return STARTUP_LATCHES.put(server, Boolean.TRUE) == null;
+        }
+    }
+
+    private static boolean startupLatchConsumed(MinecraftServer server) {
+        synchronized (STARTUP_LATCHES) {
+            return STARTUP_LATCHES.containsKey(server);
         }
     }
 
@@ -379,6 +491,12 @@ public final class HeraldorSafetyController {
         clearEnforced(server);
         synchronized (AUTHORITY_STATES) {
             AUTHORITY_STATES.remove(server);
+        }
+        synchronized (REVOKED_GENERATIONS) {
+            REVOKED_GENERATIONS.remove(server);
+        }
+        synchronized (STARTUP_LATCHES) {
+            STARTUP_LATCHES.remove(server);
         }
     }
 
@@ -521,9 +639,21 @@ public final class HeraldorSafetyController {
         }
     }
 
-    public record StopOutcome(UUID incidentId, CleanupCounts counts) {
+    public record StopOutcome(UUID incidentId, CleanupCounts counts, boolean durableRevocation) {
+        public boolean success() {
+            return durableRevocation && counts.unresolved() == 0;
+        }
+
         public String machineLine() {
-            return "heraldor_safety stopped mode=quarantined incident=" + incidentId
+            String prefix;
+            if (!durableRevocation) {
+                prefix = "heraldor_safety stop_failed reason=persistence_failed";
+            } else if (counts.unresolved() != 0) {
+                prefix = "heraldor_safety stop_failed reason=cleanup_unresolved";
+            } else {
+                prefix = "heraldor_safety stopped";
+            }
+            return prefix + " mode=quarantined incident=" + incidentId
                     + countsSuffix(counts);
         }
     }

@@ -28,10 +28,18 @@ class HeraldorSafetyContractTest {
     void stopFlushesQuarantineBeforeTheFirstCleanupMutation() throws IOException {
         String source = source("server/HeraldorSafetyController.java");
         int stop = source.indexOf("public static StopOutcome emergencyStop");
+        int stopRevoke = source.indexOf("latchRevocation(server, data.generation())", stop);
         int barrier = source.indexOf("data.quarantineBarrierSnapshot()", stop);
         int mutation = source.indexOf("data.emergencyQuarantine()", stop);
         int cleanup = source.indexOf("cleanup(server, persistenceFailures)", stop);
-        assertTrue(stop >= 0 && barrier > stop && mutation > barrier && cleanup > mutation);
+        assertTrue(stop >= 0 && stopRevoke > stop && barrier > stopRevoke
+                && mutation > barrier && cleanup > mutation);
+        int arm = source.indexOf("public static ActionOutcome arm");
+        int armRevoke = source.indexOf("latchRevocation(server, priorGeneration)", arm);
+        int armClear = source.indexOf("clearEnforced(server)", armRevoke);
+        int armBarrier = source.indexOf("data.quarantineBarrierSnapshot()", armClear);
+        assertTrue(arm >= 0 && armRevoke > arm && armClear > armRevoke
+                && armBarrier > armClear);
         assertTrue(source.contains("HeraldorSafetyPersistence.flushAndVerify(server, data)"));
         String persistence = source("server/HeraldorSafetyPersistence.java");
         assertTrue(persistence.contains("NbtIo.readCompressed"));

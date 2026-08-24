@@ -57,7 +57,12 @@ public final class HeraldorSafetyCommands {
     private static int stop(CommandContext<CommandSourceStack> context) {
         HeraldorSafetyController.StopOutcome result =
                 HeraldorSafetyController.emergencyStop(context.getSource().getServer());
-        context.getSource().sendSuccess(() -> Component.literal(result.machineLine()), false);
+        Component message = Component.literal(result.machineLine());
+        if (!result.success()) {
+            context.getSource().sendFailure(message);
+            return 0;
+        }
+        context.getSource().sendSuccess(() -> message, false);
         return 1;
     }
 

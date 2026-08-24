@@ -41,6 +41,8 @@ explicitly with a rotating nonce, cannot exceed `HERALDOR_MAX_MODE`, and are
 admitted only when a second atomic world authority record exactly matches the
 forced/read-back SavedData plus a zero-active cleanup certificate. Missing,
 corrupt, stale, unwritable, or mismatched authority stays quarantined.
+Every Minecraft process starts with a closed boot latch: a previously armed
+mode is demoted to quarantine and must be armed again after each restart.
 
 `/heraldor safety stop` is nonce-free and cancels scenes, timelines, Servants,
 Ninth Form projections, Director queues, and quest sessions while preserving
