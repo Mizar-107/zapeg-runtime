@@ -370,7 +370,13 @@ See [ROADMAP.md](ROADMAP.md) for the reality-distortion and later combat plan.
 ```
 
 The Batch-3 artifact is
-`build/libs/zapeg-runtime-forge-1.20.1-0.7.0-b3.jar`. Protocol 9 is
+`build/libs/zapeg-runtime-forge-1.20.1-0.7.0-b3.jar`. Protocol 10 is
 wire-incompatible: server, tracked
 `overrides/mods` jar and every client artifact must be replaced atomically
 with the same build.
+
+Batch 3 also includes the native, UUID-bound Hidden Journal. It exposes only
+the server-authorized completed prefix and current clue, supports five chapter
+tabs plus keyboard navigation, and owns two closed journal discoveries. A
+pristine player receives only entry zero; corrupt or future story data exposes
+nothing. See [docs/HERALDOR-JOURNAL.md](docs/HERALDOR-JOURNAL.md).

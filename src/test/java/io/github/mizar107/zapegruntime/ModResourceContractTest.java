@@ -25,8 +25,9 @@ class ModResourceContractTest {
     }
 
     @Test
-    void theOnlyBinaryAssetHidesBehindABoringName() throws IOException {
-        // The visitation image ships at an infrastructure-boring path with
+    void theVisitationBinaryHidesBehindABoringName() throws IOException {
+        // The visitation image (unlike the openly named original item art)
+        // ships at an infrastructure-boring path with
         // no provenance note beside it: the jar must never confess.
         try (InputStream face = getClass().getResourceAsStream(
                 "/assets/zapeg_runtime/textures/misc/calibration_b.png")) {

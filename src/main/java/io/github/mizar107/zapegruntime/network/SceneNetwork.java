@@ -5,6 +5,8 @@ import io.github.mizar107.zapegruntime.scene.CancelReason;
 import io.github.mizar107.zapegruntime.scene.SceneAck;
 import io.github.mizar107.zapegruntime.scene.SceneDescriptor;
 import io.github.mizar107.zapegruntime.scene.OsScareReport;
+import io.github.mizar107.zapegruntime.journal.JournalAction;
+import io.github.mizar107.zapegruntime.journal.JournalView;
 import java.util.UUID;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -29,7 +31,9 @@ public final class SceneNetwork {
     // mixed v7/v8 installations must fail the handshake rather than report a
     // false VISIBLE or silently discard diagnostics.
     /** Protocol 9 adds {@code breach_01} and the truthful AVAILABLE fallback state. */
-    public static final String PROTOCOL = "9";
+    // Protocol 10 adds a fixed five-byte authorized journal view and a
+    // one-byte closed journal action. Mixed installations must fail at login.
+    public static final String PROTOCOL = "10";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             ResourceLocation.fromNamespaceAndPath(ZapeGRuntime.MOD_ID, "scenes"),
             () -> PROTOCOL,
@@ -72,6 +76,22 @@ public final class SceneNetwork {
                 .decoder(OsScareStatusC2S::decode)
                 .consumerMainThread(OsScareStatusC2S::handle)
                 .add();
+        CHANNEL.messageBuilder(
+                        JournalOpenS2C.class,
+                        nextMessageId++,
+                        NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(JournalOpenS2C::encode)
+                .decoder(JournalOpenS2C::decode)
+                .consumerMainThread(JournalOpenS2C::handle)
+                .add();
+        CHANNEL.messageBuilder(
+                        JournalActionC2S.class,
+                        nextMessageId++,
+                        NetworkDirection.PLAY_TO_SERVER)
+                .encoder(JournalActionC2S::encode)
+                .decoder(JournalActionC2S::decode)
+                .consumerMainThread(JournalActionC2S::handle)
+                .add();
     }
 
     public static void spawnFor(ServerPlayer target, SceneDescriptor descriptor) {
@@ -97,5 +117,13 @@ public final class SceneNetwork {
             int sequence,
             OsScareReport report) {
         CHANNEL.sendToServer(new OsScareStatusC2S(eventId, targetId, sequence, report));
+    }
+
+    public static void openJournal(ServerPlayer target, JournalView view) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> target), new JournalOpenS2C(view));
+    }
+
+    public static void journalAction(JournalAction action) {
+        CHANNEL.sendToServer(new JournalActionC2S(action));
     }
 }

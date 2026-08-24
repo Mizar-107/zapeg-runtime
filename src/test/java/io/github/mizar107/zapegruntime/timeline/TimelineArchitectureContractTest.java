@@ -66,7 +66,7 @@ class TimelineArchitectureContractTest {
     }
 
     @Test
-    void typedCommandsAndLegacyProtocolAreBothWiredExactlyOnce() throws IOException {
+    void typedCommandsAndCurrentProtocolAreBothWiredExactlyOnce() throws IOException {
         String commands = Files.readString(TIMELINE_ROOT.resolve("TimelineCommands.java"));
         String events = Files.readString(
                 RUNTIME_ROOT.resolve("server").resolve("SceneServerEvents.java"));
@@ -79,7 +79,7 @@ class TimelineArchitectureContractTest {
         assertTrue(events.contains("SceneCommands.register(event)"));
         assertTrue(events.contains("TimelineCommands.attach(root)"));
         assertEquals(1, occurrences(events, "HeraldorCommands.register("));
-        assertTrue(network.contains("public static final String PROTOCOL = \"9\""));
+        assertTrue(network.contains("public static final String PROTOCOL = \"10\""));
     }
 
     @Test

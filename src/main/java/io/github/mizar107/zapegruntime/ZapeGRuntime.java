@@ -2,6 +2,7 @@ package io.github.mizar107.zapegruntime;
 
 import com.mojang.logging.LogUtils;
 import io.github.mizar107.zapegruntime.client.OsScareConfig;
+import io.github.mizar107.zapegruntime.journal.JournalItems;
 import io.github.mizar107.zapegruntime.network.SceneNetwork;
 import io.github.mizar107.zapegruntime.servant.ServantEntities;
 import io.github.mizar107.zapegruntime.sound.HeraldorSounds;
@@ -20,6 +21,7 @@ public final class ZapeGRuntime {
 
     public ZapeGRuntime() {
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
+        JournalItems.register(modBus);
         ServantEntities.register(modBus);
         HeraldorSounds.register(modBus);
         SceneNetwork.register();

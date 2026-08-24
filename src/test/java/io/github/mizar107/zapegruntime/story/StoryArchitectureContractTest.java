@@ -72,8 +72,8 @@ class StoryArchitectureContractTest {
     }
 
     @Test
-    void storyFoundationDoesNotChangeB2WireProtocol() {
-        assertEquals("9", SceneNetwork.PROTOCOL);
+    void journalExtensionOwnsTheSingleBatchThreeProtocolBump() {
+        assertEquals("10", SceneNetwork.PROTOCOL);
     }
 
     @Test
