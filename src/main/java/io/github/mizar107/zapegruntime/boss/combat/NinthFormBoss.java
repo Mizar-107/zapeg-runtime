@@ -24,8 +24,9 @@ import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvent;
-import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.BossEvent;
 import net.minecraft.world.damagesource.DamageSource;
@@ -415,6 +416,38 @@ public final class NinthFormBoss extends LivingEntity {
                     SoundSource.HOSTILE,
                     2.8F,
                     0.68F);
+            if (level() instanceof ServerLevel server) {
+                server.sendParticles(
+                        ParticleTypes.SOUL,
+                        getX(),
+                        getY() + 3.0D,
+                        getZ(),
+                        80,
+                        3.5D,
+                        2.4D,
+                        3.5D,
+                        0.04D);
+                server.sendParticles(
+                        ParticleTypes.REVERSE_PORTAL,
+                        getX(),
+                        getY() + 2.2D,
+                        getZ(),
+                        48,
+                        2.8D,
+                        2.0D,
+                        2.8D,
+                        0.12D);
+                server.sendParticles(
+                        ParticleTypes.END_ROD,
+                        getX(),
+                        getY() + 4.0D,
+                        getZ(),
+                        36,
+                        1.6D,
+                        3.0D,
+                        1.6D,
+                        0.08D);
+            }
             if (!defeatSignalEmitted
                     && emitCombatSignal(
                             NinthFormCombatSignal.Kind.DEFEATED,
@@ -828,11 +861,11 @@ public final class NinthFormBoss extends LivingEntity {
 
     @Override
     protected SoundEvent getHurtSound(DamageSource source) {
-        return SoundEvents.ELDER_GUARDIAN_HURT;
+        return NinthFormSounds.HURT.get();
     }
 
     @Override
     protected SoundEvent getDeathSound() {
-        return SoundEvents.ELDER_GUARDIAN_DEATH;
+        return NinthFormSounds.DEATH.get();
     }
 }
