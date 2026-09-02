@@ -53,7 +53,6 @@
   "screen.zapeg_runtime.heraldor_journal.action.count_absences": "Eksik satırları say",
   "screen.zapeg_runtime.heraldor_journal.action.tooltip": "Bu sayfadaki kayıtlı işareti incele",
   "screen.zapeg_runtime.heraldor_journal.action.waiting": "Mürekkep hatırlayıp hatırlamayacağına karar veriyor…",
-
   "journal.zapeg_runtime.heraldor.first_scratch.title": "İlk Çizik",
   "journal.zapeg_runtime.heraldor.first_scratch.body": "İlk iz tahtaya değil, ateşten sonraki ana kazınmıştı; sıcaklık gitmiş, kül ise bir eli hâlâ hatırlıyordu.",
   "journal.zapeg_runtime.heraldor.first_scratch.clue": "Gün battıktan sonra çömel ve sönmüş bir Kamp Ateşi üzerinde Fırça kullan.",
@@ -166,5 +165,10 @@
   "subtitles.zapeg_runtime.ninth_form.weakpoint_break": "Bir bağ noktası parçalanıyor",
   "subtitles.zapeg_runtime.ninth_form.banish": "Dokuzuncu Suret çekiliyor",
   "advancements.zapeg_runtime.heraldor.banish_ninth_form.title": "Dokuzuncudan Sonra",
-  "advancements.zapeg_runtime.heraldor.banish_ninth_form.description": "Dokuzuncu Suret sürgün edildi ama bir sayfa hâlâ sıcak."
+  "advancements.zapeg_runtime.heraldor.banish_ninth_form.description": "Dokuzuncu Suret sürgün edildi ama bir sayfa hâlâ sıcak.",
+  "subtitles.zapeg_runtime.ninth_form.impact": "Dokuzuncu Suret vuruyor",
+  "subtitles.zapeg_runtime.ninth_form.hurt": "Dokuzuncu Suret isabet alıyor",
+  "subtitles.zapeg_runtime.ninth_form.death": "Dokuzuncu Suret çöküyor",
+  "subtitles.zapeg_runtime.ninth_form.bed": "Boğulmuş bir gövde uğulduyor",
+  "subtitles.zapeg_runtime.heraldor_servant": "Bir Hizmetkâr hareket ediyor"
 }

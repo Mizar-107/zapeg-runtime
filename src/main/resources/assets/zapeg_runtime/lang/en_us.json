@@ -53,7 +53,6 @@
   "screen.zapeg_runtime.heraldor_journal.action.count_absences": "Count the missing lines",
   "screen.zapeg_runtime.heraldor_journal.action.tooltip": "Examine the mark recorded on this page",
   "screen.zapeg_runtime.heraldor_journal.action.waiting": "The ink is deciding whether to remember…",
-
   "journal.zapeg_runtime.heraldor.first_scratch.title": "The First Scratch",
   "journal.zapeg_runtime.heraldor.first_scratch.body": "The first mark was not carved into wood. It was carved into the moment after flame, where warmth had left but ash still remembered a hand.",
   "journal.zapeg_runtime.heraldor.first_scratch.clue": "After sunset, crouch and use a Brush on an extinguished Campfire.",
@@ -166,5 +165,10 @@
   "subtitles.zapeg_runtime.ninth_form.weakpoint_break": "A binding point ruptures",
   "subtitles.zapeg_runtime.ninth_form.banish": "The Ninth Form recedes",
   "advancements.zapeg_runtime.heraldor.banish_ninth_form.title": "After the Ninth",
-  "advancements.zapeg_runtime.heraldor.banish_ninth_form.description": "The Ninth Form is banished, but one page remains warm."
+  "advancements.zapeg_runtime.heraldor.banish_ninth_form.description": "The Ninth Form is banished, but one page remains warm.",
+  "subtitles.zapeg_runtime.ninth_form.impact": "The Ninth Form strikes",
+  "subtitles.zapeg_runtime.ninth_form.hurt": "The Ninth Form is struck",
+  "subtitles.zapeg_runtime.ninth_form.death": "The Ninth Form collapses",
+  "subtitles.zapeg_runtime.ninth_form.bed": "A drowned hull hums",
+  "subtitles.zapeg_runtime.heraldor_servant": "A Servant moves"
 }
