@@ -23,12 +23,9 @@ import org.joml.Vector3f;
 /** Renders an entity-shaped hallucination without registering or spawning an entity. */
 public final class ApparitionRenderer {
 
-    // The generic black figure uses the classic humanoid UV layout, so it must
-    // be baked from the zombie layer: the player layer maps left limbs into
-    // texture regions that are fully transparent in this asset.
-    private static final ResourceLocation FIGURE_TEXTURE = ResourceLocation.fromNamespaceAndPath(
-            "minecraft",
-            "textures/entity/zombie/zombie.png");
+    // Original hooded figure: classic humanoid UVs with a fully opaque
+    // owned atlas. Player left-limb overlay space is not used.
+    private static final ResourceLocation FIGURE_TEXTURE = ApparitionModel.TEXTURE;
     // The peripheral dissolve: the angular ramp runs from just past the gaze
     // cone out to +40 degrees off axis, and the presented alpha chases the
     // angular target over about five ticks — so a fast mouse flick thins
@@ -48,7 +45,7 @@ public final class ApparitionRenderer {
     private ApparitionRenderer() {}
 
     public static void installModel(EntityModelSet entityModels) {
-        figureModel = new HumanoidModel<>(entityModels.bakeLayer(ModelLayers.ZOMBIE));
+        figureModel = new HumanoidModel<>(entityModels.bakeLayer(ApparitionModel.LAYER_LOCATION));
         ownModelWide = new HumanoidModel<>(entityModels.bakeLayer(ModelLayers.PLAYER));
         ownModelSlim = new HumanoidModel<>(entityModels.bakeLayer(ModelLayers.PLAYER_SLIM));
         figureModel.setAllVisible(true);
