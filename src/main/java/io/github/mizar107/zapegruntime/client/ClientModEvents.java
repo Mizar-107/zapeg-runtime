@@ -32,6 +32,13 @@ public final class ClientModEvents {
     }
 
     @SubscribeEvent
+    public static void registerLayerDefinitions(
+            EntityRenderersEvent.RegisterLayerDefinitions event) {
+        event.registerLayerDefinition(
+                ApparitionModel.LAYER_LOCATION, ApparitionModel::createBodyLayer);
+    }
+
+    @SubscribeEvent
     public static void onAddLayers(EntityRenderersEvent.AddLayers event) {
         ApparitionRenderer.installModel(event.getEntityModels());
     }

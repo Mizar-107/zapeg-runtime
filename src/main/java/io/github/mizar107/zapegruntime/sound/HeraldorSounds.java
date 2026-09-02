@@ -22,6 +22,18 @@ public final class HeraldorSounds {
     public static final RegistryObject<SoundEvent> FOOTSTEP_02 = register("heraldor_footstep_02");
     public static final RegistryObject<SoundEvent> MANIFESTATION =
             register("heraldor_manifestation");
+    public static final RegistryObject<SoundEvent> SERVANT_AMBIENT =
+            register("heraldor_servant_ambient");
+    public static final RegistryObject<SoundEvent> SERVANT_HURT =
+            register("heraldor_servant_hurt");
+    public static final RegistryObject<SoundEvent> SERVANT_DEATH =
+            register("heraldor_servant_death");
+    public static final RegistryObject<SoundEvent> SERVANT_STEP =
+            register("heraldor_servant_step");
+    public static final RegistryObject<SoundEvent> SERVANT_TELEGRAPH =
+            register("heraldor_servant_telegraph");
+    public static final RegistryObject<SoundEvent> SERVANT_STRIKE =
+            register("heraldor_servant_strike");
 
     private HeraldorSounds() {}
 

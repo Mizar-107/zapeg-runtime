@@ -32,6 +32,11 @@ public final class NinthFormRenderer
     }
 
     @Override
+    protected boolean shouldShowName(NinthFormBoss boss) {
+        return false;
+    }
+
+    @Override
     @Nullable
     protected RenderType getRenderType(
             NinthFormBoss boss, boolean bodyVisible, boolean translucent, boolean glowing) {

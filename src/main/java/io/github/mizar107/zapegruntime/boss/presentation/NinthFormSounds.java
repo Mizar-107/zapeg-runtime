@@ -19,6 +19,10 @@ public final class NinthFormSounds {
     public static final RegistryObject<SoundEvent> WEAKPOINT_BREAK =
             register("ninth_form_weakpoint_break");
     public static final RegistryObject<SoundEvent> BANISH = register("ninth_form_banish");
+    public static final RegistryObject<SoundEvent> IMPACT = register("ninth_form_impact");
+    public static final RegistryObject<SoundEvent> HURT = register("ninth_form_hurt");
+    public static final RegistryObject<SoundEvent> DEATH = register("ninth_form_death");
+    public static final RegistryObject<SoundEvent> BED = register("ninth_form_bed");
 
     private NinthFormSounds() {}
 
