@@ -5,18 +5,18 @@ import io.github.mizar107.zapegruntime.boss.api.NinthFormPhase;
 /** Pure hit-surface routing, multipliers, caps, and the phase-one health gate. */
 public final class NinthFormDamagePolicy {
 
-    public static final double WEAK_POINT_BASE_HEALTH = 120.0D;
+    public static final double WEAK_POINT_BASE_HEALTH = 280.0D;
     public static final double PHASE_ONE_FLOOR = 0.55D;
     public static final double PHASE_ONE_HULL_MULTIPLIER = 0.35D;
-    public static final double PHASE_ONE_HULL_CAP_FRACTION = 0.02D;
+    public static final double PHASE_ONE_HULL_CAP_FRACTION = 0.008D;
     public static final double WEAK_POINT_MULTIPLIER = 1.0D;
-    public static final double WEAK_POINT_CAP_FRACTION = 0.04D;
+    public static final double WEAK_POINT_CAP_FRACTION = 0.018D;
     public static final double KEEL_HEART_MULTIPLIER = 1.6D;
-    public static final double KEEL_HEART_CAP_FRACTION = 0.05D;
+    public static final double KEEL_HEART_CAP_FRACTION = 0.022D;
     public static final double AFT_MULTIPLIER = 0.15D;
-    public static final double AFT_CAP_FRACTION = 14.0D / NinthFormBoss.BASE_HEALTH;
+    public static final double AFT_CAP_FRACTION = 8.0D / NinthFormBoss.BASE_HEALTH;
     public static final double DIRECT_MULTIPLIER = 0.12D;
-    public static final double DIRECT_CAP_FRACTION = 12.0D / NinthFormBoss.BASE_HEALTH;
+    public static final double DIRECT_CAP_FRACTION = 6.0D / NinthFormBoss.BASE_HEALTH;
 
     private NinthFormDamagePolicy() {}
 

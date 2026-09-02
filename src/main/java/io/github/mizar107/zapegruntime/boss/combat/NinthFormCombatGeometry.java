@@ -7,6 +7,7 @@ public final class NinthFormCombatGeometry {
 
     public static final double CONFINEMENT_RADIUS = 48.0D;
     public static final float MAX_WINDUP_YAW_STEP = 4.0F;
+    public static final float MAX_WRECK_YAW_STEP = 9.0F;
 
     private NinthFormCombatGeometry() {}
 
