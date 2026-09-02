@@ -53,22 +53,42 @@ class NinthFormPresentationResourceTest {
                 "075d1d1ccec6b614cc8046ad70f75db4f9dafc93389670dd076ed7c653e4d20c",
                 0.71D,
                 0.73D));
+        AUDIO.put("impact.ogg", new Asset(
+                5002,
+                "1d901f385d89b22bc28f7010cc22f9cebab90d3effd04d84863f30ea945164df",
+                0.87D,
+                0.89D));
+        AUDIO.put("hurt.ogg", new Asset(
+                4678,
+                "3add0ae3e9c60475af2e482c6f8a453c7f8801b1eba674b52bd7686e948022b5",
+                0.61D,
+                0.63D));
+        AUDIO.put("death.ogg", new Asset(
+                6048,
+                "aa93420b0ba0a561366c3f6f27ece930ac2114ab2b14027516f9ac3d913ce57a",
+                1.64D,
+                1.66D));
+        AUDIO.put("bed.ogg", new Asset(
+                12723,
+                "c1501e818337c7527bba3f8c70ce9d55ed8650d9061c4745fe66e2fe2397c12d",
+                6.39D,
+                6.41D));
     }
 
     @Test
     void exactUvAtlasesArePinnedOriginalAndRestrained() throws Exception {
         verifyTexture(
                 "ninth_form.png",
-                60_198,
-                "b0aa099c94fc8284a59123ae435411bca72087f770ddbb07aeb1858f3e02d1ab",
+                18_563,
+                "23ef98a86ef8b0fe6c9efa560506e14b66c66e1e48327288bf3b46f37c31dfa2",
                 236_800,
                 0);
         verifyTexture(
                 "ninth_form_emissive.png",
-                30_700,
-                "5a33cf674168b7e5591ba005739c3403b4336dfb5284707f76fd731125e00cf3",
+                5_964,
+                "6d9eee04073040cb903bde1712b2e17fd0ae699e9d8d5e1635e980412f549c8b",
                 0,
-                11_982);
+                11_220);
     }
 
     @Test
@@ -95,7 +115,11 @@ class NinthFormPresentationResourceTest {
                 "ninth_form_awakening", "awakening",
                 "ninth_form_telegraph", "telegraph",
                 "ninth_form_weakpoint_break", "weakpoint_break",
-                "ninth_form_banish", "banish");
+                "ninth_form_banish", "banish",
+                "ninth_form_impact", "impact",
+                "ninth_form_hurt", "hurt",
+                "ninth_form_death", "death",
+                "ninth_form_bed", "bed");
         for (Map.Entry<String, String> entry : events.entrySet()) {
             JsonObject definition = sounds.getAsJsonObject(entry.getKey());
             assertNotNull(definition, entry.getKey());
@@ -133,7 +157,8 @@ class NinthFormPresentationResourceTest {
             keys.add("attack.zapeg_runtime.ninth_form." + attack);
         }
         for (String sound : new String[] {
-            "awakening", "telegraph", "weakpoint_break", "banish"
+            "awakening", "telegraph", "weakpoint_break", "banish",
+            "impact", "hurt", "death", "bed"
         }) {
             keys.add("subtitles.zapeg_runtime.ninth_form." + sound);
         }
@@ -176,6 +201,7 @@ class NinthFormPresentationResourceTest {
         String provenance = Files.readString(docs);
         assertTrue(provenance.contains("Generate-NinthFormTextures.ps1"));
         assertTrue(provenance.contains("Generate-NinthFormAudio.ps1"));
+        assertTrue(provenance.contains("Generate-HeraldorPresenceAssets.py"));
         assertTrue(provenance.contains("No Minecraft texture"));
         for (String asset : AUDIO.keySet()) {
             assertTrue(provenance.contains(asset), asset);
