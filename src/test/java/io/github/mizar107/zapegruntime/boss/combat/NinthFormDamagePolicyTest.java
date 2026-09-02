@@ -44,7 +44,7 @@ class NinthFormDamagePolicyTest {
                 0.0D,
                 1.0D);
         assertEquals(NinthFormDamagePolicy.DamageTarget.PARENT, capped.target());
-        assertEquals(18.0D, capped.appliedDamage());
+        assertEquals(7.2D, capped.appliedDamage(), 1.0E-9D);
 
         NinthFormDamagePolicy.DamageDecision floor = NinthFormDamagePolicy.routePart(
                 NinthFormPhase.FIRST,
@@ -83,7 +83,7 @@ class NinthFormDamagePolicyTest {
                 1.0D,
                 1.0D);
         assertEquals(NinthFormDamagePolicy.DamageTarget.WEAK_POINT, weak.target());
-        assertEquals(36.0D, weak.appliedDamage());
+        assertEquals(16.2D, weak.appliedDamage(), 1.0E-9D);
 
         NinthFormDamagePolicy.DamageDecision heart = NinthFormDamagePolicy.routePart(
                 NinthFormPhase.FINAL,
@@ -95,7 +95,7 @@ class NinthFormDamagePolicyTest {
                 0.0D,
                 1.0D);
         assertEquals(NinthFormDamagePolicy.DamageTarget.PARENT, heart.target());
-        assertEquals(45.0D, heart.appliedDamage());
+        assertEquals(19.8D, heart.appliedDamage(), 1.0E-9D);
     }
 
     @Test
@@ -109,10 +109,10 @@ class NinthFormDamagePolicyTest {
                 900.0D,
                 0.0D,
                 1.0D);
-        assertEquals(14.0D, aft.appliedDamage(), 1.0E-9D);
+        assertEquals(8.0D, aft.appliedDamage(), 1.0E-9D);
         NinthFormDamagePolicy.DamageDecision direct = NinthFormDamagePolicy.routeParent(
                 NinthFormPhase.FINAL, 0b111, 1000.0D, 900.0D, 900.0D);
-        assertEquals(12.0D, direct.appliedDamage(), 1.0E-9D);
+        assertEquals(6.0D, direct.appliedDamage(), 1.0E-9D);
     }
 
     @Test
