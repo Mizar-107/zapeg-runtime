@@ -9,7 +9,6 @@ import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.phys.Vec3;
@@ -83,6 +82,18 @@ final class NinthFormCombatEngine {
         if (phase != NinthFormPhase.FIRST && phase != NinthFormPhase.FINAL) {
             boss.setAttackState(boss.attackCycle(), "idle", 0);
             return;
+        }
+        if ((phase == NinthFormPhase.FIRST || phase == NinthFormPhase.FINAL)
+                && boss.tickCount % 80 == 0) {
+            level.playSound(
+                    null,
+                    boss.getX(),
+                    boss.getY(),
+                    boss.getZ(),
+                    NinthFormSounds.BED.get(),
+                    SoundSource.MUSIC,
+                    0.55F,
+                    1.0F);
         }
         driveAttack(boss, level, installed.get(), target, phase);
     }
@@ -241,7 +252,7 @@ final class NinthFormCombatEngine {
                     telegraphPitch(attack));
         }
         if (window == NinthFormAttack.AttackWindow.WINDUP) {
-            trackTargetDuringWindup(boss, target.position());
+            trackTargetDuringWindup(boss, attack, target.position());
         } else {
             Optional<Float> lockedYaw = boss.attackYaw();
             if (lockedYaw.isEmpty()) {
@@ -286,9 +297,8 @@ final class NinthFormCombatEngine {
             ServerLevel level,
             NinthFormBoss boss,
             NinthFormAttack attack) {
-        Vec3 point = attack == NinthFormAttack.ANCHORFALL
-                ? boss.attackAnchor().orElse(boss.position())
-                : boss.position().add(0.0D, 2.5D, 0.0D);
+        Vec3 origin = boss.position();
+        float yaw = boss.attackYaw().orElse(boss.getYRot());
         ParticleOptions particle = switch (attack) {
             case KEEL_SWEEP -> ParticleTypes.SWEEP_ATTACK;
             case ANCHORFALL -> ParticleTypes.FALLING_WATER;
@@ -297,7 +307,75 @@ final class NinthFormCombatEngine {
             case WAKE_CHARGE -> ParticleTypes.SPLASH;
             case NINEFOLD_GAZE -> ParticleTypes.SOUL_FIRE_FLAME;
         };
-        level.sendParticles(particle, point.x, point.y, point.z, 10, 1.5D, 0.8D, 1.5D, 0.02D);
+        Vec3 point = attack == NinthFormAttack.ANCHORFALL
+                ? boss.attackAnchor().orElse(origin)
+                : origin.add(0.0D, 2.5D, 0.0D);
+        level.sendParticles(particle, point.x, point.y, point.z, 8, 1.2D, 0.6D, 1.2D, 0.02D);
+        outline(level, particle, origin, yaw, attack, boss.attackAnchor().orElse(origin));
+    }
+
+    private static void outline(
+            ServerLevel level,
+            ParticleOptions particle,
+            Vec3 origin,
+            float yaw,
+            NinthFormAttack attack,
+            Vec3 anchor) {
+        switch (attack) {
+            case KEEL_SWEEP -> ring(level, particle, origin, 16.0D, 24);
+            case ANCHORFALL -> ring(level, particle, anchor, 5.0D, 16);
+            case UNDERTOW -> ring(
+                    level, particle, origin, NinthFormCombatGeometry.CONFINEMENT_RADIUS, 32);
+            case DROWNED_BROADSIDE -> {
+                scatterSlab(level, particle, origin, yaw, 12.0D);
+                scatterSlab(level, particle, origin, yaw, -12.0D);
+            }
+            case WAKE_CHARGE -> {
+                for (int step = 0; step <= 6; step++) {
+                    double forward = step * 6.0D;
+                    Vec3 left = worldOffset(origin, yaw, -(4.0D + forward * 0.22D), forward);
+                    Vec3 right = worldOffset(origin, yaw, 4.0D + forward * 0.22D, forward);
+                    burst(level, particle, left);
+                    burst(level, particle, right);
+                }
+            }
+            case NINEFOLD_GAZE -> {
+                double reach = NinthFormCombatGeometry.CONFINEMENT_RADIUS;
+                double half = Math.tan(Math.toRadians(11.0D)) * reach;
+                burst(level, particle, worldOffset(origin, yaw, -half, reach));
+                burst(level, particle, worldOffset(origin, yaw, half, reach));
+                burst(level, particle, worldOffset(origin, yaw, 0.0D, reach));
+            }
+        }
+    }
+
+    private static void ring(
+            ServerLevel level, ParticleOptions particle, Vec3 origin, double radius, int segments) {
+        for (int index = 0; index < segments; index++) {
+            double angle = index * (Math.PI * 2.0D) / segments;
+            burst(
+                    level,
+                    particle,
+                    origin.add(Math.cos(angle) * radius, 0.2D, Math.sin(angle) * radius));
+        }
+    }
+
+    private static void scatterSlab(
+            ServerLevel level, ParticleOptions particle, Vec3 origin, float yaw, double lateral) {
+        for (int step = -2; step <= 2; step++) {
+            burst(level, particle, worldOffset(origin, yaw, lateral, step * 5.0D));
+        }
+    }
+
+    private static void burst(ServerLevel level, ParticleOptions particle, Vec3 point) {
+        level.sendParticles(particle, point.x, point.y + 0.4D, point.z, 2, 0.12D, 0.08D, 0.12D, 0.0D);
+    }
+
+    private static Vec3 worldOffset(Vec3 origin, float yaw, double lateral, double forward) {
+        double radians = Math.toRadians(yaw);
+        double sin = Math.sin(radians);
+        double cos = Math.cos(radians);
+        return origin.add(lateral * cos - forward * sin, 0.0D, lateral * sin + forward * cos);
     }
 
     private static void resolveActive(
@@ -311,7 +389,7 @@ final class NinthFormCombatEngine {
                     boss.getX(),
                     boss.getY(),
                     boss.getZ(),
-                    SoundEvents.GENERIC_EXPLODE,
+                    NinthFormSounds.IMPACT.get(),
                     SoundSource.HOSTILE,
                     1.8F,
                     0.65F + attack.ordinal() * 0.06F);
@@ -394,12 +472,12 @@ final class NinthFormCombatEngine {
 
     private static double baseDamage(NinthFormAttack attack) {
         return switch (attack) {
-            case KEEL_SWEEP -> 12.0D;
-            case ANCHORFALL -> 14.0D;
-            case UNDERTOW -> 4.0D;
-            case DROWNED_BROADSIDE -> 13.0D;
-            case WAKE_CHARGE -> 10.0D;
-            case NINEFOLD_GAZE -> 5.0D;
+            case KEEL_SWEEP -> 28.0D;
+            case ANCHORFALL -> 36.0D;
+            case UNDERTOW -> 10.0D;
+            case DROWNED_BROADSIDE -> 32.0D;
+            case WAKE_CHARGE -> 26.0D;
+            case NINEFOLD_GAZE -> 12.0D;
         };
     }
 
@@ -407,12 +485,16 @@ final class NinthFormCombatEngine {
         return 0.55F + attack.ordinal() * 0.07F;
     }
 
-    private static void trackTargetDuringWindup(NinthFormBoss boss, Vec3 target) {
+    private static void trackTargetDuringWindup(
+            NinthFormBoss boss, NinthFormAttack attack, Vec3 target) {
+        float maximum = attack == NinthFormAttack.WAKE_CHARGE
+                ? NinthFormCombatGeometry.MAX_WRECK_YAW_STEP
+                : NinthFormCombatGeometry.MAX_WINDUP_YAW_STEP;
         float yaw = NinthFormCombatGeometry.boundedYawToward(
                 boss.getYRot(),
                 boss.position(),
                 target,
-                NinthFormCombatGeometry.MAX_WINDUP_YAW_STEP);
+                maximum);
         boss.setAttackYaw(yaw);
     }
 
