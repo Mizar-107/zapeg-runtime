@@ -86,6 +86,10 @@ class NinthFormPresentationArchitectureTest {
         assertTrue(sounds.contains("ninth_form_telegraph"));
         assertTrue(sounds.contains("ninth_form_weakpoint_break"));
         assertTrue(sounds.contains("ninth_form_banish"));
+        assertTrue(sounds.contains("ninth_form_impact"));
+        assertTrue(sounds.contains("ninth_form_hurt"));
+        assertTrue(sounds.contains("ninth_form_death"));
+        assertTrue(sounds.contains("ninth_form_bed"));
         assertTrue(sounds.contains("public static void register(IEventBus modBus)"));
     }
 
