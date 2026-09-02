@@ -2,67 +2,212 @@
   "heraldor_whisper_01": {
     "subtitle": "subtitles.zapeg_runtime.heraldor_whisper",
     "sounds": [
-      { "name": "zapeg_runtime:heraldor/whisper_01", "volume": 0.72, "pitch": 0.97 }
+      {
+        "name": "zapeg_runtime:heraldor/whisper_01",
+        "volume": 0.72,
+        "pitch": 0.97
+      }
     ]
   },
   "heraldor_whisper_02": {
     "subtitle": "subtitles.zapeg_runtime.heraldor_whisper",
     "sounds": [
-      { "name": "zapeg_runtime:heraldor/whisper_02", "volume": 0.68, "pitch": 1.02 }
+      {
+        "name": "zapeg_runtime:heraldor/whisper_02",
+        "volume": 0.68,
+        "pitch": 1.02
+      }
     ]
   },
   "heraldor_knock_01": {
     "subtitle": "subtitles.zapeg_runtime.heraldor_knock",
     "sounds": [
-      { "name": "zapeg_runtime:heraldor/knock_01", "volume": 0.80, "pitch": 1.00 }
+      {
+        "name": "zapeg_runtime:heraldor/knock_01",
+        "volume": 0.8,
+        "pitch": 1.0
+      }
     ]
   },
   "heraldor_knock_02": {
     "subtitle": "subtitles.zapeg_runtime.heraldor_knock",
     "sounds": [
-      { "name": "zapeg_runtime:heraldor/knock_02", "volume": 0.78, "pitch": 0.96 }
+      {
+        "name": "zapeg_runtime:heraldor/knock_02",
+        "volume": 0.78,
+        "pitch": 0.96
+      }
     ]
   },
   "heraldor_footstep_01": {
     "subtitle": "subtitles.zapeg_runtime.heraldor_footstep",
     "sounds": [
-      { "name": "zapeg_runtime:heraldor/footstep_01", "volume": 0.76, "pitch": 1.00 }
+      {
+        "name": "zapeg_runtime:heraldor/footstep_01",
+        "volume": 0.76,
+        "pitch": 1.0
+      }
     ]
   },
   "heraldor_footstep_02": {
     "subtitle": "subtitles.zapeg_runtime.heraldor_footstep",
     "sounds": [
-      { "name": "zapeg_runtime:heraldor/footstep_02", "volume": 0.74, "pitch": 0.98 }
+      {
+        "name": "zapeg_runtime:heraldor/footstep_02",
+        "volume": 0.74,
+        "pitch": 0.98
+      }
     ]
   },
   "heraldor_manifestation": {
     "subtitle": "subtitles.zapeg_runtime.heraldor_manifestation",
     "sounds": [
-      { "name": "zapeg_runtime:heraldor/manifestation", "volume": 0.82, "pitch": 1.00 }
+      {
+        "name": "zapeg_runtime:heraldor/manifestation",
+        "volume": 0.82,
+        "pitch": 1.0
+      }
     ]
   },
   "ninth_form_awakening": {
     "subtitle": "subtitles.zapeg_runtime.ninth_form.awakening",
     "sounds": [
-      { "name": "zapeg_runtime:ninth_form/awakening", "volume": 0.76, "pitch": 0.94 }
+      {
+        "name": "zapeg_runtime:ninth_form/awakening",
+        "volume": 0.76,
+        "pitch": 0.94
+      }
     ]
   },
   "ninth_form_telegraph": {
     "subtitle": "subtitles.zapeg_runtime.ninth_form.telegraph",
     "sounds": [
-      { "name": "zapeg_runtime:ninth_form/telegraph", "volume": 0.68, "pitch": 1.00 }
+      {
+        "name": "zapeg_runtime:ninth_form/telegraph",
+        "volume": 0.68,
+        "pitch": 1.0
+      }
     ]
   },
   "ninth_form_weakpoint_break": {
     "subtitle": "subtitles.zapeg_runtime.ninth_form.weakpoint_break",
     "sounds": [
-      { "name": "zapeg_runtime:ninth_form/weakpoint_break", "volume": 0.74, "pitch": 0.97 }
+      {
+        "name": "zapeg_runtime:ninth_form/weakpoint_break",
+        "volume": 0.74,
+        "pitch": 0.97
+      }
     ]
   },
   "ninth_form_banish": {
     "subtitle": "subtitles.zapeg_runtime.ninth_form.banish",
     "sounds": [
-      { "name": "zapeg_runtime:ninth_form/banish", "volume": 0.78, "pitch": 0.92 }
+      {
+        "name": "zapeg_runtime:ninth_form/banish",
+        "volume": 0.78,
+        "pitch": 0.92
+      }
+    ]
+  },
+  "ninth_form_impact": {
+    "subtitle": "subtitles.zapeg_runtime.ninth_form.impact",
+    "sounds": [
+      {
+        "name": "zapeg_runtime:ninth_form/impact",
+        "volume": 0.74,
+        "pitch": 0.92
+      }
+    ]
+  },
+  "ninth_form_hurt": {
+    "subtitle": "subtitles.zapeg_runtime.ninth_form.hurt",
+    "sounds": [
+      {
+        "name": "zapeg_runtime:ninth_form/hurt",
+        "volume": 0.7,
+        "pitch": 0.96
+      }
+    ]
+  },
+  "ninth_form_death": {
+    "subtitle": "subtitles.zapeg_runtime.ninth_form.death",
+    "sounds": [
+      {
+        "name": "zapeg_runtime:ninth_form/death",
+        "volume": 0.76,
+        "pitch": 0.9
+      }
+    ]
+  },
+  "ninth_form_bed": {
+    "subtitle": "subtitles.zapeg_runtime.ninth_form.bed",
+    "sounds": [
+      {
+        "name": "zapeg_runtime:ninth_form/bed",
+        "volume": 0.55,
+        "pitch": 1.0,
+        "stream": true
+      }
+    ]
+  },
+  "heraldor_servant_ambient": {
+    "subtitle": "subtitles.zapeg_runtime.heraldor_servant",
+    "sounds": [
+      {
+        "name": "zapeg_runtime:heraldor/servant_ambient",
+        "volume": 0.68,
+        "pitch": 0.94
+      }
+    ]
+  },
+  "heraldor_servant_hurt": {
+    "subtitle": "subtitles.zapeg_runtime.heraldor_servant",
+    "sounds": [
+      {
+        "name": "zapeg_runtime:heraldor/servant_hurt",
+        "volume": 0.72,
+        "pitch": 1.0
+      }
+    ]
+  },
+  "heraldor_servant_death": {
+    "subtitle": "subtitles.zapeg_runtime.heraldor_servant",
+    "sounds": [
+      {
+        "name": "zapeg_runtime:heraldor/servant_death",
+        "volume": 0.74,
+        "pitch": 0.9
+      }
+    ]
+  },
+  "heraldor_servant_step": {
+    "subtitle": "subtitles.zapeg_runtime.heraldor_servant",
+    "sounds": [
+      {
+        "name": "zapeg_runtime:heraldor/servant_step",
+        "volume": 0.64,
+        "pitch": 1.0
+      }
+    ]
+  },
+  "heraldor_servant_telegraph": {
+    "subtitle": "subtitles.zapeg_runtime.heraldor_servant",
+    "sounds": [
+      {
+        "name": "zapeg_runtime:heraldor/servant_telegraph",
+        "volume": 0.7,
+        "pitch": 1.05
+      }
+    ]
+  },
+  "heraldor_servant_strike": {
+    "subtitle": "subtitles.zapeg_runtime.heraldor_servant",
+    "sounds": [
+      {
+        "name": "zapeg_runtime:heraldor/servant_strike",
+        "volume": 0.76,
+        "pitch": 0.96
+      }
     ]
   }
 }
