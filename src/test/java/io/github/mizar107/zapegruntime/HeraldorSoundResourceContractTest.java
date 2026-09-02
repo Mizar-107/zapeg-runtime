@@ -49,6 +49,24 @@ class HeraldorSoundResourceContractTest {
         ASSETS.put("whisper_02.ogg", new Asset(
                 20353, "2d0c09bc58b33688e6de92c197db1f3cd4af83f78dd03d10757e4bfe5c985d07",
                 2.04D, 2.06D));
+        ASSETS.put("servant_ambient.ogg", new Asset(
+                5577, "a1066b2a96d64460e1f5a2414c3445e5cef505ba8aace1625e9691955314dd6c",
+                1.34D, 1.36D));
+        ASSETS.put("servant_death.ogg", new Asset(
+                5272, "e6d091fffecd9c48045aae4ddcdb673750731856ba03f91a4cf8ae1ee0d18049",
+                1.09D, 1.11D));
+        ASSETS.put("servant_hurt.ogg", new Asset(
+                4440, "db97f01a7e21a9aa62855f90d85e78f34c34ff40c9a63592e154c9e9cdc4ac7b",
+                0.47D, 0.49D));
+        ASSETS.put("servant_step.ogg", new Asset(
+                4348, "f0883b20e4ae70b4aa17ee2620f843a5deb7c64279ca662dcace7c5e99e63a77",
+                0.41D, 0.43D));
+        ASSETS.put("servant_strike.ogg", new Asset(
+                4643, "58a8576ae532f7745e2e1fb5003ad0ebd406a6d41610e7004ec6c4b16575d24c",
+                0.57D, 0.59D));
+        ASSETS.put("servant_telegraph.ogg", new Asset(
+                4912, "06b20de9bf303ca2d2b9d9363d8568b19db26a792aad60cde66d185056af874a",
+                0.81D, 0.83D));
     }
 
     @Test
@@ -77,13 +95,16 @@ class HeraldorSoundResourceContractTest {
             "heraldor_whisper_01", "heraldor_whisper_02",
             "heraldor_knock_01", "heraldor_knock_02",
             "heraldor_footstep_01", "heraldor_footstep_02",
-            "heraldor_manifestation"
+            "heraldor_manifestation",
+            "heraldor_servant_ambient", "heraldor_servant_hurt",
+            "heraldor_servant_death", "heraldor_servant_step",
+            "heraldor_servant_telegraph", "heraldor_servant_strike"
         }) {
             assertTrue(sounds.contains("\"" + event + "\""));
         }
         for (String subtitle : new String[] {
             "heraldor_whisper", "heraldor_knock", "heraldor_footstep",
-            "heraldor_manifestation"
+            "heraldor_manifestation", "heraldor_servant"
         }) {
             assertTrue(sounds.contains("subtitles.zapeg_runtime." + subtitle));
         }
@@ -109,7 +130,7 @@ class HeraldorSoundResourceContractTest {
         String turkish = text("/assets/zapeg_runtime/lang/tr_tr.json");
         for (String event : new String[] {
             "heraldor_whisper", "heraldor_knock", "heraldor_footstep",
-            "heraldor_manifestation"
+            "heraldor_manifestation", "heraldor_servant"
         }) {
             String key = "subtitles.zapeg_runtime." + event;
             assertTrue(english.contains(key), key);
