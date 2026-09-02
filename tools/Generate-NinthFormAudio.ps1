@@ -30,6 +30,26 @@ $assets = @(
         Input = 'aevalsrc=0.15*sin(2*PI*(54*t-7*t*t))+0.10*sin(2*PI*(83*t-4*t*t))+0.06*sin(2*PI*137*t)*sin(2*PI*0.55*t):s=44100:d=2.20'
         Filter = 'highpass=f=28,lowpass=f=1500,aecho=0.8:0.72:74:0.18,afade=t=in:st=0:d=0.12,afade=t=out:st=1.35:d=0.85,volume=0.74,alimiter=limit=0.72'
     }
+    @{
+        Name = 'impact.ogg'
+        Input = 'aevalsrc=0.22*sin(2*PI*(88*t-40*t*t))*exp(-4.2*t)+0.12*sin(2*PI*211*t)*exp(-9*t):s=44100:d=0.88'
+        Filter = 'highpass=f=40,lowpass=f=2400,afade=t=out:st=0.52:d=0.36,volume=0.74,alimiter=limit=0.72'
+    }
+    @{
+        Name = 'hurt.ogg'
+        Input = 'aevalsrc=0.20*sin(2*PI*(143*t))*exp(-8*t)+0.10*sin(2*PI*287*t)*exp(-14*t):s=44100:d=0.62'
+        Filter = 'highpass=f=70,lowpass=f=2800,afade=t=out:st=0.34:d=0.28,volume=0.70,alimiter=limit=0.70'
+    }
+    @{
+        Name = 'death.ogg'
+        Input = 'aevalsrc=0.18*sin(2*PI*(41*t-6*t*t))+0.10*sin(2*PI*(67*t-3*t*t))+0.05*sin(2*PI*109*t)*sin(2*PI*0.6*t):s=44100:d=1.65'
+        Filter = 'highpass=f=26,lowpass=f=1400,afade=t=in:st=0:d=0.10,afade=t=out:st=1.05:d=0.60,volume=0.76,alimiter=limit=0.74'
+    }
+    @{
+        Name = 'bed.ogg'
+        Input = 'aevalsrc=0.10*sin(2*PI*(29*t))+0.07*sin(2*PI*(43.5*t))+0.04*sin(2*PI*61*t)*sin(2*PI*0.25*t):s=44100:d=6.40'
+        Filter = 'highpass=f=20,lowpass=f=900,afade=t=in:st=0:d=0.80,afade=t=out:st=5.40:d=1.00,volume=0.55,alimiter=limit=0.60'
+    }
 )
 
 foreach ($asset in $assets) {
