@@ -45,6 +45,36 @@ $assets = @(
         Input = 'aevalsrc=0.16*sin(2*PI*(38*t+8*t*t))+0.12*sin(2*PI*(57*t+5*t*t))+0.07*sin(2*PI*91*t)*sin(2*PI*0.7*t):s=44100:d=2.80'
         Filter = 'highpass=f=30,lowpass=f=1200,afade=t=in:st=0:d=0.38,afade=t=out:st=2.16:d=0.64,volume=0.86,alimiter=limit=0.82'
     }
+    @{
+        Name = 'servant_ambient.ogg'
+        Input = 'aevalsrc=0.14*sin(2*PI*(52*t+3*t*t))+0.08*sin(2*PI*97*t)*sin(2*PI*1.1*t):s=44100:d=1.35'
+        Filter = 'highpass=f=40,lowpass=f=1600,afade=t=in:st=0:d=0.12,afade=t=out:st=0.95:d=0.40,volume=0.68,alimiter=limit=0.70'
+    }
+    @{
+        Name = 'servant_hurt.ogg'
+        Input = 'aevalsrc=0.22*sin(2*PI*167*t)*exp(-11*t)+0.10*sin(2*PI*311*t)*exp(-18*t):s=44100:d=0.48'
+        Filter = 'highpass=f=80,lowpass=f=2600,afade=t=out:st=0.26:d=0.22,volume=0.72,alimiter=limit=0.72'
+    }
+    @{
+        Name = 'servant_death.ogg'
+        Input = 'aevalsrc=0.18*sin(2*PI*(63*t-8*t*t))+0.10*sin(2*PI*101*t)*exp(-3*t):s=44100:d=1.10'
+        Filter = 'highpass=f=32,lowpass=f=1800,afade=t=out:st=0.70:d=0.40,volume=0.74,alimiter=limit=0.72'
+    }
+    @{
+        Name = 'servant_step.ogg'
+        Input = 'aevalsrc=0.40*sin(2*PI*(48*t+16*t*t))*exp(-12*t)+0.12*sin(2*PI*221*t)*exp(-24*t):s=44100:d=0.42'
+        Filter = 'highpass=f=30,lowpass=f=1400,afade=t=out:st=0.24:d=0.18,volume=0.64,alimiter=limit=0.70'
+    }
+    @{
+        Name = 'servant_telegraph.ogg'
+        Input = 'aevalsrc=0.16*sin(2*PI*(81*t+36*t*t))+0.08*sin(2*PI*173*t)*sin(2*PI*6*t):s=44100:d=0.82'
+        Filter = 'highpass=f=50,lowpass=f=2100,afade=t=in:st=0:d=0.08,afade=t=out:st=0.55:d=0.27,volume=0.70,alimiter=limit=0.70'
+    }
+    @{
+        Name = 'servant_strike.ogg'
+        Input = 'aevalsrc=0.24*sin(2*PI*(97*t))*exp(-7*t)+0.12*sin(2*PI*241*t)*exp(-15*t):s=44100:d=0.58'
+        Filter = 'highpass=f=45,lowpass=f=2300,afade=t=out:st=0.32:d=0.26,volume=0.76,alimiter=limit=0.74'
+    }
 )
 
 foreach ($asset in $assets) {

@@ -5,8 +5,12 @@ Add-Type -AssemblyName System.Drawing
 $textureDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\src\main\resources\assets\zapeg_runtime\textures\entity'))
 [IO.Directory]::CreateDirectory($textureDirectory) | Out-Null
 
-# These rectangles are the exact vanilla cuboid unwraps declared by
-# NinthFormUvLayout. No source image, game texture, or third-party asset is read.
+# Canonical authoring is tools/Generate-HeraldorPresenceAssets.py.
+# This Windows painter fills the same NinthFormUvLayout rectangles as
+# plates, lantern discs, rope wraps, and rune strokes. It is not a
+# noise-grain sampler and reads no source image, game texture, or
+# third-party asset. Re-running it will not match committed hashes;
+# the committed PNG bytes are the release inputs.
 $regions = @(
     @{ Name = 'parent_hull'; U = 0; V = 0; Width = 480; Height = 180; Seed = 11; Material = 'timber' }
     @{ Name = 'armored_hull_aft'; U = 0; V = 180; Width = 448; Height = 152; Seed = 23; Material = 'armor' }
@@ -25,40 +29,42 @@ function Color([int] $alpha, [int] $red, [int] $green, [int] $blue) {
 }
 
 function Base-Color([hashtable] $region, [int] $x, [int] $y) {
-    $grain = ($x * 37 + $y * 71 + $region.Seed * 101) % 19
-    $seam = (($x - $region.U) % 16 -eq 0) -or (($y - $region.V) % 24 -eq 0)
+    $band = [Math]::Abs((($x - $region.U) / 12) % 2 - 1)
+    $plate = [Math]::Abs((($y - $region.V) / 18) % 2 - 1)
+    $seam = (($x - $region.U) % 32 -eq 0) -or (($y - $region.V) % 28 -eq 0)
+    $stroke = (($x + 2 * $y + $region.Seed) % 47 -eq 0)
     switch ($region.Material) {
         'timber' {
             if ($seam) { return Color 255 18 28 31 }
-            return Color 255 (31 + ($grain % 8)) (45 + ($grain % 11)) (48 + ($grain % 9))
+            return Color 255 (31 + ([int](6 * $band))) (45 + ([int](8 * $plate))) (48 + ([int](7 * $band)))
         }
         'armor' {
             if ($seam) { return Color 255 14 25 29 }
-            return Color 255 (27 + ($grain % 9)) (52 + ($grain % 13)) (57 + ($grain % 11))
+            return Color 255 (27 + ([int](7 * $band))) (52 + ([int](9 * $plate))) (57 + ([int](8 * $plate)))
         }
         'lamp' {
             if ($seam) { return Color 255 34 47 43 }
-            return Color 255 (55 + ($grain % 12)) (94 + ($grain % 17)) (82 + ($grain % 15))
+            return Color 255 (55 + ([int](10 * $band))) (94 + ([int](12 * $plate))) (82 + ([int](11 * $band)))
         }
         'mooring' {
             if ($seam) { return Color 255 25 36 38 }
-            return Color 255 (47 + ($grain % 11)) (73 + ($grain % 13)) (68 + ($grain % 9))
+            return Color 255 (47 + ([int](8 * $plate))) (73 + ([int](9 * $plate))) (68 + ([int](7 * $band)))
         }
         'heart' {
             if ($seam) { return Color 255 30 22 40 }
-            return Color 255 (61 + ($grain % 12)) (43 + ($grain % 10)) (75 + ($grain % 14))
+            return Color 255 (61 + ([int](10 * $band))) (43 + ([int](6 * $plate))) (75 + ([int](8 * $band)))
         }
         'crown' {
             if ($seam) { return Color 255 28 35 31 }
-            return Color 255 (63 + ($grain % 13)) (78 + ($grain % 16)) (59 + ($grain % 12))
+            return Color 255 (63 + ([int](9 * $plate))) (78 + ([int](9 * $plate))) (59 + ([int](10 * $band)))
         }
         'bone' {
             if ($seam) { return Color 255 41 50 48 }
-            return Color 255 (83 + ($grain % 14)) (96 + ($grain % 13)) (88 + ($grain % 12))
+            return Color 255 (83 + ([int](8 * $band))) (96 + ([int](9 * $plate))) (88 + ([int](10 * $band)))
         }
         'fin' {
             if ($seam) { return Color 255 17 29 34 }
-            return Color 255 (29 + ($grain % 9)) (51 + ($grain % 15)) (58 + ($grain % 17))
+            return Color 255 (29 + ([int](7 * $band))) (51 + ([int](11 * $band))) (58 + ([int](12 * $plate)))
         }
         default { throw "Unknown Ninth Form material $($region.Material)" }
     }
