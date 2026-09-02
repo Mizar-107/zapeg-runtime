@@ -73,7 +73,7 @@ class NinthFormCombatArchitectureTest {
         assertTrue(boss.contains("NinthFormRecoveryPolicy.restartAtWindup(combat)"));
         assertTrue(engine.contains("boss.lockAttackAnchor(target.position())"));
         assertTrue(engine.contains("boss.attackAnchor().orElse(origin)"));
-        assertTrue(engine.contains("trackTargetDuringWindup(boss, target.position())"));
+        assertTrue(engine.contains("trackTargetDuringWindup(boss, attack, target.position())"));
         assertTrue(engine.contains("window == NinthFormAttack.AttackWindow.WINDUP"));
         assertTrue(engine.contains("boss.applyAttackYaw(lockedYaw.get())"));
         assertTrue(engine.contains("float attackYaw = boss.attackYaw().orElseThrow()"));
