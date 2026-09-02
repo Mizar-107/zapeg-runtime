@@ -62,7 +62,11 @@ public final class NinthFormModel extends EntityModel<NinthFormBoss> {
                 .texOffs(
                         NinthFormUvLayout.STARBOARD_FIN.u(),
                         NinthFormUvLayout.STARBOARD_FIN.v())
-                .addBox(54.0F, -68.0F, -30.0F, 8.0F, 44.0F, 64.0F);
+                .addBox(54.0F, -68.0F, -30.0F, 8.0F, 44.0F, 64.0F)
+                .texOffs(NinthFormUvLayout.PARENT_HULL.u(), NinthFormUvLayout.PARENT_HULL.v())
+                .addBox(-48.0F, -30.0F, -58.0F, 96.0F, 8.0F, 18.0F)
+                .texOffs(NinthFormUvLayout.CROWN.u(), NinthFormUvLayout.CROWN.v())
+                .addBox(-6.0F, -118.0F, -6.0F, 12.0F, 14.0F, 12.0F);
         root.addOrReplaceChild(
                 "parent_hull", hull, PartPose.offset(0.0F, modelY(3.0D), 0.0F));
 
@@ -113,9 +117,19 @@ public final class NinthFormModel extends EntityModel<NinthFormBoss> {
             float originX,
             float originY,
             float originZ) {
+        CubeListBuilder cubes = box(uv, originX, originY, originZ);
+        if (kind == NinthFormPartKind.PROW_LANTERN) {
+            cubes.texOffs(uv.u(), uv.v()).addBox(originX + 6.0F, originY + 4.0F, originZ - 2.0F, 4.0F, 16.0F, 4.0F);
+            cubes.texOffs(uv.u(), uv.v()).addBox(originX + 14.0F, originY + 4.0F, originZ - 2.0F, 4.0F, 16.0F, 4.0F);
+        } else if (kind == NinthFormPartKind.PORT_MOORING
+                || kind == NinthFormPartKind.STARBOARD_MOORING) {
+            cubes.texOffs(uv.u(), uv.v()).addBox(originX + 12.0F, originY - 10.0F, originZ + 12.0F, 8.0F, 18.0F, 8.0F);
+        } else if (kind == NinthFormPartKind.KEEL_HEART) {
+            cubes.texOffs(uv.u(), uv.v()).addBox(originX + 8.0F, originY + 8.0F, originZ + 6.0F, 24.0F, 24.0F, 20.0F);
+        }
         root.addOrReplaceChild(
                 kind.serializedName(),
-                box(uv, originX, originY, originZ),
+                cubes,
                 PartPose.offset(
                         pixels(kind.lateralOffset()),
                         modelPartCenterY(kind),
@@ -201,7 +215,10 @@ public final class NinthFormModel extends EntityModel<NinthFormBoss> {
                 portMooring.zRot = -0.24F * progress;
                 starboardMooring.zRot = 0.24F * progress;
             }
-            case WAKE_CHARGE -> root.xRot = 0.08F * progress;
+            case WAKE_CHARGE -> {
+                root.xRot = 0.12F * progress;
+                root.z += 18.0F * progress * progress;
+            }
             case NINEFOLD_GAZE -> {
                 float scale = 1.0F + 0.10F * progress * pulse;
                 prowLantern.xScale = scale;
